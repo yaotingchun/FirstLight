@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
 import MapSimulator from './pages/MapSimulator';
 import ProbabilityMap3D from './pages/3DMap';
+import SimulationMap from './pages/SimulationMap';
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/map" element={<MapSimulator />} />
             <Route path="/3d-map" element={<ProbabilityMap3D />} />
+            <Route path="/simulation" element={<SimulationMap />} />
           </Routes>
         </main>
       </div>
