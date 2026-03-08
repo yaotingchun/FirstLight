@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import MapSimulator from './pages/MapSimulator';
 import ProbabilityMap3D from './pages/3DMap';
 import SimulationMap from './pages/SimulationMap';
+import DroneCam from './pages/DroneCam';
 import LoadingScreen from './components/LoadingScreen';
 
 function App() {
@@ -26,6 +27,7 @@ function App() {
             <Route path="/map" element={<MapSimulator />} />
             <Route path="/3d-map" element={<ProbabilityMap3D />} />
             <Route path="/simulation" element={<SimulationMap />} />
+            <Route path="/drone-cam" element={<DroneCam />} />
           </Routes>
         </main>
       </div>
