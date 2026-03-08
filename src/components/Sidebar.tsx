@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Activity, Map as MapIcon, Settings, Target, Layers, Cpu } from 'lucide-react';
+import { Activity, Map as MapIcon, Target, Layers, Cpu } from 'lucide-react';
 
 const Sidebar: React.FC = () => {
     return (
