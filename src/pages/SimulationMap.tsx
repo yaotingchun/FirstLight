@@ -5,18 +5,16 @@ const GRID_W = 20;
 const GRID_H = 20;
 const CELL_SIZE = 35; // Size of each grid square in pixels
 
-// Sensor definitions for Adaptive Weighting
-const SENSORS = {
+// Sensor definitions for Adaptive Weighting (Initial bases)
+const INITIAL_SENSORS = {
     mobile: { base: 0.4, conf: 0.9, color: '#00ffcc' },
     thermal: { base: 0.3, conf: 0.6, color: '#ff4444' },
     sound: { base: 0.2, conf: 0.7, color: '#ffff00' },
     wifi: { base: 0.1, conf: 0.8, color: '#ff00ff' }
 };
 
-const getEffectiveWeight = (key: keyof typeof SENSORS) => SENSORS[key].base * SENSORS[key].conf;
-
-const THRESHOLD_MICRO = 0.5;
-const THRESHOLD_FOUND = 0.85;
+const THRESHOLD_MICRO = 0.30;
+const THRESHOLD_FOUND = 0.75;
 
 // Types
 type Sector = {
@@ -26,6 +24,7 @@ type Sector = {
     pheromone: number;
     terrain: string;
     scanned: boolean;
+    lastScanned: number; // For sector coverage tracking
 };
 
 type Drone = {
@@ -39,6 +38,14 @@ type Drone = {
     targetSector: Sector | null;
     isConnected: boolean;
     memory: string[];
+};
+
+type SwarmMessage = {
+    id: string;
+    sender: string;
+    time: number;
+    type: 'HIGH_SIGNAL' | 'REQUEST_ASSIST' | 'MAP_SHARE';
+    payload: Record<string, unknown>;
 };
 
 const COMM_RANGE_DRONE = 5;
@@ -61,7 +68,7 @@ type FoundPin = {
     id: string;
     x: number;
     y: number;
-    info: any;
+    info: { message: string, battery: string, img?: string };
 };
 
 // Utilities
@@ -94,7 +101,7 @@ const createGrid = (): Sector[][] => {
             else if (r < 0.4) terrain = 'Collapsed Area';
             else if (r < 0.5) terrain = 'Shelter';
 
-            row.push({ x, y, prob: 0, pheromone: 0, terrain, scanned: false });
+            row.push({ x, y, prob: 0, pheromone: 0, terrain, scanned: false, lastScanned: 0 });
         }
         g.push(row);
     }
@@ -124,13 +131,16 @@ const SimulationMap: React.FC = () => {
     const [running, setRunning] = useState(false);
     const [speed, setSpeed] = useState(1);
 
-    // Sim State Refs (to avoid React render loop lag, but we will force render for UI updates)
+    // Sim State Refs (to avoid React render loop lag)
     const gridRef = useRef<Sector[][]>(createGrid());
     const dronesRef = useRef<Drone[]>(createDrones());
     const survivorsRef = useRef<HiddenSurvivor[]>(createSurvivors());
     const pinsRef = useRef<FoundPin[]>([]);
     const timeRef = useRef<number>(0);
     const commLinksRef = useRef<CommEdge[]>([]);
+    const swarmMessagesRef = useRef<SwarmMessage[]>([]);
+    const sensorWeightsRef = useRef(JSON.parse(JSON.stringify(INITIAL_SENSORS))); // Deep copy for mutable weights
+
     const [, setTickFlip] = useState(0); // Forcing re-render
     const [selectedPin, setSelectedPin] = useState<FoundPin | null>(null);
 
@@ -141,14 +151,21 @@ const SimulationMap: React.FC = () => {
         survivorsRef.current = createSurvivors();
         pinsRef.current = [];
         commLinksRef.current = [];
+        swarmMessagesRef.current = [];
+        sensorWeightsRef.current = JSON.parse(JSON.stringify(INITIAL_SENSORS));
         timeRef.current = 0;
         setSelectedPin(null);
         setTickFlip(f => f + 1);
     };
 
+    const getEffectiveWeight = (key: keyof typeof INITIAL_SENSORS) => {
+        const w = sensorWeightsRef.current[key];
+        return w.base * w.conf;
+    };
+
     const getSectorProbability = (x: number, y: number) => {
         // True probability depends on proximity to hidden survivors
-        let base_prob = 0.05 + (Math.random() * 0.1);
+        const base_prob = 0.05 + (Math.random() * 0.1);
         let max_signal = 0;
 
         survivorsRef.current.forEach(s => {
@@ -186,17 +203,29 @@ const SimulationMap: React.FC = () => {
 
     const performTick = useCallback(() => {
         timeRef.current++;
-        let grid = gridRef.current;
-        let drones = dronesRef.current;
-        let survivors = survivorsRef.current;
+        const grid = gridRef.current;
+        const drones = dronesRef.current;
+        const survivors = survivorsRef.current;
+        const messages = swarmMessagesRef.current;
+
+        // Cleanup old messages 
+        if (messages.length > 5) swarmMessagesRef.current = messages.slice(messages.length - 5);
+
+        const addMessage = (droneId: string, type: 'HIGH_SIGNAL' | 'REQUEST_ASSIST' | 'MAP_SHARE', payload: Record<string, unknown>) => {
+            swarmMessagesRef.current.push({
+                id: Math.random().toString(36).substring(2, 9),
+                sender: droneId,
+                time: timeRef.current,
+                type,
+                payload
+            });
+        };
 
         // 1. Prediction / Markov Chain: Hidden survivors might move
-        // Every 50 ticks, chance to move
         if (timeRef.current % 50 === 0) {
             survivors.forEach(s => {
                 if (s.found) return;
                 const r = Math.random();
-                // 10% chance to move to adjacent cell based on terrain probabilities
                 if (r < 0.1) {
                     const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
                     const validDirs = dirs.filter(d => s.x + d[0] >= 0 && s.x + d[0] < GRID_W && s.y + d[1] >= 0 && s.y + d[1] < GRID_H);
@@ -216,7 +245,6 @@ const SimulationMap: React.FC = () => {
 
         commLinksRef.current = [];
 
-        // Build Graph
         for (let i = 0; i < nodes.length; i++) {
             for (let j = i + 1; j < nodes.length; j++) {
                 const n1 = nodes[i];
@@ -239,7 +267,6 @@ const SimulationMap: React.FC = () => {
             }
         }
 
-        // BFS from Base Station
         const visited = new Set<string>();
         const queue = [BASE_STATION.id];
         const parent = new Map<string, string>();
@@ -281,7 +308,6 @@ const SimulationMap: React.FC = () => {
             relayDrone.ty = GRID_H / 2;
         }
 
-        // Simulate background message passing glow
         if (Math.random() < 0.2 && drones.length > 0) {
             const connected = drones.filter(d => d.isConnected);
             if (connected.length > 0) {
@@ -327,6 +353,7 @@ const SimulationMap: React.FC = () => {
                     if (newProb > THRESHOLD_MICRO) {
                         // Switch to Micro-Scan (Exploitation)
                         d.mode = 'Micro';
+                        if (d.isConnected) addMessage(d.id, 'REQUEST_ASSIST', { sector: `[${sx},${sy}]` });
                     } else {
                         // Ant Colony Routing: Pick a nearby sector based on pheromones
                         const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, -1], [-1, 1], [1, -1]];
@@ -361,6 +388,15 @@ const SimulationMap: React.FC = () => {
 
                             d.memory.push(s.id);
 
+                            // --- Real Adaptive Learning ---
+                            // Increase sensor confidence explicitly based on success rate
+                            const weights = sensorWeightsRef.current;
+                            (Object.keys(weights) as Array<keyof typeof INITIAL_SENSORS>).forEach(k => {
+                                weights[k].conf = Math.min(1.0, weights[k].conf + 0.04);
+                            });
+
+                            if (d.isConnected) addMessage(d.id, 'HIGH_SIGNAL', { survivorId: s.id });
+
                             // Send far away
                             d.mode = 'Wide';
                             d.tx = Math.floor(Math.random() * GRID_W);
@@ -388,7 +424,7 @@ const SimulationMap: React.FC = () => {
                     }
                 }
             } else {
-                // Move towards target
+                // Move towards target (Original Simple Movement)
                 const moveSpeed = d.mode === 'Wide' ? 0.4 : 0.1;
                 const totalMove = Math.min(moveSpeed, distToTarget);
                 const angle = Math.atan2(d.ty - d.y, d.tx - d.x);
@@ -419,6 +455,14 @@ const SimulationMap: React.FC = () => {
                 d.memory = [];
             }
         });
+
+        // Map share heartbeat
+        if (timeRef.current > 0 && timeRef.current % 100 === 0) {
+            const connected = drones.filter(d => d.isConnected && d.mode !== 'Relay');
+            if (connected.length > 0) {
+                addMessage(connected[Math.floor(Math.random() * connected.length)].id, 'MAP_SHARE', { bytes: 1420 });
+            }
+        }
 
         // 3. Global Swarm Planner (Haversine Priority Assignment)
         // If a sector has high prob but no drone is near, assign the closest Wide-scan drone
@@ -460,10 +504,11 @@ const SimulationMap: React.FC = () => {
         }));
 
         setTickFlip(f => f + 1);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
-        let interval: any;
+        let interval: ReturnType<typeof setInterval>;
         if (running) {
             interval = setInterval(performTick, 100 / speed);
         }
@@ -688,13 +733,13 @@ const SimulationMap: React.FC = () => {
                         </div>
                     </div>
 
-                    <div className="hud-panel" style={{ padding: '16px', flex: 1 }}>
+                    <div className="hud-panel" style={{ padding: '16px', flex: 1, display: 'flex', flexDirection: 'column' }}>
                         <h4 className="hud-text" style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <Radio size={18} /> ADAPTIVE SENSORS
                         </h4>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            {Object.entries(SENSORS).map(([key, data]) => {
+                            {(Object.entries(sensorWeightsRef.current) as [keyof typeof INITIAL_SENSORS, { base: number, conf: number, color: string }][]).map(([key, data]) => {
                                 const finalW = (data.base * data.conf).toFixed(2);
                                 return (
                                     <div key={key}>
@@ -710,15 +755,25 @@ const SimulationMap: React.FC = () => {
                             })}
                         </div>
 
-                        <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--panel-border)' }}>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>ALGORITHM LOG</div>
-                            <div className="hud-text" style={{ fontSize: '0.65rem', color: 'var(--text-primary)', opacity: 0.7, height: '100px', overflowY: 'hidden' }}>
-                                <div>&gt; Sys initialized. Using Haversine pathfinding.</div>
-                                <div>&gt; ACO Exploration mode active.</div>
-                                {timeRef.current > 0 && <div>&gt; Prob calculation threshold w=(Wi*R).</div>}
-                                {timeRef.current > 50 && <div>&gt; Markov prediction matrix updated.</div>}
-                                {pinsRef.current.map((p, idx) => (
-                                    <div key={idx} style={{ color: '#00ffcc' }}>&gt; Survivor {p.id} confirmed at {p.x},{p.y}</div>
+                        {/* Communication Log */}
+                        <div style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid var(--panel-border)', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                                <span>COMMUNICATION LOG</span>
+                                <span className="animate-pulse" style={{ color: '#00ffcc' }}>● LIVE</span>
+                            </div>
+                            <div className="hud-text" style={{ fontSize: '0.65rem', color: 'var(--text-primary)', opacity: 0.8, overflowY: 'auto', flex: 1, maxHeight: '120px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <div><span style={{ color: '#555' }}>[SYS]</span> Decentralized swarm initialized.</div>
+                                <div><span style={{ color: '#555' }}>[SYS]</span> Using Haversine pathfinding.</div>
+                                <div><span style={{ color: '#555' }}>[SYS]</span> ACO Exploration mode active.</div>
+
+                                {swarmMessagesRef.current.map((msg) => (
+                                    <div key={msg.id} style={{ display: 'flex', gap: '4px' }}>
+                                        <span style={{ color: '#555' }}>[T-{msg.time}]</span>
+                                        <span style={{ color: '#00ffcc' }}>{msg.sender}:</span>
+                                        <span style={{ color: msg.type === 'HIGH_SIGNAL' ? '#ff4444' : msg.type === 'REQUEST_ASSIST' ? '#ffff00' : 'var(--text-primary)' }}>
+                                            {msg.type.toLowerCase()}({JSON.stringify(msg.payload)})
+                                        </span>
+                                    </div>
                                 ))}
                             </div>
                         </div>
