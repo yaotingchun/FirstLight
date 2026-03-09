@@ -37,7 +37,17 @@ type Drone = {
     mode: 'Wide' | 'Micro' | 'Relay';
     battery: number;
     targetSector: Sector | null;
+    isConnected: boolean;
+    memory: string[];
 };
+
+const COMM_RANGE_DRONE = 5;
+const COMM_RANGE_RELAY = 10;
+const COMM_RANGE_BASE = 12;
+
+const BASE_STATION = { id: 'BASE', x: 9.5, y: 19 };
+
+type CommEdge = { source: string; target: string; active: boolean };
 
 type HiddenSurvivor = {
     id: string;
@@ -93,11 +103,11 @@ const createGrid = (): Sector[][] => {
 
 const createDrones = (): Drone[] => {
     return [
-        { id: 'DRN-Alpha', x: 9, y: 9, tx: 2, ty: 2, mode: 'Wide', battery: 100, targetSector: null },
-        { id: 'DRN-Beta', x: 10, y: 9, tx: 17, ty: 2, mode: 'Wide', battery: 100, targetSector: null },
-        { id: 'DRN-Gamma', x: 9, y: 10, tx: 2, ty: 17, mode: 'Wide', battery: 100, targetSector: null },
-        { id: 'DRN-Delta', x: 10, y: 10, tx: 17, ty: 17, mode: 'Wide', battery: 100, targetSector: null },
-        { id: 'RLY-Prime', x: 9.5, y: 9.5, tx: 9.5, ty: 9.5, mode: 'Relay', battery: 100, targetSector: null }
+        { id: 'DRN-Alpha', x: 9, y: 9, tx: 2, ty: 2, mode: 'Wide', battery: 100, targetSector: null, isConnected: true, memory: [] },
+        { id: 'DRN-Beta', x: 10, y: 9, tx: 17, ty: 2, mode: 'Wide', battery: 100, targetSector: null, isConnected: true, memory: [] },
+        { id: 'DRN-Gamma', x: 9, y: 10, tx: 2, ty: 17, mode: 'Wide', battery: 100, targetSector: null, isConnected: true, memory: [] },
+        { id: 'DRN-Delta', x: 10, y: 10, tx: 17, ty: 17, mode: 'Wide', battery: 100, targetSector: null, isConnected: true, memory: [] },
+        { id: 'RLY-Prime', x: 9.5, y: 9.5, tx: 9.5, ty: 9.5, mode: 'Relay', battery: 100, targetSector: null, isConnected: true, memory: [] }
     ];
 };
 
@@ -120,6 +130,7 @@ const SimulationMap: React.FC = () => {
     const survivorsRef = useRef<HiddenSurvivor[]>(createSurvivors());
     const pinsRef = useRef<FoundPin[]>([]);
     const timeRef = useRef<number>(0);
+    const commLinksRef = useRef<CommEdge[]>([]);
     const [, setTickFlip] = useState(0); // Forcing re-render
     const [selectedPin, setSelectedPin] = useState<FoundPin | null>(null);
 
@@ -129,6 +140,7 @@ const SimulationMap: React.FC = () => {
         dronesRef.current = createDrones();
         survivorsRef.current = createSurvivors();
         pinsRef.current = [];
+        commLinksRef.current = [];
         timeRef.current = 0;
         setSelectedPin(null);
         setTickFlip(f => f + 1);
@@ -197,6 +209,93 @@ const SimulationMap: React.FC = () => {
             });
         }
 
+        // 1.5 Communication Mesh Graph & BFS
+        const nodes = [{ id: BASE_STATION.id, x: BASE_STATION.x, y: BASE_STATION.y, isConnected: true }, ...drones];
+        const adj = new Map<string, string[]>();
+        nodes.forEach(n => adj.set(n.id, []));
+
+        commLinksRef.current = [];
+
+        // Build Graph
+        for (let i = 0; i < nodes.length; i++) {
+            for (let j = i + 1; j < nodes.length; j++) {
+                const n1 = nodes[i];
+                const n2 = nodes[j];
+                const dist = Math.sqrt(Math.pow(n1.x - n2.x, 2) + Math.pow(n1.y - n2.y, 2));
+
+                let range1 = COMM_RANGE_DRONE;
+                if (n1.id === BASE_STATION.id) range1 = COMM_RANGE_BASE;
+                else if ((n1 as Drone).mode === 'Relay') range1 = COMM_RANGE_RELAY;
+
+                let range2 = COMM_RANGE_DRONE;
+                if (n2.id === BASE_STATION.id) range2 = COMM_RANGE_BASE;
+                else if ((n2 as Drone).mode === 'Relay') range2 = COMM_RANGE_RELAY;
+
+                if (dist <= Math.max(range1, range2)) {
+                    adj.get(n1.id)!.push(n2.id);
+                    adj.get(n2.id)!.push(n1.id);
+                    commLinksRef.current.push({ source: n1.id, target: n2.id, active: false });
+                }
+            }
+        }
+
+        // BFS from Base Station
+        const visited = new Set<string>();
+        const queue = [BASE_STATION.id];
+        const parent = new Map<string, string>();
+        visited.add(BASE_STATION.id);
+
+        while (queue.length > 0) {
+            const curr = queue.shift()!;
+            const neighbors = adj.get(curr)!;
+            for (const nxt of neighbors) {
+                if (!visited.has(nxt)) {
+                    visited.add(nxt);
+                    queue.push(nxt);
+                    parent.set(nxt, curr);
+                }
+            }
+        }
+
+        let disconnectedCount = 0;
+        drones.forEach(d => {
+            d.isConnected = visited.has(d.id);
+            if (!d.isConnected && d.mode !== 'Relay') disconnectedCount++;
+        });
+
+        // Smart Relay Coverage Maximization
+        const relayDrone = drones.find(d => d.mode === 'Relay');
+        if (relayDrone && disconnectedCount > 0) {
+            const disconnected = drones.filter(d => !d.isConnected && d.mode !== 'Relay');
+            if (disconnected.length > 0) {
+                let cx = 0, cy = 0;
+                disconnected.forEach(d => { cx += d.x; cy += d.y; });
+                cx /= disconnected.length;
+                cy /= disconnected.length;
+
+                relayDrone.tx = (cx + BASE_STATION.x) / 2;
+                relayDrone.ty = (cy + BASE_STATION.y) / 2;
+            }
+        } else if (relayDrone && disconnectedCount === 0) {
+            relayDrone.tx = GRID_W / 2;
+            relayDrone.ty = GRID_H / 2;
+        }
+
+        // Simulate background message passing glow
+        if (Math.random() < 0.2 && drones.length > 0) {
+            const connected = drones.filter(d => d.isConnected);
+            if (connected.length > 0) {
+                const sender = connected[Math.floor(Math.random() * connected.length)];
+                let curr = sender.id;
+                while (curr !== BASE_STATION.id && parent.has(curr)) {
+                    const p = parent.get(curr)!;
+                    const edge = commLinksRef.current.find(e => (e.source === curr && e.target === p) || (e.source === p && e.target === curr));
+                    if (edge) edge.active = true;
+                    curr = p;
+                }
+            }
+        }
+
         // 2. Drone Logic
         drones.forEach(d => {
             if (d.mode === 'Relay') {
@@ -260,14 +359,7 @@ const SimulationMap: React.FC = () => {
                                 }
                             }
 
-                            if (!pinsRef.current.find(p => p.id === s.id)) {
-                                pinsRef.current.push({
-                                    id: s.id,
-                                    x: sx,
-                                    y: sy,
-                                    info: s.info
-                                });
-                            }
+                            d.memory.push(s.id);
 
                             // Send far away
                             d.mode = 'Wide';
@@ -306,6 +398,28 @@ const SimulationMap: React.FC = () => {
             }
         });
 
+        // Data Sync (Reporting to Base Station)
+        drones.forEach(d => {
+            if (d.isConnected && d.memory.length > 0) {
+                d.memory.forEach(sId => {
+                    if (!pinsRef.current.find(p => p.id === sId)) {
+                        const s = survivors.find(sup => sup.id === sId);
+                        if (s) {
+                            pinsRef.current.push({ id: s.id, x: s.x, y: s.y, info: s.info });
+                            let curr = d.id;
+                            while (curr && curr !== BASE_STATION.id && parent.has(curr)) {
+                                const p = parent.get(curr)!;
+                                const edge = commLinksRef.current.find(e => (e.source === curr && e.target === p) || (e.source === p && e.target === curr));
+                                if (edge) edge.active = true;
+                                curr = p;
+                            }
+                        }
+                    }
+                });
+                d.memory = [];
+            }
+        });
+
         // 3. Global Swarm Planner (Haversine Priority Assignment)
         // If a sector has high prob but no drone is near, assign the closest Wide-scan drone
         // We do this every 20 ticks
@@ -322,7 +436,7 @@ const SimulationMap: React.FC = () => {
                 let min_dist = Infinity;
 
                 for (const d of drones) {
-                    if (d.mode === 'Wide') {
+                    if (d.mode === 'Wide' && d.isConnected) {
                         const loc2 = getLatLon(d.x, d.y);
                         const dist = haversineDistance(loc1.lat, loc1.lon, loc2.lat, loc2.lon);
                         if (dist < min_dist) {
@@ -400,6 +514,40 @@ const SimulationMap: React.FC = () => {
                             ))
                         )}
 
+                        {/* Comm Network Edges */}
+                        {commLinksRef.current.map((link, idx) => {
+                            const getCoords = (id: string) => {
+                                if (id === BASE_STATION.id) return { x: BASE_STATION.x, y: BASE_STATION.y };
+                                const d = dronesRef.current.find(dr => dr.id === id);
+                                if (d) return { x: d.x, y: d.y };
+                                return null;
+                            };
+                            const c1 = getCoords(link.source);
+                            const c2 = getCoords(link.target);
+                            if (!c1 || !c2) return null;
+                            const x1 = c1.x * CELL_SIZE + CELL_SIZE / 2;
+                            const y1 = c1.y * CELL_SIZE + CELL_SIZE / 2;
+                            const x2 = c2.x * CELL_SIZE + CELL_SIZE / 2;
+                            const y2 = c2.y * CELL_SIZE + CELL_SIZE / 2;
+
+                            return (
+                                <g key={`edge-${idx}`}>
+                                    <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#33ffaa" strokeWidth="1" strokeDasharray="4" style={{ opacity: 0.3 }} />
+                                    {link.active && (
+                                        <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#ffff00" strokeWidth="3" style={{ opacity: 0.8, filter: 'drop-shadow(0 0 4px #ffff00)' }} />
+                                    )}
+                                </g>
+                            );
+                        })}
+
+                        {/* Base Station Vis */}
+                        <g transform={`translate(${BASE_STATION.x * CELL_SIZE + CELL_SIZE / 2}, ${BASE_STATION.y * CELL_SIZE + CELL_SIZE / 2})`}>
+                            <rect x="-15" y="-15" width="30" height="30" fill="var(--panel-bg)" stroke="#33ffaa" strokeWidth="2" />
+                            <Radio color="#33ffaa" size={20} style={{ transform: 'translate(-10px, -10px)' }} />
+                            <text x="20" y="5" fill="#33ffaa" fontSize="10" fontFamily="var(--font-mono)">BASE</text>
+                            <circle r={COMM_RANGE_BASE * CELL_SIZE} fill="transparent" stroke="#33ffaa" strokeWidth="1" strokeDasharray="10 5" style={{ animation: 'spin 10s linear infinite reverse', opacity: 0.2 }} />
+                        </g>
+
                         {/* Terrain Overlays */}
                         {gridRef.current.map((row, y) => row.map((cell, x) => {
                             if (cell.terrain === 'Road') {
@@ -430,8 +578,9 @@ const SimulationMap: React.FC = () => {
                                     <circle r={CELL_SIZE * 3.5} fill="transparent" stroke="#0077ff" strokeWidth="1" strokeDasharray="8" style={{ opacity: 0.2, animation: 'spin 8s linear infinite reverse' }} />
                                 )}
                                 {/* Drone blip */}
-                                <circle r="4" fill={d.mode === 'Relay' ? '#0077ff' : d.mode === 'Wide' ? '#00ffcc' : '#ff4444'} />
-                                <polygon points="0,-6 6,4 -6,4" fill={d.mode === 'Relay' ? '#0077ff' : d.mode === 'Wide' ? '#00ffcc' : '#ff4444'} />
+                                <circle r="4" fill={!d.isConnected ? '#555555' : d.mode === 'Relay' ? '#0077ff' : d.mode === 'Wide' ? '#00ffcc' : '#ff4444'} />
+                                <polygon points="0,-6 6,4 -6,4" fill={!d.isConnected ? '#555555' : d.mode === 'Relay' ? '#0077ff' : d.mode === 'Wide' ? '#00ffcc' : '#ff4444'} />
+                                {!d.isConnected && <text x="10" y="0" fill="#ff4444" fontSize="8" fontFamily="var(--font-mono)">OFFLINE</text>}
                                 {/* Haversine Line visually tracking target */}
                                 {d.mode === 'Micro' && (
                                     <line
@@ -466,6 +615,7 @@ const SimulationMap: React.FC = () => {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #00ffcc' }}></div> Wide-Scan Mode</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #ff4444' }}></div> Micro-Scan Mode</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #0077ff' }}></div> Relay Drone</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #555555' }}></div> Disconnected</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#00ffcc' }}><MapPin size={12} /> Confirmed Survivor</div>
                         </div>
                     </div>
@@ -530,7 +680,9 @@ const SimulationMap: React.FC = () => {
                                         {d.mode === 'Wide' ? <Target size={14} color="#00ffcc" /> : d.mode === 'Relay' ? <Radio size={14} color="#0077ff" /> : <Crosshair size={14} color="#ff4444" />}
                                         {d.id}
                                     </div>
-                                    <div style={{ color: d.mode === 'Wide' ? '#00ffcc' : d.mode === 'Relay' ? '#0077ff' : '#ff4444' }}>{d.mode}</div>
+                                    <div style={{ color: !d.isConnected ? '#555555' : d.mode === 'Wide' ? '#00ffcc' : d.mode === 'Relay' ? '#0077ff' : '#ff4444' }}>
+                                        {!d.isConnected ? 'DISCONNECTED' : d.mode}
+                                    </div>
                                 </div>
                             ))}
                         </div>
