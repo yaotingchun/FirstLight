@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Activity, Map as MapIcon, Settings, Target, Layers } from 'lucide-react';
+import { Activity, Map as MapIcon, Target, Layers, Cpu } from 'lucide-react';
 
 const Sidebar: React.FC = () => {
     return (
@@ -74,6 +74,42 @@ const Sidebar: React.FC = () => {
                 })}>
                     <Layers size={20} />
                     3D Prob Map
+                </NavLink>
+
+                <NavLink to="/simulation" style={({ isActive }) => ({
+                    display: 'flex', alignItems: 'center', gap: '16px',
+                    padding: '12px 16px',
+                    textDecoration: 'none',
+                    color: isActive ? 'var(--bg-color)' : 'var(--text-primary)',
+                    backgroundColor: isActive ? 'var(--accent-primary)' : 'transparent',
+                    border: isActive ? '1px solid var(--accent-primary)' : '1px solid transparent',
+                    fontFamily: 'var(--font-mono)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '1px',
+                    fontSize: '0.9rem',
+                    transition: 'all 0.2s ease',
+                    boxShadow: isActive ? '0 0 10px rgba(0, 255, 204, 0.3)' : 'none'
+                })}>
+                    <Cpu size={20} />
+                    Swarm AI Sim
+                </NavLink>
+
+                <NavLink to="/simulation-duplicate" style={({ isActive }) => ({
+                    display: 'flex', alignItems: 'center', gap: '16px',
+                    padding: '12px 16px',
+                    textDecoration: 'none',
+                    color: isActive ? 'var(--bg-color)' : 'var(--text-primary)',
+                    backgroundColor: isActive ? 'var(--accent-primary)' : 'transparent',
+                    border: isActive ? '1px solid var(--accent-primary)' : '1px solid transparent',
+                    fontFamily: 'var(--font-mono)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '1px',
+                    fontSize: '0.9rem',
+                    transition: 'all 0.2s ease',
+                    boxShadow: isActive ? '0 0 10px rgba(0, 255, 204, 0.3)' : 'none'
+                })}>
+                    <Cpu size={20} />
+                    Swarm AI Sim 2
                 </NavLink>
             </nav>
 
