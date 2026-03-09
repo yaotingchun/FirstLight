@@ -5,18 +5,16 @@ const GRID_W = 20;
 const GRID_H = 20;
 const CELL_SIZE = 35; // Size of each grid square in pixels
 
-// Sensor definitions for Adaptive Weighting
-const SENSORS = {
+// Sensor definitions for Adaptive Weighting (Initial bases)
+const INITIAL_SENSORS = {
     mobile: { base: 0.4, conf: 0.9, color: '#00ffcc' },
     thermal: { base: 0.3, conf: 0.6, color: '#ff4444' },
     sound: { base: 0.2, conf: 0.7, color: '#ffff00' },
     wifi: { base: 0.1, conf: 0.8, color: '#ff00ff' }
 };
 
-const getEffectiveWeight = (key: keyof typeof SENSORS) => SENSORS[key].base * SENSORS[key].conf;
-
-const THRESHOLD_MICRO = 0.5;
-const THRESHOLD_FOUND = 0.85;
+const THRESHOLD_MICRO = 0.30;
+const THRESHOLD_FOUND = 0.75;
 
 // Types
 type Sector = {
@@ -26,6 +24,7 @@ type Sector = {
     pheromone: number;
     terrain: string;
     scanned: boolean;
+    lastScanned: number; // For sector coverage tracking
 };
 
 type Drone = {
@@ -37,7 +36,25 @@ type Drone = {
     mode: 'Wide' | 'Micro' | 'Relay';
     battery: number;
     targetSector: Sector | null;
+    isConnected: boolean;
+    memory: string[];
 };
+
+type SwarmMessage = {
+    id: string;
+    sender: string;
+    time: number;
+    type: 'HIGH_SIGNAL' | 'REQUEST_ASSIST' | 'MAP_SHARE';
+    payload: Record<string, unknown>;
+};
+
+const COMM_RANGE_DRONE = 5;
+const COMM_RANGE_RELAY = 10;
+const COMM_RANGE_BASE = 12;
+
+const BASE_STATION = { id: 'BASE', x: 9.5, y: 19 };
+
+type CommEdge = { source: string; target: string; active: boolean };
 
 type HiddenSurvivor = {
     id: string;
@@ -51,7 +68,7 @@ type FoundPin = {
     id: string;
     x: number;
     y: number;
-    info: any;
+    info: { message: string, battery: string, img?: string };
 };
 
 // Utilities
@@ -84,7 +101,7 @@ const createGrid = (): Sector[][] => {
             else if (r < 0.4) terrain = 'Collapsed Area';
             else if (r < 0.5) terrain = 'Shelter';
 
-            row.push({ x, y, prob: 0, pheromone: 0, terrain, scanned: false });
+            row.push({ x, y, prob: 0, pheromone: 0, terrain, scanned: false, lastScanned: 0 });
         }
         g.push(row);
     }
@@ -93,11 +110,11 @@ const createGrid = (): Sector[][] => {
 
 const createDrones = (): Drone[] => {
     return [
-        { id: 'DRN-Alpha', x: 9, y: 9, tx: 2, ty: 2, mode: 'Wide', battery: 100, targetSector: null },
-        { id: 'DRN-Beta', x: 10, y: 9, tx: 17, ty: 2, mode: 'Wide', battery: 100, targetSector: null },
-        { id: 'DRN-Gamma', x: 9, y: 10, tx: 2, ty: 17, mode: 'Wide', battery: 100, targetSector: null },
-        { id: 'DRN-Delta', x: 10, y: 10, tx: 17, ty: 17, mode: 'Wide', battery: 100, targetSector: null },
-        { id: 'RLY-Prime', x: 9.5, y: 9.5, tx: 9.5, ty: 9.5, mode: 'Relay', battery: 100, targetSector: null }
+        { id: 'DRN-Alpha', x: 9, y: 9, tx: 2, ty: 2, mode: 'Wide', battery: 100, targetSector: null, isConnected: true, memory: [] },
+        { id: 'DRN-Beta', x: 10, y: 9, tx: 17, ty: 2, mode: 'Wide', battery: 100, targetSector: null, isConnected: true, memory: [] },
+        { id: 'DRN-Gamma', x: 9, y: 10, tx: 2, ty: 17, mode: 'Wide', battery: 100, targetSector: null, isConnected: true, memory: [] },
+        { id: 'DRN-Delta', x: 10, y: 10, tx: 17, ty: 17, mode: 'Wide', battery: 100, targetSector: null, isConnected: true, memory: [] },
+        { id: 'RLY-Prime', x: 9.5, y: 9.5, tx: 9.5, ty: 9.5, mode: 'Relay', battery: 100, targetSector: null, isConnected: true, memory: [] }
     ];
 };
 
@@ -114,12 +131,16 @@ const SimulationMap: React.FC = () => {
     const [running, setRunning] = useState(false);
     const [speed, setSpeed] = useState(1);
 
-    // Sim State Refs (to avoid React render loop lag, but we will force render for UI updates)
+    // Sim State Refs (to avoid React render loop lag)
     const gridRef = useRef<Sector[][]>(createGrid());
     const dronesRef = useRef<Drone[]>(createDrones());
     const survivorsRef = useRef<HiddenSurvivor[]>(createSurvivors());
     const pinsRef = useRef<FoundPin[]>([]);
     const timeRef = useRef<number>(0);
+    const commLinksRef = useRef<CommEdge[]>([]);
+    const swarmMessagesRef = useRef<SwarmMessage[]>([]);
+    const sensorWeightsRef = useRef(JSON.parse(JSON.stringify(INITIAL_SENSORS))); // Deep copy for mutable weights
+
     const [, setTickFlip] = useState(0); // Forcing re-render
     const [selectedPin, setSelectedPin] = useState<FoundPin | null>(null);
 
@@ -129,14 +150,22 @@ const SimulationMap: React.FC = () => {
         dronesRef.current = createDrones();
         survivorsRef.current = createSurvivors();
         pinsRef.current = [];
+        commLinksRef.current = [];
+        swarmMessagesRef.current = [];
+        sensorWeightsRef.current = JSON.parse(JSON.stringify(INITIAL_SENSORS));
         timeRef.current = 0;
         setSelectedPin(null);
         setTickFlip(f => f + 1);
     };
 
+    const getEffectiveWeight = (key: keyof typeof INITIAL_SENSORS) => {
+        const w = sensorWeightsRef.current[key];
+        return w.base * w.conf;
+    };
+
     const getSectorProbability = (x: number, y: number) => {
         // True probability depends on proximity to hidden survivors
-        let base_prob = 0.05 + (Math.random() * 0.1);
+        const base_prob = 0.05 + (Math.random() * 0.1);
         let max_signal = 0;
 
         survivorsRef.current.forEach(s => {
@@ -174,17 +203,29 @@ const SimulationMap: React.FC = () => {
 
     const performTick = useCallback(() => {
         timeRef.current++;
-        let grid = gridRef.current;
-        let drones = dronesRef.current;
-        let survivors = survivorsRef.current;
+        const grid = gridRef.current;
+        const drones = dronesRef.current;
+        const survivors = survivorsRef.current;
+        const messages = swarmMessagesRef.current;
+
+        // Cleanup old messages 
+        if (messages.length > 5) swarmMessagesRef.current = messages.slice(messages.length - 5);
+
+        const addMessage = (droneId: string, type: 'HIGH_SIGNAL' | 'REQUEST_ASSIST' | 'MAP_SHARE', payload: Record<string, unknown>) => {
+            swarmMessagesRef.current.push({
+                id: Math.random().toString(36).substring(2, 9),
+                sender: droneId,
+                time: timeRef.current,
+                type,
+                payload
+            });
+        };
 
         // 1. Prediction / Markov Chain: Hidden survivors might move
-        // Every 50 ticks, chance to move
         if (timeRef.current % 50 === 0) {
             survivors.forEach(s => {
                 if (s.found) return;
                 const r = Math.random();
-                // 10% chance to move to adjacent cell based on terrain probabilities
                 if (r < 0.1) {
                     const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
                     const validDirs = dirs.filter(d => s.x + d[0] >= 0 && s.x + d[0] < GRID_W && s.y + d[1] >= 0 && s.y + d[1] < GRID_H);
@@ -195,6 +236,90 @@ const SimulationMap: React.FC = () => {
                     }
                 }
             });
+        }
+
+        // 1.5 Communication Mesh Graph & BFS
+        const nodes = [{ id: BASE_STATION.id, x: BASE_STATION.x, y: BASE_STATION.y, isConnected: true }, ...drones];
+        const adj = new Map<string, string[]>();
+        nodes.forEach(n => adj.set(n.id, []));
+
+        commLinksRef.current = [];
+
+        for (let i = 0; i < nodes.length; i++) {
+            for (let j = i + 1; j < nodes.length; j++) {
+                const n1 = nodes[i];
+                const n2 = nodes[j];
+                const dist = Math.sqrt(Math.pow(n1.x - n2.x, 2) + Math.pow(n1.y - n2.y, 2));
+
+                let range1 = COMM_RANGE_DRONE;
+                if (n1.id === BASE_STATION.id) range1 = COMM_RANGE_BASE;
+                else if ((n1 as Drone).mode === 'Relay') range1 = COMM_RANGE_RELAY;
+
+                let range2 = COMM_RANGE_DRONE;
+                if (n2.id === BASE_STATION.id) range2 = COMM_RANGE_BASE;
+                else if ((n2 as Drone).mode === 'Relay') range2 = COMM_RANGE_RELAY;
+
+                if (dist <= Math.max(range1, range2)) {
+                    adj.get(n1.id)!.push(n2.id);
+                    adj.get(n2.id)!.push(n1.id);
+                    commLinksRef.current.push({ source: n1.id, target: n2.id, active: false });
+                }
+            }
+        }
+
+        const visited = new Set<string>();
+        const queue = [BASE_STATION.id];
+        const parent = new Map<string, string>();
+        visited.add(BASE_STATION.id);
+
+        while (queue.length > 0) {
+            const curr = queue.shift()!;
+            const neighbors = adj.get(curr)!;
+            for (const nxt of neighbors) {
+                if (!visited.has(nxt)) {
+                    visited.add(nxt);
+                    queue.push(nxt);
+                    parent.set(nxt, curr);
+                }
+            }
+        }
+
+        let disconnectedCount = 0;
+        drones.forEach(d => {
+            d.isConnected = visited.has(d.id);
+            if (!d.isConnected && d.mode !== 'Relay') disconnectedCount++;
+        });
+
+        // Smart Relay Coverage Maximization
+        const relayDrone = drones.find(d => d.mode === 'Relay');
+        if (relayDrone && disconnectedCount > 0) {
+            const disconnected = drones.filter(d => !d.isConnected && d.mode !== 'Relay');
+            if (disconnected.length > 0) {
+                let cx = 0, cy = 0;
+                disconnected.forEach(d => { cx += d.x; cy += d.y; });
+                cx /= disconnected.length;
+                cy /= disconnected.length;
+
+                relayDrone.tx = (cx + BASE_STATION.x) / 2;
+                relayDrone.ty = (cy + BASE_STATION.y) / 2;
+            }
+        } else if (relayDrone && disconnectedCount === 0) {
+            relayDrone.tx = GRID_W / 2;
+            relayDrone.ty = GRID_H / 2;
+        }
+
+        if (Math.random() < 0.2 && drones.length > 0) {
+            const connected = drones.filter(d => d.isConnected);
+            if (connected.length > 0) {
+                const sender = connected[Math.floor(Math.random() * connected.length)];
+                let curr = sender.id;
+                while (curr !== BASE_STATION.id && parent.has(curr)) {
+                    const p = parent.get(curr)!;
+                    const edge = commLinksRef.current.find(e => (e.source === curr && e.target === p) || (e.source === p && e.target === curr));
+                    if (edge) edge.active = true;
+                    curr = p;
+                }
+            }
         }
 
         // 2. Drone Logic
@@ -228,6 +353,7 @@ const SimulationMap: React.FC = () => {
                     if (newProb > THRESHOLD_MICRO) {
                         // Switch to Micro-Scan (Exploitation)
                         d.mode = 'Micro';
+                        if (d.isConnected) addMessage(d.id, 'REQUEST_ASSIST', { sector: `[${sx},${sy}]` });
                     } else {
                         // Ant Colony Routing: Pick a nearby sector based on pheromones
                         const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, -1], [-1, 1], [1, -1]];
@@ -260,14 +386,16 @@ const SimulationMap: React.FC = () => {
                                 }
                             }
 
-                            if (!pinsRef.current.find(p => p.id === s.id)) {
-                                pinsRef.current.push({
-                                    id: s.id,
-                                    x: sx,
-                                    y: sy,
-                                    info: s.info
-                                });
-                            }
+                            d.memory.push(s.id);
+
+                            // --- Real Adaptive Learning ---
+                            // Increase sensor confidence explicitly based on success rate
+                            const weights = sensorWeightsRef.current;
+                            (Object.keys(weights) as Array<keyof typeof INITIAL_SENSORS>).forEach(k => {
+                                weights[k].conf = Math.min(1.0, weights[k].conf + 0.04);
+                            });
+
+                            if (d.isConnected) addMessage(d.id, 'HIGH_SIGNAL', { survivorId: s.id });
 
                             // Send far away
                             d.mode = 'Wide';
@@ -296,7 +424,7 @@ const SimulationMap: React.FC = () => {
                     }
                 }
             } else {
-                // Move towards target
+                // Move towards target (Original Simple Movement)
                 const moveSpeed = d.mode === 'Wide' ? 0.4 : 0.1;
                 const totalMove = Math.min(moveSpeed, distToTarget);
                 const angle = Math.atan2(d.ty - d.y, d.tx - d.x);
@@ -305,6 +433,36 @@ const SimulationMap: React.FC = () => {
                 d.battery -= 0.05;
             }
         });
+
+        // Data Sync (Reporting to Base Station)
+        drones.forEach(d => {
+            if (d.isConnected && d.memory.length > 0) {
+                d.memory.forEach(sId => {
+                    if (!pinsRef.current.find(p => p.id === sId)) {
+                        const s = survivors.find(sup => sup.id === sId);
+                        if (s) {
+                            pinsRef.current.push({ id: s.id, x: s.x, y: s.y, info: s.info });
+                            let curr = d.id;
+                            while (curr && curr !== BASE_STATION.id && parent.has(curr)) {
+                                const p = parent.get(curr)!;
+                                const edge = commLinksRef.current.find(e => (e.source === curr && e.target === p) || (e.source === p && e.target === curr));
+                                if (edge) edge.active = true;
+                                curr = p;
+                            }
+                        }
+                    }
+                });
+                d.memory = [];
+            }
+        });
+
+        // Map share heartbeat
+        if (timeRef.current > 0 && timeRef.current % 100 === 0) {
+            const connected = drones.filter(d => d.isConnected && d.mode !== 'Relay');
+            if (connected.length > 0) {
+                addMessage(connected[Math.floor(Math.random() * connected.length)].id, 'MAP_SHARE', { bytes: 1420 });
+            }
+        }
 
         // 3. Global Swarm Planner (Haversine Priority Assignment)
         // If a sector has high prob but no drone is near, assign the closest Wide-scan drone
@@ -322,7 +480,7 @@ const SimulationMap: React.FC = () => {
                 let min_dist = Infinity;
 
                 for (const d of drones) {
-                    if (d.mode === 'Wide') {
+                    if (d.mode === 'Wide' && d.isConnected) {
                         const loc2 = getLatLon(d.x, d.y);
                         const dist = haversineDistance(loc1.lat, loc1.lon, loc2.lat, loc2.lon);
                         if (dist < min_dist) {
@@ -346,10 +504,11 @@ const SimulationMap: React.FC = () => {
         }));
 
         setTickFlip(f => f + 1);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
-        let interval: any;
+        let interval: ReturnType<typeof setInterval>;
         if (running) {
             interval = setInterval(performTick, 100 / speed);
         }
@@ -400,6 +559,40 @@ const SimulationMap: React.FC = () => {
                             ))
                         )}
 
+                        {/* Comm Network Edges */}
+                        {commLinksRef.current.map((link, idx) => {
+                            const getCoords = (id: string) => {
+                                if (id === BASE_STATION.id) return { x: BASE_STATION.x, y: BASE_STATION.y };
+                                const d = dronesRef.current.find(dr => dr.id === id);
+                                if (d) return { x: d.x, y: d.y };
+                                return null;
+                            };
+                            const c1 = getCoords(link.source);
+                            const c2 = getCoords(link.target);
+                            if (!c1 || !c2) return null;
+                            const x1 = c1.x * CELL_SIZE + CELL_SIZE / 2;
+                            const y1 = c1.y * CELL_SIZE + CELL_SIZE / 2;
+                            const x2 = c2.x * CELL_SIZE + CELL_SIZE / 2;
+                            const y2 = c2.y * CELL_SIZE + CELL_SIZE / 2;
+
+                            return (
+                                <g key={`edge-${idx}`}>
+                                    <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#33ffaa" strokeWidth="1" strokeDasharray="4" style={{ opacity: 0.3 }} />
+                                    {link.active && (
+                                        <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#ffff00" strokeWidth="3" style={{ opacity: 0.8, filter: 'drop-shadow(0 0 4px #ffff00)' }} />
+                                    )}
+                                </g>
+                            );
+                        })}
+
+                        {/* Base Station Vis */}
+                        <g transform={`translate(${BASE_STATION.x * CELL_SIZE + CELL_SIZE / 2}, ${BASE_STATION.y * CELL_SIZE + CELL_SIZE / 2})`}>
+                            <rect x="-15" y="-15" width="30" height="30" fill="var(--panel-bg)" stroke="#33ffaa" strokeWidth="2" />
+                            <Radio color="#33ffaa" size={20} style={{ transform: 'translate(-10px, -10px)' }} />
+                            <text x="20" y="5" fill="#33ffaa" fontSize="10" fontFamily="var(--font-mono)">BASE</text>
+                            <circle r={COMM_RANGE_BASE * CELL_SIZE} fill="transparent" stroke="#33ffaa" strokeWidth="1" strokeDasharray="10 5" style={{ animation: 'spin 10s linear infinite reverse', opacity: 0.2 }} />
+                        </g>
+
                         {/* Terrain Overlays */}
                         {gridRef.current.map((row, y) => row.map((cell, x) => {
                             if (cell.terrain === 'Road') {
@@ -430,8 +623,9 @@ const SimulationMap: React.FC = () => {
                                     <circle r={CELL_SIZE * 3.5} fill="transparent" stroke="#0077ff" strokeWidth="1" strokeDasharray="8" style={{ opacity: 0.2, animation: 'spin 8s linear infinite reverse' }} />
                                 )}
                                 {/* Drone blip */}
-                                <circle r="4" fill={d.mode === 'Relay' ? '#0077ff' : d.mode === 'Wide' ? '#00ffcc' : '#ff4444'} />
-                                <polygon points="0,-6 6,4 -6,4" fill={d.mode === 'Relay' ? '#0077ff' : d.mode === 'Wide' ? '#00ffcc' : '#ff4444'} />
+                                <circle r="4" fill={!d.isConnected ? '#555555' : d.mode === 'Relay' ? '#0077ff' : d.mode === 'Wide' ? '#00ffcc' : '#ff4444'} />
+                                <polygon points="0,-6 6,4 -6,4" fill={!d.isConnected ? '#555555' : d.mode === 'Relay' ? '#0077ff' : d.mode === 'Wide' ? '#00ffcc' : '#ff4444'} />
+                                {!d.isConnected && <text x="10" y="0" fill="#ff4444" fontSize="8" fontFamily="var(--font-mono)">OFFLINE</text>}
                                 {/* Haversine Line visually tracking target */}
                                 {d.mode === 'Micro' && (
                                     <line
@@ -466,6 +660,7 @@ const SimulationMap: React.FC = () => {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #00ffcc' }}></div> Wide-Scan Mode</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #ff4444' }}></div> Micro-Scan Mode</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #0077ff' }}></div> Relay Drone</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #555555' }}></div> Disconnected</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#00ffcc' }}><MapPin size={12} /> Confirmed Survivor</div>
                         </div>
                     </div>
@@ -530,19 +725,21 @@ const SimulationMap: React.FC = () => {
                                         {d.mode === 'Wide' ? <Target size={14} color="#00ffcc" /> : d.mode === 'Relay' ? <Radio size={14} color="#0077ff" /> : <Crosshair size={14} color="#ff4444" />}
                                         {d.id}
                                     </div>
-                                    <div style={{ color: d.mode === 'Wide' ? '#00ffcc' : d.mode === 'Relay' ? '#0077ff' : '#ff4444' }}>{d.mode}</div>
+                                    <div style={{ color: !d.isConnected ? '#555555' : d.mode === 'Wide' ? '#00ffcc' : d.mode === 'Relay' ? '#0077ff' : '#ff4444' }}>
+                                        {!d.isConnected ? 'DISCONNECTED' : d.mode}
+                                    </div>
                                 </div>
                             ))}
                         </div>
                     </div>
 
-                    <div className="hud-panel" style={{ padding: '16px', flex: 1 }}>
+                    <div className="hud-panel" style={{ padding: '16px', flex: 1, display: 'flex', flexDirection: 'column' }}>
                         <h4 className="hud-text" style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <Radio size={18} /> ADAPTIVE SENSORS
                         </h4>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            {Object.entries(SENSORS).map(([key, data]) => {
+                            {(Object.entries(sensorWeightsRef.current) as [keyof typeof INITIAL_SENSORS, { base: number, conf: number, color: string }][]).map(([key, data]) => {
                                 const finalW = (data.base * data.conf).toFixed(2);
                                 return (
                                     <div key={key}>
@@ -558,15 +755,25 @@ const SimulationMap: React.FC = () => {
                             })}
                         </div>
 
-                        <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--panel-border)' }}>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>ALGORITHM LOG</div>
-                            <div className="hud-text" style={{ fontSize: '0.65rem', color: 'var(--text-primary)', opacity: 0.7, height: '100px', overflowY: 'hidden' }}>
-                                <div>&gt; Sys initialized. Using Haversine pathfinding.</div>
-                                <div>&gt; ACO Exploration mode active.</div>
-                                {timeRef.current > 0 && <div>&gt; Prob calculation threshold w=(Wi*R).</div>}
-                                {timeRef.current > 50 && <div>&gt; Markov prediction matrix updated.</div>}
-                                {pinsRef.current.map((p, idx) => (
-                                    <div key={idx} style={{ color: '#00ffcc' }}>&gt; Survivor {p.id} confirmed at {p.x},{p.y}</div>
+                        {/* Communication Log */}
+                        <div style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid var(--panel-border)', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                                <span>COMMUNICATION LOG</span>
+                                <span className="animate-pulse" style={{ color: '#00ffcc' }}>● LIVE</span>
+                            </div>
+                            <div className="hud-text" style={{ fontSize: '0.65rem', color: 'var(--text-primary)', opacity: 0.8, overflowY: 'auto', flex: 1, maxHeight: '120px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <div><span style={{ color: '#555' }}>[SYS]</span> Decentralized swarm initialized.</div>
+                                <div><span style={{ color: '#555' }}>[SYS]</span> Using Haversine pathfinding.</div>
+                                <div><span style={{ color: '#555' }}>[SYS]</span> ACO Exploration mode active.</div>
+
+                                {swarmMessagesRef.current.map((msg) => (
+                                    <div key={msg.id} style={{ display: 'flex', gap: '4px' }}>
+                                        <span style={{ color: '#555' }}>[T-{msg.time}]</span>
+                                        <span style={{ color: '#00ffcc' }}>{msg.sender}:</span>
+                                        <span style={{ color: msg.type === 'HIGH_SIGNAL' ? '#ff4444' : msg.type === 'REQUEST_ASSIST' ? '#ffff00' : 'var(--text-primary)' }}>
+                                            {msg.type.toLowerCase()}({JSON.stringify(msg.payload)})
+                                        </span>
+                                    </div>
                                 ))}
                             </div>
                         </div>

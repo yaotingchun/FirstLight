@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Activity, Map as MapIcon, Target, Layers, Cpu, Navigation } from 'lucide-react';
+import { Activity, Map as MapIcon, Settings, Target, Layers, Cpu, Navigation, Camera } from 'lucide-react';
 
 const Sidebar: React.FC = () => {
     return (
@@ -76,6 +76,24 @@ const Sidebar: React.FC = () => {
                     3D Prob Map
                 </NavLink>
 
+                <NavLink to="/routing" style={({ isActive }) => ({
+                    display: 'flex', alignItems: 'center', gap: '16px',
+                    padding: '12px 16px',
+                    textDecoration: 'none',
+                    color: isActive ? 'var(--bg-color)' : 'var(--text-primary)',
+                    backgroundColor: isActive ? 'var(--accent-primary)' : 'transparent',
+                    border: isActive ? '1px solid var(--accent-primary)' : '1px solid transparent',
+                    fontFamily: 'var(--font-mono)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '1px',
+                    fontSize: '0.9rem',
+                    transition: 'all 0.2s ease',
+                    boxShadow: isActive ? '0 0 10px rgba(0, 255, 204, 0.3)' : 'none'
+                })}>
+                    <Navigation size={20} />
+                    Pathing & Routing
+                </NavLink>
+                
                 <NavLink to="/simulation" style={({ isActive }) => ({
                     display: 'flex', alignItems: 'center', gap: '16px',
                     padding: '12px 16px',
@@ -94,23 +112,6 @@ const Sidebar: React.FC = () => {
                     Swarm AI Sim
                 </NavLink>
 
-                <NavLink to="/routing" style={({ isActive }) => ({
-                    display: 'flex', alignItems: 'center', gap: '16px',
-                    padding: '12px 16px',
-                    textDecoration: 'none',
-                    color: isActive ? 'var(--bg-color)' : 'var(--text-primary)',
-                    backgroundColor: isActive ? 'var(--accent-primary)' : 'transparent',
-                    border: isActive ? '1px solid var(--accent-primary)' : '1px solid transparent',
-                    fontFamily: 'var(--font-mono)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '1px',
-                    fontSize: '0.9rem',
-                    transition: 'all 0.2s ease',
-                    boxShadow: isActive ? '0 0 10px rgba(0, 255, 204, 0.3)' : 'none'
-                })}>
-                    <Navigation size={20} />
-                    Pathing & Routing
-                </NavLink>
                 <NavLink to="/simulation-duplicate" style={({ isActive }) => ({
                     display: 'flex', alignItems: 'center', gap: '16px',
                     padding: '12px 16px',
@@ -127,6 +128,24 @@ const Sidebar: React.FC = () => {
                 })}>
                     <Cpu size={20} />
                     Swarm AI Sim 2
+                </NavLink>
+                
+                <NavLink to="/drone-cam" style={({ isActive }) => ({
+                    display: 'flex', alignItems: 'center', gap: '16px',
+                    padding: '12px 16px',
+                    textDecoration: 'none',
+                    color: isActive ? 'var(--bg-color)' : 'var(--text-primary)',
+                    backgroundColor: isActive ? 'var(--accent-primary)' : 'transparent',
+                    border: isActive ? '1px solid var(--accent-primary)' : '1px solid transparent',
+                    fontFamily: 'var(--font-mono)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '1px',
+                    fontSize: '0.9rem',
+                    transition: 'all 0.2s ease',
+                    boxShadow: isActive ? '0 0 10px rgba(0, 255, 204, 0.3)' : 'none'
+                })}>
+                    <Camera size={20} />
+                    Drone Cam
                 </NavLink>
             </nav>
 
