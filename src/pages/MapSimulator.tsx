@@ -1,207 +1,177 @@
 import React, { useState, useEffect } from 'react';
-import { Crosshair, Map as MapIcon, Wifi, Radio } from 'lucide-react';
+import { Crosshair, Activity } from 'lucide-react';
+import type { HeatmapCell, ScanResult } from '../services/heatmapService';
+import { generateHeatmapGrid, scanCell } from '../services/heatmapService';
 
-// Generate mock buildings map
-const GRID_SIZE = 8;
-const CELL_SIZE = 80;
-
-interface Building {
-    id: number;
-    row: number;
-    col: number;
-    probability: number;
-    type: 'residential' | 'commercial' | 'school' | 'hospital';
-}
-
-const generateMap = (): Building[] => {
-    const map: Building[] = [];
-    for (let row = 0; row < GRID_SIZE; row++) {
-        for (let col = 0; col < GRID_SIZE; col++) {
-            let type: Building['type'] = 'residential';
-            if (row === 2 && col === 3) type = 'school';
-            if (row === 6 && col === 6) type = 'hospital';
-            if (Math.random() > 0.8) type = 'commercial';
-
-            let prob = Math.random() * 0.3; // Base prob 0-30%
-            if (type === 'school') prob += 0.4;
-            if (type === 'hospital') prob += 0.5;
-
-            map.push({ id: row * GRID_SIZE + col, row, col, probability: Math.min(prob, 1), type });
-        }
-    }
-    return map;
-};
-
-const DroneSimMap: React.FC<{ buildings: Building[] }> = ({ buildings }) => {
-    // Simulate drone positions moving
-    const [drones, setDrones] = useState([
-        { id: 1, x: 100, y: 100, target: { x: 400, y: 400 }, status: 'scanning' },
-        { id: 2, x: 500, y: 200, target: { x: 200, y: 500 }, status: 'micro-scan' },
-        { id: 3, x: 300, y: 600, target: { x: 600, y: 100 }, status: 'moving' }
-    ]);
-
-    useEffect(() => {
-        const interval = setInterval(() => {
-            setDrones(prev => prev.map(drone => {
-                const dx = drone.target.x - drone.x;
-                const dy = drone.target.y - drone.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-
-                if (dist < 10) {
-                    // New target
-                    return { ...drone, target: { x: Math.random() * 600, y: Math.random() * 600 } };
-                }
-
-                return {
-                    ...drone,
-                    x: drone.x + (dx / dist) * 5,
-                    y: drone.y + (dy / dist) * 5
-                };
-            }));
-        }, 100);
-        return () => clearInterval(interval);
-    }, []);
-
-    return (
-        <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', background: '#020709', border: '1px solid var(--panel-border)' }}>
-            {/* Grid Overlay */}
-            <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                        <path d="M 40 0 L 0 0 0 40" fill="none" stroke="var(--panel-border)" strokeWidth="0.5" opacity="0.3" />
-                    </pattern>
-                </defs>
-                <rect width="100%" height="100%" fill="url(#grid)" />
-
-                {/* Buildings (Probability Heatmap visualization as isometric heights or glowing boxes) */}
-                {buildings.map(b => {
-                    const x = b.col * CELL_SIZE + 40;
-                    const y = b.row * CELL_SIZE + 40;
-                    // High probability = bright neon cyan glow, Low probability = dark teal
-                    const isHigh = b.probability > 0.6;
-                    const fillColor = isHigh ? 'var(--accent-primary)' : 'var(--accent-muted)';
-                    const opacity = Math.max(0.1, b.probability);
-
-                    return (
-                        <g key={b.id} transform={`translate(${x}, ${y})`}>
-                            {/* Simulated 'Height' via shadow/glow */}
-                            <rect x="-30" y="-30" width="60" height="60" fill="var(--bg-color)" stroke="var(--panel-border)" strokeWidth="1" />
-                            <rect x="-26" y="-26" width="52" height="52" fill={fillColor} fillOpacity={opacity} />
-
-                            {isHigh && (
-                                <>
-                                    <rect x="-30" y="-30" width="60" height="60" fill="none" stroke="var(--accent-primary)" strokeWidth="2" strokeOpacity={0.8} />
-                                    {/* Crosshair marking high target */}
-                                    <path d="M -10 0 L 10 0 M 0 -10 L 0 10" stroke="var(--bg-color)" strokeWidth="2" />
-                                </>
-                            )}
-                            {/* Type Badges */}
-                            {b.type === 'school' && <text x="-20" y="20" fill="var(--warning)" fontSize="10" fontFamily="var(--font-mono)">[SCH]</text>}
-                            {b.type === 'hospital' && <text x="-20" y="20" fill="var(--warning)" fontSize="10" fontFamily="var(--font-mono)">[HOS]</text>}
-                        </g>
-                    )
-                })}
-
-                {/* Drones */}
-                {drones.map(d => (
-                    <g key={d.id} transform={`translate(${d.x}, ${d.y})`} style={{ transition: 'transform 0.1s linear' }}>
-                        <circle r="15" fill="none" stroke="var(--accent-secondary)" strokeWidth="1" strokeDasharray="4 2" className="animate-spin" />
-                        <circle r="5" fill="var(--bg-color)" stroke="var(--accent-secondary)" strokeWidth="2" />
-                        <text x="12" y="-12" fill="var(--accent-secondary)" fontSize="10" fontFamily="var(--font-mono)">DRN_{d.id}</text>
-                        <path d={`M 0 0 L ${d.target.x - d.x} ${d.target.y - d.y}`} stroke="var(--accent-secondary)" strokeOpacity="0.2" strokeWidth="1" strokeDasharray="2 2" />
-                    </g>
-                ))}
-
-                {/* Decorative Sci-Fi UI Overlay */}
-                <path d="M 0 20 L 20 0 L 100 0" fill="none" stroke="var(--accent-primary)" strokeWidth="1" />
-                <path d="M 100% 100% L calc(100% - 20px) calc(100% - 20px)" fill="none" stroke="var(--accent-primary)" strokeWidth="1" />
-            </svg>
-
-            {/* Absolute UI Overlays */}
-            <div style={{ position: 'absolute', top: 16, right: 16, display: 'flex', gap: '8px' }}>
-                <div className="btn-cyber active"><MapIcon size={14} /> HEATMAP</div>
-                <div className="btn-cyber"><Wifi size={14} /> RF_SWEEP</div>
-                <div className="btn-cyber"><Radio size={14} /> AUDIO_SCAN</div>
-            </div>
-
-        </div>
-    );
-};
+const GRID_SIZE = 15; // Adjusted size for a better view
+const CELL_SIZE = 60; // Render size of each grid square
 
 const MapSimulator: React.FC = () => {
-    const [buildings, setBuildings] = useState<Building[]>([]);
+    const [grid, setGrid] = useState<HeatmapCell[][]>([]);
 
+    // Generate initial default probability grid on mount
     useEffect(() => {
-        setBuildings(generateMap());
+        setGrid(generateHeatmapGrid(GRID_SIZE));
     }, []);
+
+    // Function to handle clicking on a cell to simulate a scan
+    const handleCellScan = (r: number, c: number, simulatedResult: ScanResult) => {
+        setGrid(prev => {
+            const newGrid = [...prev];
+            const newRow = [...newGrid[r]];
+            
+            // Scan the cell using our service logic
+            newRow[c] = scanCell(newRow[c], simulatedResult);
+            
+            newGrid[r] = newRow;
+            return newGrid;
+        });
+    };
+
+    /**
+     * Determines the heatmap color based on the probability rules requested:
+     * Red (High) >= 0.7
+     * Yellow (Medium) 0.4 - 0.69
+     * Blue (Low) < 0.4
+     */
+    const getCellColor = (prob: number) => {
+        if (prob >= 0.7) return 'rgba(255, 68, 68, 0.8)'; // Red
+        if (prob >= 0.4) return 'rgba(255, 204, 0, 0.8)'; // Yellow
+        return 'rgba(60, 150, 255, 0.6)'; // Blue
+    };
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '16px' }}>
             <header>
-                <h2 className="hud-text glow-text" style={{ fontSize: '1.5rem', color: 'var(--accent-primary)' }}>TACTICAL MAP & PROBABILITY VIZ</h2>
-                <p className="hud-text" style={{ color: 'var(--text-secondary)' }}>&gt; WIDE AREA SCAN IN PROGRESS</p>
+                <h2 className="hud-text glow-text" style={{ fontSize: '1.5rem', color: 'var(--accent-primary)' }}>TACTICAL HEATMAP SCAN MODULE</h2>
+                <p className="hud-text" style={{ color: 'var(--text-secondary)' }}>&gt; SURVIVOR PROBABILITY MODEL (STATIC-ENV + DYNAMIC-SCAN)</p>
             </header>
 
             <div style={{ flex: 1, display: 'flex', gap: '24px' }}>
-                {/* Map Container */}
-                <div className="hud-panel" style={{ flex: 2, position: 'relative' }}>
-                    <DroneSimMap buildings={buildings} />
+                {/* Heatmap Grid Container */}
+                <div className="hud-panel" style={{ flex: 2, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#020709' }}>
+                    
+                    <svg width={GRID_SIZE * CELL_SIZE} height={GRID_SIZE * CELL_SIZE} style={{ border: '2px solid rgba(0, 255, 204, 0.2)' }}>
+                        {grid.map((row, r) => 
+                            row.map((cell, c) => (
+                                <g key={cell.id} transform={`translate(${c * CELL_SIZE}, ${r * CELL_SIZE})`}>
+                                    {/* Main Cell Background using the requested coloring logic */}
+                                    <rect 
+                                        width={CELL_SIZE} 
+                                        height={CELL_SIZE} 
+                                        fill={getCellColor(cell.probability)}
+                                        stroke="rgba(0, 255, 204, 0.1)"
+                                        strokeWidth="1"
+                                        style={{ transition: 'fill 0.3s ease-in-out' }}
+                                    />
 
+                                    {/* Probability Text overlay */}
+                                    <text 
+                                        x={CELL_SIZE / 2} 
+                                        y={CELL_SIZE / 2} 
+                                        textAnchor="middle" 
+                                        alignmentBaseline="central"
+                                        fill="white"
+                                        fontSize="10"
+                                        fontFamily="var(--font-mono)"
+                                        fontWeight="bold"
+                                        style={{ opacity: 0.8 }}
+                                    >
+                                        {(cell.probability * 100).toFixed(0)}%
+                                    </text>
+
+                                    {/* Scanned indicator mark */}
+                                    {cell.scanned && (
+                                        <Crosshair 
+                                            size={12} 
+                                            color="white" 
+                                            style={{ position: 'absolute' }} 
+                                            x={4} y={4} 
+                                            opacity={0.6}
+                                        />
+                                    )}
+
+                                    {/* Invisible interactive overlay to make cells clickable for scan simulation */}
+                                    {/* We attach different simulated results to different mouse events to test without overwhelming UI buttons */}
+                                    <rect 
+                                        width={CELL_SIZE} 
+                                        height={CELL_SIZE} 
+                                        fill="transparent"
+                                        cursor="crosshair"
+                                        onClick={(e) => {
+                                            // Left click simulates 'thermal' (+0.3)
+                                            // Shift + Left click simulates 'motion' (+0.2)
+                                            // Alt + Left click simulates 'none' (*0.5)
+                                            if (e.altKey) {
+                                                handleCellScan(r, c, 'none');
+                                            } else if (e.shiftKey) {
+                                                handleCellScan(r, c, 'motion');
+                                            } else {
+                                                handleCellScan(r, c, 'thermal');
+                                            }
+                                        }}
+                                        onContextMenu={(e) => {
+                                            e.preventDefault(); // Right click simulates 'none' empty space
+                                            handleCellScan(r, c, 'none');
+                                        }}
+                                        className="hover-scan-cell"
+                                    />
+                                </g>
+                            ))
+                        )}
+                    </svg>
+
+                    {/* Scan Legend Overlay */}
                     <div style={{ position: 'absolute', bottom: 16, left: 16, display: 'flex', gap: '16px', background: 'var(--panel-bg)', padding: '12px', border: '1px solid var(--panel-border)', backdropFilter: 'blur(4px)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', fontFamily: 'var(--font-mono)' }}>
-                            <div style={{ width: 12, height: 12, background: 'var(--accent-primary)' }}></div>
-                            High Prob
+                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', fontFamily: 'var(--font-mono)' }}>
+                            <div style={{ width: 12, height: 12, background: 'rgba(255, 68, 68, 0.8)' }}></div>
+                            High Prob (≥0.7)
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', fontFamily: 'var(--font-mono)' }}>
-                            <div style={{ width: 12, height: 12, background: 'var(--accent-muted)' }}></div>
-                            Low Prob
+                            <div style={{ width: 12, height: 12, background: 'rgba(255, 204, 0, 0.8)' }}></div>
+                            Med Prob (≥0.4)
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', fontFamily: 'var(--font-mono)' }}>
-                            <div style={{ width: 12, height: 12, border: '2px solid var(--accent-secondary)', borderRadius: '50%' }}></div>
-                            Swarm Unit
+                            <div style={{ width: 12, height: 12, background: 'rgba(60, 150, 255, 0.6)' }}></div>
+                            Low Prob (&lt;0.4)
                         </div>
                     </div>
                 </div>
 
-                {/* Metrics Container */}
+                {/* Info Panel Container */}
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <div className="hud-panel" style={{ padding: '24px', flex: 1 }}>
                         <h3 className="hud-text" style={{ color: 'var(--accent-primary)', marginBottom: '16px', borderBottom: '1px dashed var(--panel-border)', paddingBottom: '8px' }}>
-                            &gt; SENSOR FUSION WEIGHTS
+                            <Activity size={18} style={{ display: 'inline', marginRight: '8px' }}/> 
+                            HEATMAP CONFIGURATION
                         </h3>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            {[
-                                { label: 'THERMAL_IR', val: 0.8 },
-                                { label: 'MOBILE_PING (LAN/WIFI)', val: 0.9 },
-                                { label: 'BLUETOOTH_M', val: 0.4 },
-                                { label: 'ACOUSTIC_ANALYTICS', val: 0.6 }
-                            ].map(s => (
-                                <div key={s.label}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontFamily: 'var(--font-mono)', marginBottom: '4px' }}>
-                                        <span>{s.label}</span>
-                                        <span style={{ color: 'var(--accent-primary)' }}>{(s.val * 100)}%</span>
-                                    </div>
-                                    <div style={{ width: '100%', height: '4px', background: 'var(--bg-color)', border: '1px solid var(--panel-border)' }}>
-                                        <div style={{ width: `${s.val * 100}%`, height: '100%', background: 'var(--accent-primary)' }}></div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="hud-panel" style={{ padding: '24px', flex: 1 }}>
-                        <h3 className="hud-text" style={{ color: 'var(--warning)', marginBottom: '16px', borderBottom: '1px dashed var(--panel-border)', paddingBottom: '8px' }}>
-                            &gt; DISASTER HEATMAP PREDICTION
-                        </h3>
-                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: 1.5 }}>
-                            AI Model predicting survivor movement based on shelter locations and structural integrity.
-                            <br /><br />
-                            <span style={{ color: 'var(--accent-primary)' }}>[PREDICTION ENGINE: ONLINE]</span><br />
-                            Updating dynamic pathways...
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: 1.6, marginBottom: '24px' }}>
+                            Initial Probabilities derived from environment:
+                            <br/><span style={{ color: '#fff' }}>[0.5*BldgDen + 0.3*ResFactor + 0.2*RoadAcc]</span>
                         </p>
+                        
+                        <h4 className="hud-text" style={{ color: 'var(--warning)', marginTop: '32px', marginBottom: '12px' }}>DRONE SIMULATED SCAN CONTROLS</h4>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.8rem', fontFamily: 'var(--font-mono)' }}>
+                            <div style={{ background: 'rgba(255,68,68,0.1)', border: '1px solid rgba(255,68,68,0.3)', padding: '12px' }}>
+                                <strong>LEFT-CLICK CELL:</strong> <br/>Simulate <span style={{color: '#ff4444'}}>Thermal Hit</span> (p = min(p+0.3, 1))
+                            </div>
+                            <div style={{ background: 'rgba(255,204,0,0.1)', border: '1px solid rgba(255,204,0,0.3)', padding: '12px' }}>
+                                <strong>SHIFT + LEFT-CLICK CELL:</strong> <br/>Simulate <span style={{color: '#ffcc00'}}>Motion Hit</span> (p = min(p+0.2, 1))
+                            </div>
+                            <div style={{ background: 'rgba(60,150,255,0.1)', border: '1px solid rgba(60,150,255,0.3)', padding: '12px' }}>
+                                <strong>RIGHT-CLICK CELL:</strong> <br/>Simulate <span style={{color: '#3c96ff'}}>No Detection</span> (p = p * 0.5)
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             </div>
+
+            <style>{`
+                .hover-scan-cell:hover {
+                    fill: rgba(255, 255, 255, 0.2) !important;
+                }
+            `}</style>
         </div>
     );
 };
