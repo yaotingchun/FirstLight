@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard';
 import MapSimulator from './pages/MapSimulator';
 import ProbabilityMap3D from './pages/3DMap';
 import SimulationMap from './pages/SimulationMap';
+import RoutingSandbox from './pages/RoutingSandbox';
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
             <Route path="/map" element={<MapSimulator />} />
             <Route path="/3d-map" element={<ProbabilityMap3D />} />
             <Route path="/simulation" element={<SimulationMap />} />
+            <Route path="/routing" element={<RoutingSandbox />} />
           </Routes>
         </main>
       </div>
