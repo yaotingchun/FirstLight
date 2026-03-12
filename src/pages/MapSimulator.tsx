@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import DeckGL from '@deck.gl/react';
 import { TextLayer, PolygonLayer } from '@deck.gl/layers';
-import { gridDataService } from '../services/gridDataService';
+import { gridDataService, type GridSource, type TerrainType } from '../services/gridDataService';
 
 // Center location (using the one from 3DMap.tsx for consistency)
 const MAP_CENTER = { longitude: 101.6841, latitude: 3.1319 };
@@ -49,11 +49,91 @@ const getProbabilityFromTags = (tags: any): number => {
     return 0.2;
 };
 
+/** Map OSM tags → SimulationMap terrain type */
+const getTerrainFromTags = (tags: any): TerrainType => {
+    if (!tags) return 'Open Field';
+    const building = tags.building || '';
+    const amenity = tags.amenity || '';
+    const leisure = tags.leisure || '';
+    const highway = tags.highway || '';
+
+    // Residential / shelter-type buildings
+    if (['dormitory', 'residential', 'apartments', 'house', 'university',
+         'college', 'library', 'commercial', 'office'].includes(building) ||
+        ['clinic', 'hospital', 'restaurant', 'university', 'library'].includes(amenity)) {
+        return 'Shelter';
+    }
+    // Damaged / ruins
+    if (['ruins', 'collapsed', 'damaged'].includes(building) ||
+        building === 'yes') {
+        return 'Collapsed Area';
+    }
+    // Roads / open paved areas
+    if (highway || ['pitch', 'stadium', 'park'].includes(leisure) ||
+        ['garage', 'roof'].includes(building)) {
+        return 'Road';
+    }
+    return 'Open Field';
+};
+
 const MapSimulator: React.FC = () => {
     const [points, setPoints] = useState<HeatmapPoint[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
     const [simRunning, setSimRunning] = useState<boolean>(false);
+    const [scanOverlay, setScanOverlay] = useState<number[][] | null>(null);
+    const [activeSource, setActiveSource] = useState<GridSource | null>(null);
+    const [gridLog, setGridLog] = useState<{ time: string; msg: string; type: 'scan' | 'prediction' | 'info' }[]>([]);
+    const prevWeightsRef = useRef<number[][] | null>(null);
+
+    const pushGridLog = useCallback((msg: string, type: 'scan' | 'prediction' | 'info' = 'info') => {
+        const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
+        setGridLog(prev => [{ time: ts, msg, type }, ...prev].slice(0, 40));
+    }, []);
+
+    // Subscribe to gridDataService — when scan writes arrive, overlay them on the map
+    useEffect(() => {
+        const unsubscribe = gridDataService.subscribe((newWeights) => {
+            const src = gridDataService.getActiveSource();
+            setActiveSource(src);
+
+            // Detect which cells changed
+            const prev = prevWeightsRef.current;
+            let changedCells: string[] = [];
+            let maxDelta = 0;
+            if (prev) {
+                for (let r = 0; r < 20; r++) {
+                    for (let c = 0; c < 20; c++) {
+                        const oldW = prev[r]?.[c] ?? 0;
+                        const newW = newWeights[r]?.[c] ?? 0;
+                        const delta = Math.abs(newW - oldW);
+                        if (delta > 0.01) {
+                            const label = `${String.fromCharCode(65 + (19 - r))}${c + 1}`;
+                            changedCells.push(label);
+                            if (delta > maxDelta) maxDelta = delta;
+                        }
+                    }
+                }
+            }
+            // Store for next comparison
+            prevWeightsRef.current = newWeights.map(row => [...row]);
+
+            if (changedCells.length > 0) {
+                const srcLabel = src === 'scan' ? 'SCAN' : 'PRED';
+                const preview = changedCells.length <= 6
+                    ? changedCells.join(', ')
+                    : changedCells.slice(0, 5).join(', ') + ` +${changedCells.length - 5} more`;
+                pushGridLog(`[${srcLabel}] ${changedCells.length} cells Δ (max ${maxDelta.toFixed(3)}) → ${preview}`, src === 'scan' ? 'scan' : 'prediction');
+            }
+
+            if (src === 'scan') {
+                setScanOverlay(newWeights);
+            } else {
+                setScanOverlay(null);
+            }
+        });
+        return unsubscribe;
+    }, [pushGridLog]);
 
     const fetchOSMData = async () => {
         setLoading(true);
@@ -187,24 +267,77 @@ const MapSimulator: React.FC = () => {
         return cells;
     }, [points]);
 
+    // Merge scan overlay into display grid when scan data is active
+    const displayGrid = useMemo(() => {
+        if (!scanOverlay) return gridData;
+        return gridData.map(cell => {
+            const rowChar = cell.id.charAt(0);
+            const colNum = parseInt(cell.id.substring(1));
+            const r = rowChar.charCodeAt(0) - 65;
+            const c = colNum - 1;
+            if (r >= 0 && r < 20 && c >= 0 && c < 20) {
+                const scanW = scanOverlay[r]?.[c] ?? 0;
+                // Use the higher of OSM prediction or scan probability
+                const mergedWeight = Math.max(cell.weight, scanW);
+                return { ...cell, weight: mergedWeight, hasData: cell.hasData || scanW > 0.05 };
+            }
+            return cell;
+        });
+    }, [gridData, scanOverlay]);
+
     // --- Sync to Global Grid Service ---
     useEffect(() => {
+        // Only push prediction weights when scan is NOT active
+        if (activeSource === 'scan') return;
         const weights: number[][] = Array.from({ length: 20 }, () => new Array(20).fill(0.05));
         gridData.forEach(d => {
-            // d.id is rowLabel + colLabel e.g. "A1", "T20"
             const rowChar = d.id.charAt(0);
             const colNum = parseInt(d.id.substring(1));
-            
-            // Standardize: Index 0 = Row A (Top), Index 19 = Row T (Bottom)
             const r = rowChar.charCodeAt(0) - 65; 
             const c = colNum - 1;
-            
             if (r >= 0 && r < 20 && c >= 0 && c < 20) {
                 weights[r][c] = d.weight;
             }
         });
-        gridDataService.setWeights(weights);
-    }, [gridData]);
+        gridDataService.setWeights(weights, 'prediction');
+    }, [gridData, activeSource]);
+
+    // --- Sync terrain grid from OSM tags → gridDataService ---
+    useEffect(() => {
+        const terrain: TerrainType[][] = Array.from({ length: 20 }, () =>
+            new Array<TerrainType>(20).fill('Open Field')
+        );
+        const startLat = MAP_CENTER.latitude - BBOX_OFFSET;
+        const startLon = MAP_CENTER.longitude - BBOX_OFFSET;
+
+        // For each grid cell, find the dominant terrain from OSM points inside it
+        for (let r = 0; r < GRID_CELLS; r++) {
+            for (let c = 0; c < GRID_CELLS; c++) {
+                const latMin = startLat + r * DEG_STEP;
+                const lonMin = startLon + c * DEG_STEP;
+
+                const insidePoints = points.filter(p =>
+                    p.position[1] >= latMin && p.position[1] < latMin + DEG_STEP &&
+                    p.position[0] >= lonMin && p.position[0] < lonMin + DEG_STEP
+                );
+
+                if (insidePoints.length > 0) {
+                    // Pick the most common terrain type among the points in this cell
+                    const counts: Record<TerrainType, number> = {
+                        'Open Field': 0, 'Road': 0, 'Shelter': 0, 'Collapsed Area': 0
+                    };
+                    insidePoints.forEach(p => { counts[getTerrainFromTags(p.tags)]++; });
+                    const best = (Object.entries(counts) as [TerrainType, number][])
+                        .sort((a, b) => b[1] - a[1])[0][0];
+                    // Row mapping: r=0 is bottom (row T), r=19 is top (row A)
+                    // gridDataService index 0 = row A (top) = GRID_CELLS-1-r
+                    const gridRow = GRID_CELLS - 1 - r;
+                    terrain[gridRow][c] = best;
+                }
+            }
+        }
+        gridDataService.setTerrainGrid(terrain);
+    }, [points]);
 
     const getGridColor = (d: GridDataPoint): [number, number, number, number] => {
         // Uniform background: No data or Low probability (<0.3) both use Tactical Blue
@@ -219,18 +352,18 @@ const MapSimulator: React.FC = () => {
     const layers = [
         new PolygonLayer({
             id: 'grid-fill-layer',
-            data: gridData,
+            data: displayGrid,
             getPolygon: (d: GridDataPoint) => d.polygon,
             getFillColor: (d: GridDataPoint) => getGridColor(d),
             getLineColor: [0, 0, 0, 0],
             stroked: false,
             filled: true,
             pickable: false,
-            updateTriggers: { getFillColor: [points, gridData] }
+            updateTriggers: { getFillColor: [points, displayGrid, scanOverlay] }
         }),
         new PolygonLayer({
             id: 'grid-stroke-layer',
-            data: gridData,
+            data: displayGrid,
             getPolygon: (d: GridDataPoint) => d.polygon,
             getFillColor: [0, 0, 0, 0],
             getLineColor: [255, 255, 255, 40],
@@ -239,11 +372,11 @@ const MapSimulator: React.FC = () => {
             stroked: true,
             filled: false,
             pickable: false,
-            updateTriggers: { getLineColor: [gridData] }
+            updateTriggers: { getLineColor: [displayGrid] }
         }),
         new TextLayer({
             id: 'grid-label-layer',
-            data: gridData,
+            data: displayGrid,
             getPosition: (d: GridDataPoint) => d.centroid,
             getText: (d: GridDataPoint) => d.label,
             getSize: 8,
@@ -251,7 +384,7 @@ const MapSimulator: React.FC = () => {
             getAngle: 0,
             getTextAnchor: 'middle',
             getAlignmentBaseline: 'center',
-            updateTriggers: { getText: [gridData] }
+            updateTriggers: { getText: [displayGrid] }
         })
     ];
 
@@ -285,9 +418,9 @@ const MapSimulator: React.FC = () => {
                 {loading && <p style={{ color: 'var(--warning)', fontSize: '0.85rem' }}>Synchronizing with Overpass API...</p>}
                 {error && <p style={{ color: '#ff4444', fontSize: '0.85rem' }}>Error: {error}</p>}
                 {!loading && !error && (
-                    <p style={{ color: 'var(--accent-primary)', fontSize: '0.85rem' }}>
+                    <p style={{ color: activeSource === 'scan' ? '#ffff00' : 'var(--accent-primary)', fontSize: '0.85rem' }}>
                         Active Points: {points.length} | 
-                        Status: {simRunning ? 'MARKOV DIFFUSION ACTIVE' : 'TACTICAL FEED STATIC'}
+                        Status: {activeSource === 'scan' ? 'RECEIVING LIVE SCAN DATA' : simRunning ? 'MARKOV DIFFUSION ACTIVE' : 'TACTICAL FEED STATIC'}
                     </p>
                 )}
             </div>
@@ -330,6 +463,36 @@ const MapSimulator: React.FC = () => {
                     <div style={{ fontSize: '0.75rem', fontFamily: 'var(--font-mono)', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span className="animate-pulse" style={{ display: 'block', width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-primary)' }}></span>
                         {loading ? 'DOWNLOADING OSM SECTOR DATA...' : 'SYSTEM READY: RADIUS FILTER ACTIVE'}
+                    </div>
+                </div>
+
+                {/* Grid Change Log */}
+                <div style={{
+                    position: 'absolute', bottom: 8, right: 8, width: 260, maxHeight: 120,
+                    padding: '8px 10px', backgroundColor: 'rgba(5, 10, 20, 0.85)',
+                    border: '1px solid var(--panel-border)', backdropFilter: 'blur(8px)',
+                    zIndex: 10, display: 'flex', flexDirection: 'column', gap: '4px',
+                    fontSize: '0.55rem', opacity: 0.9
+                }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <h4 className="hud-text" style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', margin: 0 }}>GRID LOG</h4>
+                        <span style={{ fontSize: '0.55rem', fontFamily: 'var(--font-mono)', color: activeSource === 'scan' ? '#ffff00' : 'var(--accent-primary)' }}>
+                            {activeSource === 'scan' ? '● LIVE' : gridLog.length > 0 ? `${gridLog.length}` : 'IDLE'}
+                        </span>
+                    </div>
+                    <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '2px', maxHeight: 85 }}>
+                        {gridLog.length === 0 ? (
+                            <div style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', opacity: 0.6 }}>
+                                Waiting...
+                            </div>
+                        ) : gridLog.map((entry, idx) => (
+                            <div key={idx} style={{ fontFamily: 'var(--font-mono)', lineHeight: '1.3' }}>
+                                <span style={{ color: 'var(--text-secondary)' }}>[{entry.time}]</span>{' '}
+                                <span style={{ color: entry.type === 'scan' ? '#00ffcc' : entry.type === 'prediction' ? '#ffff00' : 'var(--text-primary)' }}>
+                                    {entry.msg}
+                                </span>
+                            </div>
+                        ))}
                     </div>
                 </div>
             </div>

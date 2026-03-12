@@ -5,13 +5,7 @@ const GRID_W = 20;
 const GRID_H = 20;
 const CELL_SIZE = 35;
 
-// Sensor definitions for Adaptive Weighting (Initial bases)
-const INITIAL_SENSORS = {
-    mobile: { base: 0.4, conf: 0.9, color: '#00ffcc' },
-    thermal: { base: 0.3, conf: 0.6, color: '#ff4444' },
-    sound: { base: 0.2, conf: 0.7, color: '#ffff00' },
-    wifi: { base: 0.1, conf: 0.8, color: '#ff00ff' }
-};
+import { gridDataService, INITIAL_SENSORS } from '../services/gridDataService';
 
 const THRESHOLD_MICRO = 0.30;
 const THRESHOLD_FOUND = 0.75;
@@ -91,18 +85,15 @@ const haversineDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
     return R * c;
 };
 
-// Mock data generation
+// Grid generation — uses real terrain from OSM data via gridDataService
 const createGrid = (): Sector[][] => {
     const g: Sector[][] = [];
+    const terrainData = gridDataService.getTerrainGrid();
+
     for (let y = 0; y < GRID_H; y++) {
         const row: Sector[] = [];
         for (let x = 0; x < GRID_W; x++) {
-            const r = Math.random();
-            let terrain = 'Open Field';
-            if (r < 0.2) terrain = 'Road';
-            else if (r < 0.4) terrain = 'Collapsed Area';
-            else if (r < 0.5) terrain = 'Shelter';
-
+            const terrain = terrainData[y]?.[x] ?? 'Open Field';
             row.push({ x, y, prob: 0, pheromone: 0, terrain, scanned: false, lastScanned: 0 });
         }
         g.push(row);
@@ -141,11 +132,25 @@ const SimulationMap: React.FC = () => {
     const timeRef = useRef<number>(0);
     const commLinksRef = useRef<CommEdge[]>([]);
     const swarmMessagesRef = useRef<SwarmMessage[]>([]);
-    const sensorWeightsRef = useRef(JSON.parse(JSON.stringify(INITIAL_SENSORS)));
+    const sensorWeightsRef = useRef(gridDataService.getSensorWeights());
     const logsRef = useRef<{ time: number, msg: string, type: 'alert' | 'info' | 'success' }[]>([]);
 
     const [, setTickFlip] = useState(0);
     const [selectedPin, setSelectedPin] = useState<FoundPin | null>(null);
+
+    // If OSM terrain loads after this page, refresh the grid automatically
+    useEffect(() => {
+        if (gridDataService.isTerrainReady()) {
+            // Already loaded — refresh grid right away if it was random
+            gridRef.current = createGrid();
+            setTickFlip(f => f + 1);
+        } else {
+            gridDataService.onTerrainReady(() => {
+                gridRef.current = createGrid();
+                setTickFlip(f => f + 1);
+            });
+        }
+    }, []);
 
     const addLog = (msg: string, type: 'alert' | 'info' | 'success') => {
         logsRef.current.unshift({ time: timeRef.current, msg, type });
@@ -154,6 +159,7 @@ const SimulationMap: React.FC = () => {
 
     const resetSim = () => {
         setRunning(false);
+        gridDataService.releaseSource(); // allow prediction to write again after full reset
         gridRef.current = createGrid();
         dronesRef.current = createDrones();
         survivorsRef.current = createSurvivors();
@@ -161,6 +167,7 @@ const SimulationMap: React.FC = () => {
         commLinksRef.current = [];
         swarmMessagesRef.current = [];
         sensorWeightsRef.current = JSON.parse(JSON.stringify(INITIAL_SENSORS));
+        gridDataService.setSensorWeights(sensorWeightsRef.current);
         logsRef.current = [];
         timeRef.current = 0;
         setSelectedPin(null);
@@ -573,6 +580,7 @@ const SimulationMap: React.FC = () => {
                             (Object.keys(weights) as Array<keyof typeof INITIAL_SENSORS>).forEach(k => {
                                 weights[k].conf = Math.min(1.0, weights[k].conf + 0.04);
                             });
+                            gridDataService.setSensorWeights({ ...weights });
 
                             if (d.isConnected) addMessage(d.id, 'HIGH_SIGNAL', { survivorId: s.id });
 
@@ -748,6 +756,18 @@ const SimulationMap: React.FC = () => {
             if (sec.pheromone > 0) sec.pheromone *= 0.99;
         }));
 
+        // Sync scanned grid probabilities → gridDataService so other pages receive live updates
+        // Only overwrite cells that have actually been scanned; keep prediction values for the rest
+        if (timeRef.current % 5 === 0) {
+            const existing = gridDataService.getWeights();
+            const weightGrid: number[][] = Array.from({ length: GRID_H }, (_, y) =>
+                Array.from({ length: GRID_W }, (_, x) =>
+                    grid[y][x].scanned ? grid[y][x].prob : (existing[y]?.[x] ?? 0.05)
+                )
+            );
+            gridDataService.setWeights(weightGrid, 'scan');
+        }
+
         setTickFlip(f => f + 1);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -755,8 +775,11 @@ const SimulationMap: React.FC = () => {
     useEffect(() => {
         let interval: ReturnType<typeof setInterval>;
         if (running) {
+            gridDataService.claimSource('scan');
             interval = setInterval(performTick, 100 / speed);
         }
+        // Don't release source on pause — scan data should persist on the tactical map.
+        // Source is only released on full reset (resetSim).
         return () => clearInterval(interval);
     }, [running, speed, performTick]);
 
