@@ -5,7 +5,7 @@ import { HeatmapLayer } from '@deck.gl/aggregation-layers';
 import { ScatterplotLayer } from '@deck.gl/layers';
 
 // UTM Johor Bahru, Malaysia
-const MAP_CENTER = { longitude: 103.6384, latitude: 1.5583 };
+const MAP_CENTER = { longitude: 101.6841, latitude: 3.1319 };
 
 export interface HeatmapPoint {
     id: string;
@@ -28,17 +28,17 @@ const getProbabilityFromTags = (tags: any): number => {
 
     // Residential / Hostels -> High Probability (0.8 - 1.0)
     if (
-        building === 'dormitory' || 
-        building === 'residential' || 
-        building === 'apartments' || 
+        building === 'dormitory' ||
+        building === 'residential' ||
+        building === 'apartments' ||
         building === 'house'
     ) {
         prob = 0.8 + Math.random() * 0.2;
     }
     // Academic Buildings -> Medium Probability (0.5 - 0.7)
     else if (
-        building === 'university' || 
-        building === 'college' || 
+        building === 'university' ||
+        building === 'college' ||
         building === 'school' ||
         amenity === 'university' ||
         amenity === 'library' ||
@@ -48,7 +48,7 @@ const getProbabilityFromTags = (tags: any): number => {
     }
     // Administrative / General -> Medium-Low (0.3 - 0.5)
     else if (
-        building === 'commercial' || 
+        building === 'commercial' ||
         building === 'office' ||
         amenity === 'clinic' ||
         amenity === 'hospital' ||
@@ -59,8 +59,8 @@ const getProbabilityFromTags = (tags: any): number => {
     }
     // Open areas / Sports fields -> Very Low (0.05 - 0.2)
     else if (
-        leisure === 'pitch' || 
-        leisure === 'stadium' || 
+        leisure === 'pitch' ||
+        leisure === 'stadium' ||
         leisure === 'park' ||
         building === 'roof' ||
         building === 'garage'
@@ -80,11 +80,12 @@ const ProbabilityMap3D: React.FC = () => {
     const fetchOSMData = async () => {
         setLoading(true);
         setError(null);
-        
-        // Define bounding box around UTM JB (~2km radius)
+
+        // Define bounding box around MAP_CENTER (~1km radius)
         // south, west, north, east
-        const bbox = "1.5400,103.6200,1.5750,103.6550";
-        
+        const offset = 0.009;
+        const bbox = `${(MAP_CENTER.latitude - offset).toFixed(4)},${(MAP_CENTER.longitude - offset).toFixed(4)},${(MAP_CENTER.latitude + offset).toFixed(4)},${(MAP_CENTER.longitude + offset).toFixed(4)}`;
+
         // Overpass QL query:
         // [out:json];
         // (
@@ -100,7 +101,7 @@ const ProbabilityMap3D: React.FC = () => {
             );
             out center;
         `;
-        
+
         try {
             const url = `https://overpass-api.de/api/interpreter`;
             const response = await fetch(url, {
@@ -116,9 +117,9 @@ const ProbabilityMap3D: React.FC = () => {
             }
 
             const json = await response.json();
-            
+
             const points: HeatmapPoint[] = [];
-            
+
             if (json.elements && json.elements.length > 0) {
                 json.elements.forEach((el: any) => {
                     // Overpass 'out center' provides the calculated center of the way in 'center'
@@ -126,7 +127,7 @@ const ProbabilityMap3D: React.FC = () => {
                         const weight = getProbabilityFromTags(el.tags);
                         const type = el.tags?.building || el.tags?.leisure || 'unknown';
                         const name = el.tags?.name || `Building ${el.id}`;
-                        
+
                         points.push({
                             id: el.id.toString(),
                             position: [el.center.lon, el.center.lat],
@@ -137,7 +138,7 @@ const ProbabilityMap3D: React.FC = () => {
                     }
                 });
             }
-            
+
             setData(points);
         } catch (err: any) {
             console.error("Failed to load OSM data:", err);
@@ -156,7 +157,7 @@ const ProbabilityMap3D: React.FC = () => {
         latitude: MAP_CENTER.latitude,
         zoom: 14,
         maxZoom: 18,
-        pitch: 0, 
+        pitch: 0,
         bearing: 0,
     };
 
@@ -165,37 +166,37 @@ const ProbabilityMap3D: React.FC = () => {
         // Find if we clicked near a specific heat point
         if (info && info.coordinate) {
             const [clickLon, clickLat] = info.coordinate;
-            
+
             // Interaction logic: Left click = Motion detected (higher prob), Alt+Left Click / Right Click = Clear (lower prob)
             // Need to update the state. Let's find points within a ~50m radius (approx 0.00045 degrees)
-            const RADIUS = 0.00045; 
-            
+            const RADIUS = 0.00045;
+
             setData(prevData => {
                 let changed = false;
                 const newData = prevData.map(point => {
                     const dLon = point.position[0] - clickLon;
                     const dLat = point.position[1] - clickLat;
                     const distSq = (dLon * dLon) + (dLat * dLat);
-                    
+
                     if (distSq < (RADIUS * RADIUS)) {
                         changed = true;
-                        
+
                         // Modifier logic based on event.
                         // We use shiftKey to mimic a cleared scan here (since altKey/right click might be snagged by map controls)
                         const isClearScan = event.srcEvent.shiftKey || event.rightButton;
-                        
+
                         let newWeight = point.weight;
                         if (isClearScan) {
                             newWeight = newWeight * 0.5; // Simulate finding nothing
                         } else {
                             newWeight = Math.min(1.0, newWeight + 0.3); // Simulate finding motion/heat
                         }
-                        
+
                         return { ...point, weight: newWeight };
                     }
                     return point;
                 });
-                
+
                 return changed ? newData : prevData;
             });
         }
@@ -295,12 +296,12 @@ const ProbabilityMap3D: React.FC = () => {
                         <div style={{ width: 16, height: 16, background: 'rgba(0, 0, 255, 0.5)' }}></div>
                         Low (Fields/Open, ≤20%)
                     </div>
-                    
+
                     <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--panel-border)' }}>
                         <h4 className="hud-text" style={{ fontSize: '0.7rem', color: 'var(--warning)', marginBottom: '8px' }}>DRONE SIMULATION CONTROLS</h4>
-                         <div style={{ fontSize: '0.7rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                            <strong>Left Click:</strong> +Heat (Motion detected)<br/>
-                            <strong>Shift + Left Click:</strong> -Heat (Area clear)<br/>
+                        <div style={{ fontSize: '0.7rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                            <strong>Left Click:</strong> +Heat (Motion detected)<br />
+                            <strong>Shift + Left Click:</strong> -Heat (Area clear)<br />
                         </div>
                     </div>
                 </div>
