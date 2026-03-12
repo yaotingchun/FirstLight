@@ -13,8 +13,6 @@ import {
     OBSTACLE_SET,
     DRONE_COUNT,
     RELAY_COLOR,
-    generateMockHeatmap,
-    generateShiftedHeatmap,
     initializeSwarm,
     reallocateOnFailure,
     nextScanTarget,
@@ -22,6 +20,7 @@ import {
     type RelayDrone,
     type GridPoint,
 } from '../utils/swarmRouting';
+import { gridDataService } from '../services/gridDataService';
 
 const CELL_SIZE = 35;
 const COMM_RANGE_PX = COMM_RANGE_GRID * CELL_SIZE;
@@ -35,7 +34,7 @@ const RoutingSandbox: React.FC = () => {
     const [showPath, setShowPath] = useState(true);
     const [mcpLog, setMcpLog] = useState<string[]>(['> Sys ready. A* + VO routing active.']);
     const [showHeatmap, setShowHeatmap] = useState(true);
-    const [heatmap, setHeatmap] = useState<number[][]>(() => generateMockHeatmap());
+    const [heatmap, setHeatmap] = useState<number[][]>(() => gridDataService.getWeights());
     const [drones, setDrones] = useState<Drone[]>([]);
     const [relay, setRelay] = useState<RelayDrone>({
         id: 'R1', x: BASE_X, y: BASE_Y, vx: 0, vy: 0,
@@ -50,15 +49,25 @@ const RoutingSandbox: React.FC = () => {
 
     useEffect(() => { resetSimulation(); }, []);
 
+    // --- Subscribe to Live Grid Data ---
+    useEffect(() => {
+        const unsubscribe = gridDataService.subscribe((newWeights) => {
+            setHeatmap(newWeights);
+            // Optionally trigger re-allocation if probability changes significantly
+            // For now, just update the visual heatmap
+        });
+        return unsubscribe;
+    }, []);
+
     const resetSimulation = () => {
-        const newHeatmap = generateShiftedHeatmap();
-        setHeatmap(newHeatmap);
-        const { drones: newDrones, relay: newRelay } = initializeSwarm(newHeatmap);
+        const liveWeights = gridDataService.getWeights();
+        setHeatmap(liveWeights);
+        const { drones: newDrones, relay: newRelay } = initializeSwarm(liveWeights);
         const activeDroneCount = newDrones.filter(d => d.active).length;
         setDrones(newDrones);
         setRelay(newRelay);
         setIsRunning(false);
-        setMcpLog([`> Sys reset. ${activeDroneCount} search drones + 1 relay online. PRIORITY regions active.`]);
+        setMcpLog([`> Sys reset. ${activeDroneCount} search drones + 1 relay online. TACTICAL grid data active.`]);
     };
 
     const killDrone = (id: string) => {
@@ -151,7 +160,7 @@ const RoutingSandbox: React.FC = () => {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        ctx.fillStyle = '#020b0e';
+        ctx.fillStyle = '#050a10';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         // Heatmap overlay (mock survivor probability)
@@ -159,15 +168,19 @@ const RoutingSandbox: React.FC = () => {
             for (let y = 0; y < GRID_H; y++) {
                 for (let x = 0; x < GRID_W; x++) {
                     const prob = heatmap[y][x];
-                    if (prob <= 0) continue;
-                    ctx.fillStyle = `rgba(255, ${Math.round(200 - prob * 180)}, 0, ${prob * 0.35})`;
+                    
+                    if (prob >= 0.8) ctx.fillStyle = 'rgba(255, 0, 0, 0.7)';
+                    else if (prob >= 0.5) ctx.fillStyle = 'rgba(255, 165, 0, 0.7)';
+                    else if (prob >= 0.3) ctx.fillStyle = 'rgba(255, 255, 0, 0.7)';
+                    else ctx.fillStyle = 'rgba(0, 80, 120, 0.4)'; // Tactical Blue for low/no data
+                    
                     ctx.fillRect(x * CELL_SIZE + 1, y * CELL_SIZE + 1, CELL_SIZE - 2, CELL_SIZE - 2);
                 }
             }
         }
 
         // Grid
-        ctx.strokeStyle = 'rgba(26,76,76,0.35)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
         ctx.lineWidth = 1;
         for (let i = 0; i <= GRID_W; i++) {
             ctx.beginPath(); ctx.moveTo(i * CELL_SIZE, 0); ctx.lineTo(i * CELL_SIZE, GRID_H * CELL_SIZE); ctx.stroke();
