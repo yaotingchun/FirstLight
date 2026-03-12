@@ -19,6 +19,13 @@ type Sector = {
     terrain: string;
     scanned: boolean;
     lastScanned: number;
+    signals: {
+        mobile: number;
+        thermal: number;
+        sound: number;
+        wifi: number;
+    };
+    disasterImage?: string;
 };
 
 type Drone = {
@@ -89,15 +96,86 @@ const haversineDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
 const createGrid = (): Sector[][] => {
     const g: Sector[][] = [];
     const terrainData = gridDataService.getTerrainGrid();
+    const sensorWeights = gridDataService.getSensorWeights();
 
+    // 1. Initialize sparse grid
     for (let y = 0; y < GRID_H; y++) {
         const row: Sector[] = [];
         for (let x = 0; x < GRID_W; x++) {
             const terrain = terrainData[y]?.[x] ?? 'Open Field';
-            row.push({ x, y, prob: 0, pheromone: 0, terrain, scanned: false, lastScanned: 0 });
+            row.push({ 
+                x, y, 
+                prob: 0, 
+                pheromone: 0, 
+                terrain, 
+                scanned: false, 
+                lastScanned: 0,
+                signals: {
+                    mobile: Math.pow(Math.random(), 15),
+                    thermal: Math.pow(Math.random(), 15),
+                    sound: Math.pow(Math.random(), 15),
+                    wifi: Math.pow(Math.random(), 15)
+                }
+            });
         }
         g.push(row);
     }
+
+    // 2. Inject high-intensity hotspots
+    const numHotspots = 3;
+    for (let i = 0; i < numHotspots; i++) {
+        const hx = Math.floor(Math.random() * GRID_W);
+        const hy = Math.floor(Math.random() * GRID_H);
+        
+        // Boost center and surrounding
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                const nx = hx + dx;
+                const ny = hy + dy;
+                if (nx >= 0 && nx < GRID_W && ny >= 0 && ny < GRID_H) {
+                    const dist = Math.abs(dx) + Math.abs(dy); // 0 at center, 1 or 2 at neighbors
+                    const boost = dist === 0 ? 0.8 : 0.4;
+                    const s = g[ny][nx].signals;
+                    s.mobile = Math.min(1.0, s.mobile + boost + Math.random() * 0.2);
+                    s.thermal = Math.min(1.0, s.thermal + boost + Math.random() * 0.2);
+                    s.sound = Math.min(1.0, s.sound + boost + Math.random() * 0.2);
+                    s.wifi = Math.min(1.0, s.wifi + boost + Math.random() * 0.2);
+                }
+            }
+        }
+    }
+
+    // 3. Calculate initial probabilities and assign disaster images
+    const getProb = (signals: Sector['signals']) => {
+        const score = (sensorWeights.mobile.base * sensorWeights.mobile.conf * signals.mobile) +
+            (sensorWeights.thermal.base * sensorWeights.thermal.conf * signals.thermal) +
+            (sensorWeights.sound.base * sensorWeights.sound.conf * signals.sound) +
+            (sensorWeights.wifi.base * sensorWeights.wifi.conf * signals.wifi);
+
+        const sumWeights = (sensorWeights.mobile.base * sensorWeights.mobile.conf) +
+            (sensorWeights.thermal.base * sensorWeights.thermal.conf) +
+            (sensorWeights.sound.base * sensorWeights.sound.conf) +
+            (sensorWeights.wifi.base * sensorWeights.wifi.conf);
+
+        return score / sumWeights;
+    };
+
+    const allSectors: Sector[] = g.flat();
+    allSectors.forEach(s => {
+        s.prob = getProb(s.signals);
+    });
+
+    const topSectors = [...allSectors].sort((a, b) => b.prob - a.prob).slice(0, 3);
+    const disasterImages = [
+        '/assets/disasters/earthquake_1.png',
+        '/assets/disasters/earthquake_2.png',
+        '/assets/disasters/earthquake_3.png'
+    ];
+
+    topSectors.forEach((s, i) => {
+        s.disasterImage = disasterImages[i];
+    });
+
     return g;
 };
 
@@ -111,7 +189,23 @@ const createDrones = (): Drone[] => {
     ];
 };
 
-const createSurvivors = (): HiddenSurvivor[] => {
+const createSurvivors = (grid?: Sector[][]): HiddenSurvivor[] => {
+    if (grid) {
+        const allSectors = grid.flat();
+        const topSectors = [...allSectors].sort((a, b) => b.prob - a.prob).slice(0, 3);
+        const messages = [
+            "Trapped under concrete. Leg injured.",
+            "Safe but cannot exit building. 3 people here.",
+            "Need water asap."
+        ];
+        return topSectors.map((s, i) => ({
+            id: `S${i + 1}`,
+            x: s.x,
+            y: s.y,
+            found: false,
+            info: { message: messages[i], battery: `${Math.floor(Math.random() * 50 + 5)}%` }
+        }));
+    }
     return [
         { id: 'S1', x: 5, y: 5, found: false, info: { message: "Trapped under concrete. Leg injured.", battery: "12%" } },
         { id: 'S2', x: 15, y: 12, found: false, info: { message: "Safe but cannot exit building. 3 people here.", battery: "45%" } },
@@ -127,7 +221,7 @@ const SimulationMap: React.FC = () => {
     // Sim State Refs
     const gridRef = useRef<Sector[][]>(createGrid());
     const dronesRef = useRef<Drone[]>(createDrones());
-    const survivorsRef = useRef<HiddenSurvivor[]>(createSurvivors());
+    const survivorsRef = useRef<HiddenSurvivor[]>(createSurvivors(gridRef.current));
     const pinsRef = useRef<FoundPin[]>([]);
     const timeRef = useRef<number>(0);
     const commLinksRef = useRef<CommEdge[]>([]);
@@ -137,16 +231,21 @@ const SimulationMap: React.FC = () => {
 
     const [, setTickFlip] = useState(0);
     const [selectedPin, setSelectedPin] = useState<FoundPin | null>(null);
+    const [showSensors, setShowSensors] = useState(false);
 
     // If OSM terrain loads after this page, refresh the grid automatically
     useEffect(() => {
         if (gridDataService.isTerrainReady()) {
             // Already loaded — refresh grid right away if it was random
-            gridRef.current = createGrid();
+            const newGrid = createGrid();
+            gridRef.current = newGrid;
+            survivorsRef.current = createSurvivors(newGrid);
             setTickFlip(f => f + 1);
         } else {
             gridDataService.onTerrainReady(() => {
-                gridRef.current = createGrid();
+                const newGrid = createGrid();
+                gridRef.current = newGrid;
+                survivorsRef.current = createSurvivors(newGrid);
                 setTickFlip(f => f + 1);
             });
         }
@@ -160,9 +259,10 @@ const SimulationMap: React.FC = () => {
     const resetSim = () => {
         setRunning(false);
         gridDataService.releaseSource(); // allow prediction to write again after full reset
-        gridRef.current = createGrid();
+        const newGrid = createGrid();
+        gridRef.current = newGrid;
         dronesRef.current = createDrones();
-        survivorsRef.current = createSurvivors();
+        survivorsRef.current = createSurvivors(newGrid);
         pinsRef.current = [];
         commLinksRef.current = [];
         swarmMessagesRef.current = [];
@@ -180,35 +280,16 @@ const SimulationMap: React.FC = () => {
     };
 
     const getSectorProbability = (x: number, y: number) => {
-        const base_prob = 0.05 + (Math.random() * 0.1);
-        let max_signal = 0;
+        const sector = gridRef.current[y][x];
+        const signals = sector.signals;
+        
+        const score = (getEffectiveWeight('mobile') * signals.mobile) +
+            (getEffectiveWeight('wifi') * signals.wifi) +
+            (getEffectiveWeight('thermal') * signals.thermal) +
+            (getEffectiveWeight('sound') * signals.sound);
 
-        survivorsRef.current.forEach(s => {
-            if (s.found) return;
-            const dist = Math.abs(s.x - x) + Math.abs(s.y - y);
-            if (dist === 0) {
-                max_signal = Math.max(max_signal, 0.9 + Math.random() * 0.1);
-            } else if (dist <= 2) {
-                max_signal = Math.max(max_signal, 0.5 + Math.random() * 0.3);
-            }
-        });
-
-        if (max_signal > 0) {
-            const m = Math.random() * max_signal;
-            const w = Math.random() * max_signal;
-            const t = Math.random() * max_signal;
-            const sn = Math.random() * max_signal;
-
-            const score = getEffectiveWeight('mobile') * m +
-                getEffectiveWeight('wifi') * w +
-                getEffectiveWeight('thermal') * t +
-                getEffectiveWeight('sound') * sn;
-
-            const sumWeights = getEffectiveWeight('mobile') + getEffectiveWeight('wifi') + getEffectiveWeight('thermal') + getEffectiveWeight('sound');
-            return score / sumWeights;
-        }
-
-        return base_prob;
+        const sumWeights = getEffectiveWeight('mobile') + getEffectiveWeight('wifi') + getEffectiveWeight('thermal') + getEffectiveWeight('sound');
+        return score / sumWeights;
     };
 
     const performTick = useCallback(() => {
@@ -800,6 +881,9 @@ const SimulationMap: React.FC = () => {
                     <button onClick={() => setSpeed(s => s === 1 ? 5 : 1)} className={`hud-btn ${speed > 1 ? 'glow-text' : ''}`} style={{ padding: '8px 16px', display: 'flex', gap: '8px', cursor: 'pointer', borderColor: speed > 1 ? 'var(--accent-primary)' : '' }}>
                         <FastForward size={18} /> x{speed}
                     </button>
+                    <button onClick={() => setShowSensors(!showSensors)} className={`hud-btn ${showSensors ? 'glow-text' : ''}`} style={{ padding: '8px 16px', display: 'flex', gap: '8px', cursor: 'pointer', borderColor: showSensors ? 'var(--accent-primary)' : '' }}>
+                        <Activity size={18} /> {showSensors ? 'SENSORS' : 'SENSORS'}
+                    </button>
                     <button onClick={resetSim} className="hud-btn" style={{ padding: '8px 16px', display: 'flex', gap: '8px', cursor: 'pointer' }}>
                         <RotateCcw size={18} /> RESET
                     </button>
@@ -817,16 +901,54 @@ const SimulationMap: React.FC = () => {
                         {/* Grid & Heatmap */}
                         {gridRef.current.map((row, y) =>
                             row.map((cell, x) => (
-                                <rect
-                                    key={`cell-${x}-${y}`}
-                                    x={x * CELL_SIZE}
-                                    y={y * CELL_SIZE}
-                                    width={CELL_SIZE}
-                                    height={CELL_SIZE}
-                                    fill={cell.scanned ? `rgba(255, 68, 68, ${cell.prob * 0.8})` : 'transparent'}
-                                    stroke="rgba(0, 255, 204, 0.05)"
-                                    strokeWidth="1"
-                                />
+                                <React.Fragment key={`cell-group-${x}-${y}`}>
+                                    <rect
+                                        x={x * CELL_SIZE}
+                                        y={y * CELL_SIZE}
+                                        width={CELL_SIZE}
+                                        height={CELL_SIZE}
+                                        fill={cell.scanned ? `rgba(255, 68, 68, ${getSectorProbability(x, y) * 0.8})` : 'transparent'}
+                                        stroke="rgba(0, 255, 204, 0.05)"
+                                        strokeWidth="1"
+                                    />
+                                    
+                                    {/* Disaster Image Discovery - Visible if scanned OR sensors toggled */}
+                                    {(cell.scanned || showSensors) && cell.disasterImage && (
+                                        <image
+                                            href={cell.disasterImage}
+                                            x={x * CELL_SIZE + 2}
+                                            y={y * CELL_SIZE + 2}
+                                            width={CELL_SIZE - 4}
+                                            height={CELL_SIZE - 4}
+                                            style={{ opacity: 0.6, pointerEvents: 'none' }}
+                                        />
+                                    )}
+
+                                    {/* Sensor Values Overlay */}
+                                    {showSensors && (
+                                        <g style={{ pointerEvents: 'none' }}>
+                                            <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 8} fontSize="5" fill="#00ffcc" opacity="0.9" fontFamily="var(--font-mono)">M:{cell.signals.mobile.toFixed(1)}</text>
+                                            <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 15} fontSize="5" fill="#ff4444" opacity="0.9" fontFamily="var(--font-mono)">T:{cell.signals.thermal.toFixed(1)}</text>
+                                            <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 22} fontSize="5" fill="#ffff00" opacity="0.9" fontFamily="var(--font-mono)">S:{cell.signals.sound.toFixed(1)}</text>
+                                            <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 29} fontSize="5" fill="#ff00ff" opacity="0.9" fontFamily="var(--font-mono)">W:{cell.signals.wifi.toFixed(1)}</text>
+                                            
+                                            {/* Survivor Ground Truth Indicator */}
+                                            {survivorsRef.current.some(s => s.x === x && s.y === y) && (
+                                                <text 
+                                                    x={x * CELL_SIZE + CELL_SIZE - 2} 
+                                                    y={y * CELL_SIZE + CELL_SIZE - 2} 
+                                                    fontSize="6" 
+                                                    fill="#00ffcc" 
+                                                    textAnchor="end"
+                                                    fontWeight="bold"
+                                                    fontFamily="var(--font-mono)"
+                                                >
+                                                    [S]
+                                                </text>
+                                            )}
+                                        </g>
+                                    )}
+                                </React.Fragment>
                             ))
                         )}
 
