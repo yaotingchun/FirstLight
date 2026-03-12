@@ -1,92 +1,32 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Pause, RotateCcw, Navigation, PowerOff, Activity, Radio } from 'lucide-react';
 import {
-    recalculateRegionsByPriority,
     calculateVO,
     aStarPath,
-    buildPriorityQueue,
     BASE_X,
     BASE_Y,
-    MAX_RADIUS_GRID,
-    type DroneWithRegion,
+    COMM_RANGE_GRID,
+    GRID_W,
+    GRID_H,
+    GRID_CENTER,
+    OBSTACLES,
+    OBSTACLE_SET,
+    DRONE_COUNT,
+    RELAY_COLOR,
+    generateMockHeatmap,
+    generateShiftedHeatmap,
+    initializeSwarm,
+    reallocateOnFailure,
+    nextScanTarget,
+    type SearchDrone,
+    type RelayDrone,
     type GridPoint,
 } from '../utils/swarmRouting';
 
-const GRID_W = 20;
-const GRID_H = 20;
 const CELL_SIZE = 35;
+const COMM_RANGE_PX = COMM_RANGE_GRID * CELL_SIZE;
 
-const OBSTACLES: GridPoint[] = [
-    { x: 7, y: 7 }, { x: 8, y: 7 }, { x: 9, y: 7 },
-    { x: 7, y: 8 }, { x: 7, y: 9 },
-    { x: 12, y: 11 }, { x: 13, y: 11 }, { x: 14, y: 11 },
-    { x: 14, y: 12 }, { x: 14, y: 13 },
-    { x: 5, y: 13 }, { x: 6, y: 13 },
-    { x: 15, y: 6 }, { x: 15, y: 7 },
-];
-const OBSTACLE_SET = new Set(OBSTACLES.map(o => `${o.x},${o.y}`));
-
-// ── MOCK HEATMAP (replace with teammate's real heatmap at merge time) ─────────
-const generateMockHeatmap = (): number[][] => {
-    const map = Array.from({ length: GRID_H }, () => new Array(GRID_W).fill(0));
-    for (let y = 0; y < GRID_H; y++) {
-        for (let x = 0; x < GRID_W; x++) {
-            const dx = x - BASE_X;
-            const dy = y - BASE_Y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist > MAX_RADIUS_GRID || dist === 0) continue;
-            if (dx > 0 && dy < 0) map[y][x] = 0.85;
-            else if (dx > 0 && dy >= 0) map[y][x] = 0.3;
-            else map[y][x] = 0.1;
-        }
-    }
-    for (let y = 0; y < GRID_H; y++) {
-        for (let x = 0; x < GRID_W; x++) {
-            const d = Math.sqrt((x - 15) ** 2 + (y - 3) ** 2);
-            if (d <= 3) map[y][x] = Math.min(1, map[y][x] + 0.9 * (1 - d / 3));
-        }
-    }
-    return map;
-};
-
-// Generates a new heatmap with randomly placed hotspots — simulates updated
-// probability predictions arriving from the detection module over time.
-const generateShiftedHeatmap = (): number[][] => {
-    const map = Array.from({ length: GRID_H }, () => new Array(GRID_W).fill(0.05));
-    const hotspotCount = 2 + Math.floor(Math.random() * 2); // 2–3 hotspots
-    for (let h = 0; h < hotspotCount; h++) {
-        // Random position within operational radius
-        const angle = Math.random() * 2 * Math.PI;
-        const radius = 3 + Math.random() * (MAX_RADIUS_GRID - 3);
-        const cx = Math.round(BASE_X + Math.cos(angle) * radius);
-        const cy = Math.round(BASE_Y + Math.sin(angle) * radius);
-        const spotRadius = 2 + Math.random() * 3;
-        const intensity = 0.5 + Math.random() * 0.5;
-        for (let y = 0; y < GRID_H; y++) {
-            for (let x = 0; x < GRID_W; x++) {
-                const d = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2);
-                if (d <= spotRadius) map[y][x] = Math.min(1, map[y][x] + intensity * (1 - d / spotRadius));
-            }
-        }
-    }
-    return map;
-};
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ── CONFIGURE DRONES HERE ────────────────────────────────────────────────────
-// Change DRONE_COUNT to add more or fewer drones.
-// Sectors, spawn positions, and angles are all auto-calculated.
-const DRONE_COUNT = 4;
-const DRONE_COLORS = ['#00ffcc', '#ff00cc', '#ccccff', '#ffff00', '#ff8800', '#00aaff', '#ff4444', '#aaff00'];
-// ─────────────────────────────────────────────────────────────────────────────
-
-type Drone = DroneWithRegion & {
-    tx: number; ty: number; color: string;
-    path: GridPoint[]; pathIndex: number;
-    scanQueue: GridPoint[];   // ordered boustrophedon cells to visit
-    scanQueueIndex: number;   // current position in scanQueue
-    launchTick: number;       // countdown before drone starts moving (staggered launch)
-};
+type Drone = SearchDrone;
 
 const RoutingSandbox: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -97,6 +37,12 @@ const RoutingSandbox: React.FC = () => {
     const [showHeatmap, setShowHeatmap] = useState(true);
     const [heatmap, setHeatmap] = useState<number[][]>(() => generateMockHeatmap());
     const [drones, setDrones] = useState<Drone[]>([]);
+    const [relay, setRelay] = useState<RelayDrone>({
+        id: 'R1', x: BASE_X, y: BASE_Y, vx: 0, vy: 0,
+        active: true, color: RELAY_COLOR, path: [], pathIndex: 0, arrived: false,
+    });
+    const relayRef = useRef(relay);
+    useEffect(() => { relayRef.current = relay; }, [relay]);
 
     const pushLog = (msg: string) => {
         setMcpLog(prev => [`> [${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 30));
@@ -104,91 +50,58 @@ const RoutingSandbox: React.FC = () => {
 
     useEffect(() => { resetSimulation(); }, []);
 
-
-    const createInitialDrones = (): Drone[] => {
-        const sliceSize = 360 / DRONE_COUNT;
-        // Spawn offset must be large enough so adjacent drones don't trigger VO on launch
-        // Adjacent drones are (360/N)° apart → distance = 2*offset*sin(π/N)
-        // We need distance > SAFE_DISTANCE_GRID (1.5), so offset > 1.5 / (2*sin(π/N))
-        const minOffset = 1.5 / (2 * Math.sin(Math.PI / DRONE_COUNT));
-        const offset = Math.max(minOffset + 0.3, 1.5); // add safety margin
-
-        return Array.from({ length: DRONE_COUNT }, (_, i) => {
-            const start = i * sliceSize;
-            const end = start + sliceSize;
-            const midAngle = ((start + end) / 2 * Math.PI / 180) - Math.PI / 2;
-            return {
-                id: `D${i + 1}`,
-                x: BASE_X + Math.cos(midAngle) * offset,
-                y: BASE_Y + Math.sin(midAngle) * offset,
-                vx: 0, vy: 0,
-                tx: BASE_X, ty: BASE_Y,
-                color: DRONE_COLORS[i % DRONE_COLORS.length],
-                active: true,
-                assignedAngleStart: start,
-                assignedAngleEnd: end,
-                path: [], pathIndex: 0,
-                scanQueue: [] as GridPoint[], scanQueueIndex: 0,
-                launchTick: i * 12, // stagger: 12 ticks × 50ms = 600ms between each drone
-                battery: 100,
-            };
-        });
-    };
-
-
-    // Always use priority-weighted queue — visits high-probability cells first
-    const buildScanQueue = (d: Drone): GridPoint[] =>
-        buildPriorityQueue(d, heatmap, GRID_W, GRID_H, OBSTACLE_SET);
-
-
     const resetSimulation = () => {
         const newHeatmap = generateShiftedHeatmap();
         setHeatmap(newHeatmap);
-        const initial = createInitialDrones();
-        const allocated = recalculateRegionsByPriority(initial, newHeatmap, GRID_W, GRID_H) as typeof initial;
-
-        // Recalculate spawn positions using the ACTUAL assigned sector angles.
-        // This ensures each drone spawns toward its real sector centre, not
-        // the pre-computed equal-angle position, which avoids cross-sector launches.
-        const activeDroneCount = allocated.filter(d => d.active).length;
-        const minOffset = activeDroneCount > 1
-            ? 1.5 / (2 * Math.sin(Math.PI / activeDroneCount)) + 0.3
-            : 1.5;
-        let launchIdx = 0;
-        const withSpawns = allocated.map(d => {
-            if (!d.active) return d;
-            const midAngle = ((d.assignedAngleStart + d.assignedAngleEnd) / 2 * Math.PI / 180) - Math.PI / 2;
-            const spawned = { ...d, x: BASE_X + Math.cos(midAngle) * minOffset, y: BASE_Y + Math.sin(midAngle) * minOffset, path: [], pathIndex: 0, scanQueue: [] as GridPoint[], scanQueueIndex: 0, launchTick: launchIdx++ * 12 };
-            spawned.scanQueue = buildScanQueue(spawned);
-            return spawned;
-        });
-
-        setDrones(withSpawns);
+        const { drones: newDrones, relay: newRelay } = initializeSwarm(newHeatmap);
+        const activeDroneCount = newDrones.filter(d => d.active).length;
+        setDrones(newDrones);
+        setRelay(newRelay);
         setIsRunning(false);
-        setMcpLog([`> Sys reset. ${activeDroneCount} drones online. PRIORITY sectors active.`]);
-    };
-
-    // REMOVED: pickSectorTarget (random) → replaced by sequential boustrophedon queue
-    // Consume the next cell in the drone's scan queue. When exhausted, restart from beginning.
-    const nextScanTarget = (d: Drone): { target: GridPoint; newIndex: number } => {
-        if (d.scanQueue.length === 0) return { target: { x: BASE_X, y: BASE_Y }, newIndex: 0 };
-        const idx = d.scanQueueIndex % d.scanQueue.length;
-        return { target: d.scanQueue[idx], newIndex: idx + 1 };
+        setMcpLog([`> Sys reset. ${activeDroneCount} search drones + 1 relay online. PRIORITY regions active.`]);
     };
 
     const killDrone = (id: string) => {
         setDrones(prev => {
-            const updated = prev.map(d => d.id === id ? { ...d, active: false } : d);
-            const reallocated = recalculateRegionsByPriority(updated, heatmap, GRID_W, GRID_H) as typeof updated;
-            const count = reallocated.filter(d => d.active).length;
+            const result = reallocateOnFailure(prev, id, heatmap);
+            const count = result.filter(d => d.active).length;
             if (count > 0) pushLog(`[REALLOC] ${id} offline → priority realloc across ${count} drones.`);
-            return reallocated as Drone[];
+            return result;
         });
     };
 
     useEffect(() => {
         if (!isRunning) return;
         const interval = setInterval(() => {
+            // ── Move relay drone toward grid centre ──────────────────────────
+            setRelay(prev => {
+                if (!prev.active || prev.arrived) return prev;
+                const speed = 0.18;
+                // Lazy-build path on first tick
+                if (prev.path.length === 0) {
+                    const rPath = aStarPath(
+                        { x: Math.round(prev.x), y: Math.round(prev.y) },
+                        GRID_CENTER, OBSTACLE_SET, GRID_W, GRID_H
+                    );
+                    if (rPath.length > 0) {
+                        pushLog(`[RELAY] R1 departing base → grid centre (${GRID_CENTER.x},${GRID_CENTER.y}).`);
+                        return { ...prev, path: rPath, pathIndex: 0 };
+                    }
+                    return prev;
+                }
+                if (prev.pathIndex >= prev.path.length) {
+                    pushLog('[RELAY] R1 arrived at grid centre — relay link established.');
+                    return { ...prev, arrived: true, vx: 0, vy: 0 };
+                }
+                const wp = prev.path[prev.pathIndex];
+                const dx = wp.x - prev.x, dy = wp.y - prev.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < 0.3) return { ...prev, pathIndex: prev.pathIndex + 1 };
+                const vx = (dx / dist) * speed, vy = (dy / dist) * speed;
+                return { ...prev, vx, vy, x: prev.x + vx, y: prev.y + vy };
+            });
+
+            // ── Move search drones ───────────────────────────────────────────
             setDrones(prev => prev.map(d => {
                 if (!d.active) return d;
                 const speed = 0.2;
@@ -198,12 +111,14 @@ const RoutingSandbox: React.FC = () => {
 
                 if (d.path.length === 0 || d.pathIndex >= d.path.length) {
                     const { target, newIndex } = nextScanTarget(d);
-                    // Build relay network: base + all OTHER active drones
-                    const relays = [
+                    // Build relay network: base + relay drone + all OTHER active search drones
+                    const relays: GridPoint[] = [
                         { x: BASE_X, y: BASE_Y },
-                        ...prev.filter(r => r.active && r.id !== d.id).map(r => ({ x: Math.round(r.x), y: Math.round(r.y) }))
+                        { x: Math.round(relayRef.current.x), y: Math.round(relayRef.current.y) },
                     ];
-                    const newPath = aStarPath({ x: Math.round(d.x), y: Math.round(d.y) }, target, OBSTACLE_SET, GRID_W, GRID_H, d.assignedAngleStart, d.assignedAngleEnd, 6, relays);
+                    prev.filter(r => r.active && r.id !== d.id).forEach(r => relays.push({ x: Math.round(r.x), y: Math.round(r.y) }));
+
+                    const newPath = aStarPath({ x: Math.round(d.x), y: Math.round(d.y) }, target, OBSTACLE_SET, GRID_W, GRID_H, { xMin: d.regionXMin, xMax: d.regionXMax, yMin: d.regionYMin, yMax: d.regionYMax }, 6, relays);
                     if (newPath.length > 0) {
                         pushLog(`[A*] ${d.id} → (${target.x},${target.y}) via ${newPath.length} nodes.`);
                         return { ...d, tx: target.x, ty: target.y, path: newPath, pathIndex: 0, scanQueueIndex: newIndex };
@@ -272,12 +187,6 @@ const RoutingSandbox: React.FC = () => {
 
         const cx = BASE_X * CELL_SIZE + CELL_SIZE / 2;
         const cy = BASE_Y * CELL_SIZE + CELL_SIZE / 2;
-        const rPx = MAX_RADIUS_GRID * CELL_SIZE;
-
-        // Operational radius ring
-        ctx.beginPath(); ctx.arc(cx, cy, rPx, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(0,229,181,0.15)';
-        ctx.setLineDash([6, 5]); ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
 
         // Base station
         ctx.fillStyle = '#00ffcc';
@@ -287,16 +196,56 @@ const RoutingSandbox: React.FC = () => {
         ctx.fillStyle = 'rgba(0,255,204,0.4)'; ctx.font = '8px monospace';
         ctx.fillText('BASE', cx, cy + 18); ctx.textAlign = 'left';
 
+        // ── Relay drone ──────────────────────────────────────────────────────
+        if (relay.active) {
+            const rpx = relay.x * CELL_SIZE + CELL_SIZE / 2;
+            const rpy = relay.y * CELL_SIZE + CELL_SIZE / 2;
+
+            // Relay comm range ring
+            ctx.beginPath(); ctx.arc(rpx, rpy, COMM_RANGE_PX, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(0,229,181,0.12)'; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+            ctx.stroke(); ctx.setLineDash([]);
+
+            // A* path line
+            if (showPath && relay.path.length > 0 && relay.pathIndex < relay.path.length) {
+                ctx.beginPath();
+                ctx.moveTo(rpx, rpy);
+                for (let i = relay.pathIndex; i < relay.path.length; i++)
+                    ctx.lineTo(relay.path[i].x * CELL_SIZE + CELL_SIZE / 2, relay.path[i].y * CELL_SIZE + CELL_SIZE / 2);
+                ctx.strokeStyle = relay.color; ctx.globalAlpha = 0.35;
+                ctx.setLineDash([3, 5]); ctx.lineWidth = 1.5; ctx.stroke();
+                ctx.setLineDash([]); ctx.globalAlpha = 1.0;
+            }
+
+            // Relay body — diamond shape
+            ctx.beginPath(); ctx.arc(rpx, rpy, 14, 0, Math.PI * 2);
+            ctx.strokeStyle = relay.color; ctx.globalAlpha = 0.2; ctx.lineWidth = 5; ctx.stroke(); ctx.globalAlpha = 1.0;
+
+            ctx.save(); ctx.translate(rpx, rpy);
+            ctx.fillStyle = relay.color;
+            ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(8, 0); ctx.lineTo(0, 8); ctx.lineTo(-8, 0); ctx.closePath(); ctx.fill();
+            ctx.restore();
+
+            ctx.fillStyle = '#e0ffff'; ctx.font = 'bold 9px Share Tech Mono, monospace';
+            ctx.fillText('R1', rpx + 10, rpy - 8);
+            if (relay.arrived) {
+                ctx.fillStyle = 'rgba(0,229,181,0.5)'; ctx.font = '7px monospace';
+                ctx.fillText('RELAY', rpx + 10, rpy + 3);
+            }
+        }
+
         drones.forEach(d => {
             if (!d.active) return;
 
-            // Sector slice
-            ctx.beginPath(); ctx.moveTo(cx, cy);
-            const s = (d.assignedAngleStart * Math.PI / 180) - Math.PI / 2;
-            const e = (d.assignedAngleEnd * Math.PI / 180) - Math.PI / 2;
-            ctx.arc(cx, cy, rPx, s, e); ctx.lineTo(cx, cy);
-            ctx.fillStyle = d.color; ctx.globalAlpha = 0.06; ctx.fill();
-            ctx.globalAlpha = 0.25; ctx.strokeStyle = d.color; ctx.lineWidth = 1; ctx.stroke();
+            // Region rectangle
+            const rx = d.regionXMin * CELL_SIZE;
+            const ry = d.regionYMin * CELL_SIZE;
+            const rw = (d.regionXMax - d.regionXMin) * CELL_SIZE;
+            const rh = (d.regionYMax - d.regionYMin) * CELL_SIZE;
+            ctx.fillStyle = d.color; ctx.globalAlpha = 0.06;
+            ctx.fillRect(rx, ry, rw, rh);
+            ctx.globalAlpha = 0.25; ctx.strokeStyle = d.color; ctx.lineWidth = 1;
+            ctx.strokeRect(rx, ry, rw, rh);
             ctx.globalAlpha = 1.0;
 
             // A* path
@@ -330,7 +279,7 @@ const RoutingSandbox: React.FC = () => {
             ctx.fillStyle = '#e0ffff'; ctx.font = 'bold 9px Share Tech Mono, monospace';
             ctx.fillText(d.id, dx2 + 9, dy2 - 8);
         });
-    }, [drones, showPath, showVO, showHeatmap, heatmap]);
+    }, [drones, relay, showPath, showVO, showHeatmap, heatmap]);
 
     const activeDrones = drones.filter(d => d.active).length;
 
@@ -365,7 +314,8 @@ const RoutingSandbox: React.FC = () => {
                     <div style={{ position: 'absolute', bottom: 16, left: 16, background: 'rgba(0,0,0,0.8)', border: '1px solid var(--panel-border)', padding: '10px', fontFamily: 'var(--font-mono)', fontSize: '0.7rem', backdropFilter: 'blur(4px)' }}>
                         <div style={{ color: 'var(--text-secondary)', marginBottom: '6px' }}>MAP LEGEND</div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', color: 'var(--text-primary)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #00ffcc' }}></div> Sector region</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #00ffcc' }}></div> Region boundary</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: RELAY_COLOR }}><div style={{ width: 8, height: 8, background: RELAY_COLOR, transform: 'rotate(45deg)' }}></div> Relay drone (R1)</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ff3333' }}><div style={{ width: 10, height: 10, background: 'rgba(255,51,51,0.4)', border: '1px solid #ff3333' }}></div> Obstacle / debris</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)' }}>◆ A* target &nbsp; ╌ Planned path</div>
                         </div>
@@ -382,15 +332,30 @@ const RoutingSandbox: React.FC = () => {
                         </h4>
                         <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
                             <div style={{ flex: 1, background: 'var(--panel-bg)', padding: '6px', border: '1px solid var(--panel-border)', textAlign: 'center' }}>
-                                <div style={{ fontSize: '0.6rem', color: 'var(--text-secondary)' }}>ACTIVE</div>
+                                <div style={{ fontSize: '0.6rem', color: 'var(--text-secondary)' }}>SEARCH</div>
                                 <div style={{ fontSize: '1.1rem', color: 'var(--accent-primary)', fontFamily: 'var(--font-mono)' }}>{activeDrones}/{DRONE_COUNT}</div>
                             </div>
                             <div style={{ flex: 1, background: 'var(--panel-bg)', padding: '6px', border: '1px solid var(--panel-border)', textAlign: 'center' }}>
-                                <div style={{ fontSize: '0.6rem', color: 'var(--text-secondary)' }}>SECTOR</div>
-                                <div style={{ fontSize: '1.1rem', color: '#ffb800', fontFamily: 'var(--font-mono)' }}>{activeDrones > 0 ? `${(360 / activeDrones).toFixed(0)}°` : '--'}</div>
+                                <div style={{ fontSize: '0.6rem', color: 'var(--text-secondary)' }}>RELAY</div>
+                                <div style={{ fontSize: '1.1rem', color: RELAY_COLOR, fontFamily: 'var(--font-mono)' }}>{relay.active ? '1' : '0'}</div>
+                            </div>
+                            <div style={{ flex: 1, background: 'var(--panel-bg)', padding: '6px', border: '1px solid var(--panel-border)', textAlign: 'center' }}>
+                                <div style={{ fontSize: '0.6rem', color: 'var(--text-secondary)' }}>REGIONS</div>
+                                <div style={{ fontSize: '1.1rem', color: '#ffb800', fontFamily: 'var(--font-mono)' }}>{activeDrones > 0 ? `${activeDrones} RGN` : '--'}</div>
                             </div>
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: DRONE_COUNT > 4 ? '1fr 1fr' : '1fr', gap: '4px' }}>
+                            {/* Relay drone row */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: 'rgba(255,255,255,0.02)', border: `1px solid ${RELAY_COLOR}33` }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontFamily: 'var(--font-mono)', fontSize: '0.72rem' }}>
+                                    <div style={{ width: 6, height: 6, transform: 'rotate(45deg)', background: relay.active ? RELAY_COLOR : '#444', flexShrink: 0 }} />
+                                    R1 <span style={{ fontSize: '0.58rem', color: 'var(--text-secondary)' }}>RELAY</span>
+                                </div>
+                                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: relay.active ? RELAY_COLOR : 'var(--text-secondary)' }}>
+                                    {relay.arrived ? '◆' : relay.active ? '→' : '✕'}
+                                </div>
+                            </div>
+                            {/* Search drones */}
                             {drones.map(d => (
                                 <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--panel-border)' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontFamily: 'var(--font-mono)', fontSize: '0.72rem' }}>
@@ -422,7 +387,7 @@ const RoutingSandbox: React.FC = () => {
                                     <input type="checkbox" checked={showHeatmap} onChange={e => setShowHeatmap(e.target.checked)} /> Show Heatmap
                                 </label>
                                 <div style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
-                                    ⚡ Priority sectors active — swap heatmap with teammate data at merge
+                                    ⚡ Priority regions active — swap heatmap with teammate data at merge
                                 </div>
                             </div>
                         </div>
