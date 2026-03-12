@@ -20,7 +20,7 @@ import {
     type RelayDrone,
     type GridPoint,
 } from '../utils/swarmRouting';
-import { gridDataService } from '../services/gridDataService';
+import { gridDataService, type SensorWeights } from '../services/gridDataService';
 
 const CELL_SIZE = 35;
 const COMM_RANGE_PX = COMM_RANGE_GRID * CELL_SIZE;
@@ -35,6 +35,7 @@ const RoutingSandbox: React.FC = () => {
     const [mcpLog, setMcpLog] = useState<string[]>(['> Sys ready. A* + VO routing active.']);
     const [showHeatmap, setShowHeatmap] = useState(true);
     const [heatmap, setHeatmap] = useState<number[][]>(() => gridDataService.getWeights());
+    const [sensorWeights, setSensorWeights] = useState<SensorWeights>(() => gridDataService.getSensorWeights());
     const [drones, setDrones] = useState<Drone[]>([]);
     const [relay, setRelay] = useState<RelayDrone>({
         id: 'R1', x: BASE_X, y: BASE_Y, vx: 0, vy: 0,
@@ -51,8 +52,9 @@ const RoutingSandbox: React.FC = () => {
 
     // --- Subscribe to Live Grid Data ---
     useEffect(() => {
-        const unsubscribe = gridDataService.subscribe((newWeights) => {
+        const unsubscribe = gridDataService.subscribe((newWeights, newSensorWeights) => {
             setHeatmap(newWeights);
+            setSensorWeights(newSensorWeights);
             // Optionally trigger re-allocation if probability changes significantly
             // For now, just update the visual heatmap
         });
@@ -403,6 +405,29 @@ const RoutingSandbox: React.FC = () => {
                                     ⚡ Priority regions active — swap heatmap with teammate data at merge
                                 </div>
                             </div>
+                        </div>
+                    </div>
+
+                    {/* Adaptive Sensors */}
+                    <div className="hud-panel" style={{ padding: '10px' }}>
+                        <h4 className="hud-text" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <Radio size={13} /> ADAPTIVE SENSORS
+                        </h4>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {(Object.entries(sensorWeights) as [keyof SensorWeights, { base: number, conf: number, color: string }][]).map(([key, data]) => {
+                                const finalW = (data.base * data.conf).toFixed(2);
+                                return (
+                                    <div key={key}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', fontFamily: 'var(--font-mono)', marginBottom: '3px', textTransform: 'uppercase', color: 'var(--text-primary)' }}>
+                                            <span>{key} SIG</span>
+                                            <span style={{ color: data.color }}>w={finalW}</span>
+                                        </div>
+                                        <div style={{ width: '100%', height: '3px', background: 'var(--panel-border)', borderRadius: '2px', overflow: 'hidden' }}>
+                                            <div style={{ width: `${(parseFloat(finalW) / 0.4) * 100}%`, height: '100%', background: data.color }}></div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
 
