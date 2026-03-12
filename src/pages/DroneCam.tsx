@@ -9,26 +9,6 @@ mapboxgl.accessToken = "pk.eyJ1IjoieWFvdGluZ2NodW4iLCJhIjoiY21tZ2x1MW9yMGtlMDJ3b
 const EPICENTER = { lng: 103.7414, lat: 1.4927 };
 const MAGNITUDE = 6.8;
 
-const haversine = (lon1: number, lat1: number, lon2: number, lat2: number) => {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-};
-
-const computeDamage = (lng: number, lat: number) => {
-    const d = haversine(lng, lat, EPICENTER.lng, EPICENTER.lat);
-    const intensity = MAGNITUDE / (d + 0.1);
-    if (intensity > 4) return { level: 3, factor: 0.1 };
-    if (intensity > 2) return { level: 2, factor: 0.4 };
-    if (intensity > 1) return { level: 1, factor: 0.8 };
-    return { level: 0, factor: 1.0 };
-};
-
 // ── Grid simulation constants (same as 2D sim) ─────────────────────
 const GRID_W = 20;
 const GRID_H = 20;
@@ -121,7 +101,6 @@ const DroneCam: React.FC = () => {
     const map = useRef<mapboxgl.Map | null>(null);
     const markersRef = useRef<Record<string, mapboxgl.Marker>>({});
     const scanSourceAdded = useRef(false);
-    const [damageCalculated, setDamageCalculated] = useState(false);
     const [activeDrone, setActiveDrone] = useState('DRN-Alpha');
 
     // Simulation state refs (same pattern as 2D sim)
@@ -503,8 +482,8 @@ const DroneCam: React.FC = () => {
                 id: "3d-buildings", source: "composite", "source-layer": "building",
                 filter: ["==", "extrude", "true"], type: "fill-extrusion",
                 paint: {
-                    "fill-extrusion-color": ['case', ['==', ['feature-state', 'damageLevel'], 3], '#441111', ['==', ['feature-state', 'damageLevel'], 2], '#884422', ['==', ['feature-state', 'damageLevel'], 1], '#999966', '#aaaaaa'],
-                    "fill-extrusion-height": ['*', ['get', 'height'], ['coalesce', ['feature-state', 'damageFactor'], 1.0]],
+                    "fill-extrusion-color": '#aaaaaa',
+                    "fill-extrusion-height": ["get", "height"],
                     "fill-extrusion-base": ["get", "min_height"],
                     "fill-extrusion-opacity": 0.8
                 }
@@ -533,26 +512,6 @@ const DroneCam: React.FC = () => {
 
             scanSourceAdded.current = true;
 
-            // Building damage
-            currentMap.on('idle', () => {
-                if (damageCalculated) return;
-                try {
-                    const features = currentMap.queryRenderedFeatures({ layers: ['3d-buildings'] });
-                    if (features.length > 0) {
-                        const ids = new Set();
-                        features.forEach(f => {
-                            if (f.id && !ids.has(f.id)) {
-                                ids.add(f.id);
-                                let lng = EPICENTER.lng, lat = EPICENTER.lat;
-                                if (f.geometry.type === 'Polygon') { lng = f.geometry.coordinates[0][0][0]; lat = f.geometry.coordinates[0][0][1]; }
-                                const dmg = computeDamage(lng, lat);
-                                currentMap.setFeatureState({ source: 'composite', sourceLayer: 'building', id: f.id }, { damageLevel: dmg.level, damageFactor: dmg.factor });
-                            }
-                        });
-                        setDamageCalculated(true);
-                    }
-                } catch (_e) { /* tiles not loaded yet */ }
-            });
         });
 
         return () => {
@@ -560,7 +519,7 @@ const DroneCam: React.FC = () => {
             markersRef.current = {};
             if (currentMap) { currentMap.remove(); map.current = null; }
         };
-    }, [damageCalculated]);
+    }, []);
 
     // ── Per-frame map sync (markers, camera track, scan overlay) ────
     useEffect(() => {
