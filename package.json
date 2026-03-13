@@ -7,15 +7,21 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "orchestrator": "npx tsx src/orchestrator/index.ts",
+    "orchestrator:loop": "npx tsx src/orchestrator/index.ts --loop",
+    "orchestrator:ticks": "npx tsx src/orchestrator/index.ts --loop 5",
+    "orchestrator:chat": "npx tsx src/orchestrator/chat.ts"
   },
   "dependencies": {
     "@deck.gl/aggregation-layers": "^9.2.11",
     "@deck.gl/layers": "^9.2.11",
     "@deck.gl/react": "^9.2.11",
+    "@google-cloud/vertexai": "^1.10.0",
     "@types/three": "^0.183.1",
     "@vis.gl/react-maplibre": "^8.1.0",
     "deck.gl": "^9.2.11",
+    "dotenv": "^17.3.1",
     "lucide-react": "^0.577.0",
     "mapbox-gl": "^3.19.1",
     "maplibre-gl": "^5.19.0",
@@ -23,7 +29,8 @@
     "react-dom": "^19.2.0",
     "react-map-gl": "^8.1.0",
     "react-router-dom": "^7.13.1",
-    "three": "^0.183.2"
+    "three": "^0.183.2",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
