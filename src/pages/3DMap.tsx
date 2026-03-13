@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import DeckGL from '@deck.gl/react';
 import { Map } from 'react-map-gl/maplibre';
 import { HeatmapLayer } from '@deck.gl/aggregation-layers';
-import { ScatterplotLayer } from '@deck.gl/layers';
 
 // UTM Johor Bahru, Malaysia
 const MAP_CENTER = { longitude: 101.6841, latitude: 3.1319 };

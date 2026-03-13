@@ -95,6 +95,7 @@ export interface SectorScanResult {
     terrain: string;
     scanned: boolean;
     lastScannedTick: number;
+    disasterImage?: string;
     signals: {
         mobile: number;
         thermal: number;
@@ -220,6 +221,7 @@ export interface MissionStats {
     averageBattery: number;
     dronesCharging: number;
     dronesDisconnected: number;
+    simulationRunning: boolean;
 }
 
 export interface SetSurvivorPinParams {
@@ -243,6 +245,10 @@ export interface SectorAssignmentsResult {
     assignments: SectorAssignment[];
     reservedCount: number;
     freeCount: number;
+}
+
+export interface SetSimulationStateParams {
+    running: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

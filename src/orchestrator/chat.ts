@@ -48,6 +48,13 @@ let { drones } = initializeSwarm(heatmap);
 let tickNumber = 0;
 let latestVisionResult: string | undefined = undefined;
 const scannedHotspots = new Set<string>(); // "r,c" to prevent redundant photos
+let simulationRunning = false;
+let autonomousMode = true; // AI will auto-tick when simulation is running
+let lastAutoTickTime = 0;
+const AUTO_TICK_INTERVAL_MS = 10000; // AI thinks every 10 seconds of sim time
+
+let isLiveMode = true;
+const MCP_SERVER_URL = process.env.MCP_SERVER_URL || 'http://localhost:3001';
 
 const objectives: MissionObjective[] = [];
 const sensorHistory: any[] = []; // sliding window of sensor weights
@@ -56,6 +63,11 @@ const MAX_HISTORY = 5;
 const terrainGrid: TerrainGrid = Array.from({ length: GRID_H }, () =>
     new Array<TerrainType>(GRID_W).fill('Open Field'),
 );
+
+// Backup for Live Mode toggling
+let localDronesBackup: SearchDrone[] = [];
+let localHeatmapBackup: number[][] = [];
+let localTickBackup: number = 0;
 
 // ── Gemini model (with chat history) ────────────────────────────────────────
 const model = createChatModel(0.3);
@@ -86,7 +98,7 @@ const calculateSensorTrends = (): SensorTrend[] => {
 const sendToGemini = async (userMessage: string, imageBase64?: string): Promise<string> => {
     // Always build a fresh snapshot so the AI has current state
     const snapshot = buildEnvironmentSnapshot(
-        heatmap, terrainGrid, INITIAL_SENSORS, drones, tickNumber, 10, latestVisionResult, objectives, calculateSensorTrends()
+        heatmap, terrainGrid, INITIAL_SENSORS, drones, tickNumber, 10, latestVisionResult, objectives, calculateSensorTrends(), simulationRunning
     );
 
     // Prepend the state summary to every message so Gemini never loses context
@@ -171,18 +183,100 @@ const simulateDroneTick = (droneList: SearchDrone[]): SearchDrone[] => {
 };
 
 /**
+ * Fetch real-time state from the MCP server and sync the local state.
+ * Returns true if successful.
+ */
+const syncSwarmState = async (): Promise<boolean> => {
+    try {
+        const [swarmRes, gridRes, statsRes] = await Promise.all([
+            fetch(`${MCP_SERVER_URL}/api/tools/getSwarmStatus`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            }),
+            fetch(`${MCP_SERVER_URL}/api/tools/getGridHeatmap`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            }),
+            fetch(`${MCP_SERVER_URL}/api/tools/getMissionStats`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            })
+        ]);
+
+        const swarmData: any = await swarmRes.json();
+        const gridData: any = await gridRes.json();
+        const statsData: any = await statsRes.json();
+        
+        if (swarmData.success && swarmData.data) {
+            drones = swarmData.data.drones.map((d: any) => ({
+                id: d.id,
+                x: d.position.x,
+                y: d.position.y,
+                battery: d.battery,
+                active: d.isActive,
+                mode: d.mode,
+                regionXMin: d.assignedRegion?.xMin ?? 0,
+                regionXMax: d.assignedRegion?.xMax ?? 19,
+                regionYMin: d.assignedRegion?.yMin ?? 0,
+                regionYMax: d.assignedRegion?.yMax ?? 19,
+                path: [],
+                pathIndex: 0,
+                scanQueue: [],
+                scanQueueIndex: 0
+            }));
+        }
+
+        if (gridData.success && gridData.data) {
+            heatmap = gridData.data.cells;
+        }
+
+        if (statsData.success && statsData.data) {
+            tickNumber = statsData.data.currentTick;
+            simulationRunning = statsData.data.simulationRunning;
+        }
+
+        if (drones.length === 0) {
+            console.log(red('⚠ Warning: No drones found in live simulation!'));
+            console.log(yellow('  👉 Ensure you have the React Dashboard open at http://localhost:3000'));
+            console.log(yellow('  👉 Check if "MCP ONLINE" is visible in the top header of the dashboard.'));
+        }
+
+        return true;
+    } catch (err) {
+        console.log(red(`❌ Live Sync Failed: ${err}`));
+        return false;
+    }
+};
+
+/**
  * Build and send a tick — same as the orchestrator but in chat context.
  */
 const runTickInChat = async (): Promise<void> => {
     tickNumber++;
-    // Advance drone simulation (move drones, drain/recharge battery)
-    drones = simulateDroneTick(drones as SearchDrone[]);
+
+    if (isLiveMode) {
+        console.log(cyan('\n🌐 Live Mode: Syncing with MCP server...'));
+        const success = await syncSwarmState();
+        if (!success) {
+            console.log(red('❌ Sync Failure: Cannot proceed with tick without live data.'));
+            console.log(yellow('  👉 Check if MCP server and Dashboard are running.'));
+            return;
+        }
+        console.log(green('✔ State synced with live simulation.'));
+    } else {
+        // Advanced users can still use local mode via /live toggle
+        drones = simulateDroneTick(drones as SearchDrone[]);
+    }
+
     // Update sensor history for trend analysis
     sensorHistory.push({ ...INITIAL_SENSORS });
     if (sensorHistory.length > MAX_HISTORY) sensorHistory.shift();
 
     const snapshot = buildEnvironmentSnapshot(
-        heatmap, terrainGrid, INITIAL_SENSORS, drones, tickNumber, 10, latestVisionResult, objectives, calculateSensorTrends()
+        heatmap, terrainGrid, INITIAL_SENSORS, drones, tickNumber, 10, latestVisionResult, objectives, calculateSensorTrends(), simulationRunning
     );
 
     const userPrompt = buildUserPrompt(snapshot);
@@ -205,7 +299,7 @@ const processAIResponse = async (reply: string) => {
         const decision = JSON.parse(cleaned);
         
         if (decision.actions && Array.isArray(decision.actions)) {
-            const { result, drones: updatedDrones } = executeDecision(decision, drones as SearchDrone[], heatmap);
+            const { result, drones: updatedDrones } = await executeDecision(decision, drones as SearchDrone[], heatmap, isLiveMode);
             drones = updatedDrones;
             
             console.log(`\n[Executor] Executed: ${result.executed}, Skipped: ${result.skipped}`);
@@ -304,7 +398,10 @@ const printAIResponse = (text: string) => {
 };
 
 const printStatus = () => {
-    console.log(`\n${bold('═══ Current State ═══')}`);
+    console.log(`\n${bold('═══ Current State ═══')} ${isLiveMode ? green('[LIVE LINK ACTIVE]') : yellow('[LOCAL SIM MODE]')}`);
+    if (isLiveMode) {
+        console.log(dim('  (Live data from React Dashboard)'));
+    }
     console.log(`Tick: ${tickNumber}  |  Grid: ${GRID_W}×${GRID_H}`);
     console.log(`\n${bold('Drones:')}`);
     for (const d of drones) {
@@ -334,6 +431,8 @@ const printStatus = () => {
 const printHelp = () => {
     console.log(`
 ${bold('Commands:')}
+  ${green('/live')}                Toggle Live Link to React Dashboard
+  ${green('/auto')}                Toggle autonomous AI mode (AI ticks follow dashboard button)
   ${green('/tick')}                Run one AI decision cycle
   ${green('/status')}              Show drone fleet & hotspot summary
   ${green('/drain')} ${dim('<id> <pct>')}    Set drone battery  ${dim('e.g. /drain D3 15')}
@@ -353,8 +452,37 @@ const handleCommand = async (input: string): Promise<boolean> => {
     const cmd = parts[0].toLowerCase();
 
     switch (cmd) {
+        case '/live':
+            if (!isLiveMode) {
+                // Enabling Live Mode: Backup local state
+                localDronesBackup = [...drones as SearchDrone[]];
+                localHeatmapBackup = heatmap.map(row => [...row]);
+                localTickBackup = tickNumber;
+
+                isLiveMode = true;
+                console.log(green('🔌 Live Link Enabled. AI will now read from and control your React Dashboard!'));
+                console.log(dim('  (Synchronizing drone IDs with Dashboard...)'));
+                await syncSwarmState();
+            } else {
+                // Disabling Live Mode: Restore local state
+                isLiveMode = false;
+                drones = localDronesBackup;
+                heatmap = localHeatmapBackup;
+                tickNumber = localTickBackup;
+                console.log(yellow('🔌 Live Link Disabled. Reverting to local simulation state.'));
+            }
+            printStatus();
+            return true;
+
         case '/tick':
             await runTickInChat();
+            return true;
+
+        case '/auto':
+            autonomousMode = !autonomousMode;
+            console.log(autonomousMode 
+                ? green('🤖 Autonomous Mode ENABLED. AI will automatically tick when simulation is running.') 
+                : yellow('🤖 Autonomous Mode DISABLED. You must manually type /tick.'));
             return true;
 
         case '/status':
@@ -461,8 +589,15 @@ const main = async () => {
         heatmap = gridDataService.getWeights();
         // Re-init swarm with fresh heatmap
         ({ drones } = initializeSwarm(heatmap));
-
-        printStatus();
+        // Initial sync for Live Mode
+        if (isLiveMode) {
+            console.log(dim('Synchronizing with MCP server on startup...'));
+            syncSwarmState().then(() => {
+                printStatus();
+            });
+        } else {
+            printStatus();
+        }
 
         const rl = readline.createInterface({
             input: process.stdin,
@@ -495,6 +630,25 @@ const main = async () => {
 
             rl.prompt();
         });
+
+        // Background loop for sync and autonomous ticks
+        setInterval(async () => {
+            if (isLiveMode) {
+                const prevRunning = simulationRunning;
+                await syncSwarmState();
+                
+                // If just started or is running and enough time passed
+                const now = Date.now();
+                if (autonomousMode && simulationRunning) {
+                    if (!prevRunning || (now - lastAutoTickTime > AUTO_TICK_INTERVAL_MS)) {
+                        console.log(cyan('\n[Auto] Dashboard is RUNNING. Triggering autonomous decision...'));
+                        lastAutoTickTime = now;
+                        await runTickInChat();
+                        rl.prompt();
+                    }
+                }
+            }
+        }, 2000);
 
         rl.on('close', () => {
             console.log(dim('\nGoodbye! 👋'));

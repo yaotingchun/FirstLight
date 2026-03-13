@@ -41,6 +41,7 @@ export const buildEnvironmentSnapshot = (
     latestVisionResult?: string,
     objectives: MissionObjective[] = [],
     sensorTrends: SensorTrend[] = [],
+    simulationRunning = false,
 ): EnvironmentSnapshot => {
 
     const gridSize = weights.length;
@@ -146,6 +147,7 @@ export const buildEnvironmentSnapshot = (
         `GRID: ${gridSize}x${gridSize} (${totalCells} cells total)`,
         `SCANNED: ${scannedCells}/${totalCells} (${Math.round(scannedCells / totalCells * 100)}%)`,
         `AVERAGE PROBABILITY: ${(Math.round(avgProb * 1000) / 1000)}`,
+        `SIMULATION STATE: ${simulationRunning ? 'RUNNING (AI Loop Active)' : 'PAUSED'}`,
         ``,
         `DRONE FLEET: ${drones.length} drones total`,
         `  Active: ${activeDronesList.length} drones — ${activeDronesList.map(d => `${d.id}(battery=${Math.round(d.battery)}%)`).join(', ')}`,
@@ -191,5 +193,6 @@ export const buildEnvironmentSnapshot = (
         latestVisionResult,
         objectives,
         sensorTrends,
+        simulationRunning,
     };
 };

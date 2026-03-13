@@ -315,6 +315,20 @@ export const toolSchemas = {
             properties: {}
         }
     },
+    setSimulationRunning: {
+        name: 'setSimulationRunning',
+        description: 'Start or pause the simulation loop on the frontend dashboard',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                running: {
+                    type: 'boolean',
+                    description: 'Whether the simulation should be running'
+                }
+            },
+            required: ['running']
+        }
+    },
     getMissionBriefing: {
         name: 'getMissionBriefing',
         description: 'Get mission briefing with objectives, constraints, and AI recommendations',
@@ -403,6 +417,7 @@ export const toolHandlers: Record<string, Function> = {
     getFoundSurvivors: missionTools.getFoundSurvivors,
     setSurvivorPin: missionTools.setSurvivorPin,
     resetMission: missionTools.resetMission,
+    setSimulationRunning: missionTools.setSimulationRunning,
     getMissionBriefing: missionTools.getMissionBriefing,
     getSectorAssignments: missionTools.getSectorAssignments,
 

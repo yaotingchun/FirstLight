@@ -509,6 +509,7 @@ export const GRID_CENTER: GridPoint = { x: Math.floor(GRID_W / 2), y: Math.floor
 /** Full search-drone state including path, scan queue, and UI fields. */
 export type SearchDrone = DroneWithRegion & {
     tx: number; ty: number; color: string;
+    mode: 'Wide' | 'Micro' | 'Relay' | 'Charging';
     path: GridPoint[]; pathIndex: number;
     scanQueue: GridPoint[];
     scanQueueIndex: number;
@@ -589,6 +590,7 @@ export const createInitialDrones = (): SearchDrone[] => {
             vx: 0, vy: 0,
             tx: BASE_X, ty: BASE_Y,
             color: DRONE_COLORS[i % DRONE_COLORS.length],
+            mode: 'Wide',
             active: true,
             regionXMin: xMin, regionXMax: xMax,
             regionYMin: yMin, regionYMax: yMax,

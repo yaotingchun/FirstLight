@@ -83,6 +83,39 @@ export async function getServerStatus(): Promise<{
     }
 }
 
+export interface OrchestratorChatResponse {
+    success: boolean;
+    reply?: string;
+    decision?: {
+        reasoning: string;
+        priority?: 'low' | 'medium' | 'high' | 'critical';
+        actions: Array<Record<string, unknown>>;
+    };
+    executionLog?: string[];
+    error?: string;
+    timestamp: number;
+}
+
+/**
+ * Send a message to the orchestrator AI through the MCP server.
+ */
+export async function orchestratorChat(message: string): Promise<OrchestratorChatResponse> {
+    try {
+        const response = await fetch(`${MCP_SERVER_URL}/api/orchestrator/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message })
+        });
+        return await response.json();
+    } catch (error) {
+        return {
+            success: false,
+            error: `Failed to reach orchestrator endpoint: ${error instanceof Error ? error.message : String(error)}`,
+            timestamp: Date.now()
+        };
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // STATE SYNC (Frontend -> Server)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -108,9 +141,11 @@ export interface SectorStateForSync {
     x: number;
     y: number;
     probability: number;
+    pheromone?: number;
     terrain: string;
     scanned: boolean;
     lastScannedTick: number;
+    disasterImage?: string;
     signals: {
         mobile: number;
         thermal: number;
@@ -284,5 +319,6 @@ export const mcpTools = {
         executeTool('setSurvivorPin', { x, y, droneId, message }),
     resetMission: () => executeTool('resetMission'),
     getMissionBriefing: () => executeTool('getMissionBriefing'),
-    getSectorAssignments: () => executeTool('getSectorAssignments')
+    getSectorAssignments: () => executeTool('getSectorAssignments'),
+    setSimulationRunning: (running: boolean) => executeTool('setSimulationRunning', { running })
 };
