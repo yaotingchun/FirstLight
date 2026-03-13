@@ -22,6 +22,7 @@ import type {
     MissionStats, 
     SurvivorInfo,
     SetSurvivorPinParams,
+    SetSimulationStateParams,
     MCPToolResult,
     DroneStatus
 } from '../types.js';
@@ -206,6 +207,40 @@ export async function resetMission(): Promise<MCPToolResult<{ commandId: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// TOOL: setSimulationRunning
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Start or pause the simulation.
+ * 
+ * This action:
+ * 1. Toggles the 'running' state on the frontend dashboard
+ * 2. When 'running' is true, drones will follow their targets
+ * 3. When 'running' is false, drones will remain stationary
+ * 
+ * Use this to:
+ * - Start the mission after giving initial commands
+ * - Pause for detailed analysis
+ * - Resume search efforts
+ */
+export async function setSimulationRunning(
+    params: SetSimulationStateParams
+): Promise<MCPToolResult<{ commandId: string; message: string }>> {
+    const commandId = droneStore.enqueueCommand('SET_SIMULATION_STATE', {
+        running: params.running
+    });
+
+    return {
+        success: true,
+        data: {
+            commandId,
+            message: `Simulation ${params.running ? 'started' : 'paused'} command queued.`
+        },
+        timestamp: Date.now()
+    };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // TOOL: getMissionBriefing
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -323,5 +358,6 @@ export const missionTools = {
     getFoundSurvivors,
     setSurvivorPin,
     resetMission,
+    setSimulationRunning,
     getMissionBriefing
 };

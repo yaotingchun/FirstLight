@@ -44,7 +44,7 @@ export const createModel = (temperature = 0.2): GenerativeModel => {
  */
 export const createChatModel = (temperature = 0.3): GenerativeModel => {
     return vertexAI.getGenerativeModel({
-        model: process.env.ORCHESTRATOR_MODEL ?? 'gemini-2.0-flash',
+        model: process.env.ORCHESTRATOR_MODEL ?? 'gemini-2.5-flash',
         generationConfig: {
             temperature,
             maxOutputTokens: 8192,

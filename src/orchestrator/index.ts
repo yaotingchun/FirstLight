@@ -125,7 +125,7 @@ const runTick = async (): Promise<void> => {
     const decision = await decideActions(snapshot);
 
     // 4. Execute decisions
-    const { drones: updatedDrones, result } = executeDecision(decision, drones, heatmap);
+    const { drones: updatedDrones, result } = await executeDecision(decision, drones, heatmap);
     drones = updatedDrones;
 
     // 5. Log execution results

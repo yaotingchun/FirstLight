@@ -7,7 +7,6 @@ mapboxgl.accessToken = "pk.eyJ1IjoieWFvdGluZ2NodW4iLCJhIjoiY21tZ2x1MW9yMGtlMDJ3b
 
 // ── Map / Earthquake constants ──────────────────────────────────────
 const EPICENTER = { lng: 103.7414, lat: 1.4927 };
-const MAGNITUDE = 6.8;
 
 // ── Grid simulation constants (same as 2D sim) ─────────────────────
 const GRID_W = 20;

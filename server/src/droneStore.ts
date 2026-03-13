@@ -75,7 +75,8 @@ export type CommandType =
     | 'RECALL_TO_BASE'
     | 'KILL_DRONE'
     | 'SET_SURVIVOR_PIN'
-    | 'RESET_MISSION';
+    | 'RESET_MISSION'
+    | 'SET_SIMULATION_STATE';
 
 export interface PendingCommand {
     id: string;
@@ -283,7 +284,8 @@ class DroneStore {
             highPriorityZonesRemaining: highPriorityRemaining,
             averageBattery: avgBattery,
             dronesCharging: charging,
-            dronesDisconnected: disconnected
+            dronesDisconnected: disconnected,
+            simulationRunning: this.state.isRunning
         };
     }
 

@@ -18,6 +18,7 @@ import express from 'express';
 import cors from 'cors';
 import { executeTool, listTools, toolSchemas } from './tools/index.js';
 import { droneStore } from './droneStore.js';
+import { processOrchestratorChat } from './orchestratorChat.js';
 import type { DroneStatus, SectorScanResult, CommLink, SurvivorInfo } from './types.js';
 
 const app = express();
@@ -25,7 +26,7 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 
 // ═══════════════════════════════════════════════════════════════════════════
 // API ENDPOINTS
@@ -54,7 +55,7 @@ app.get('/api/tools', (req, res) => {
             drone: ['getDroneStatus', 'getAllDroneStatuses', 'setDroneTarget', 'setDroneMode', 'recallDroneToBase', 'killDrone'],
             scan: ['getSectorScanResult', 'getGridHeatmap', 'getScannedSectors', 'getSurroundingSectors'],
             communication: ['getCommNetworkStatus', 'getDisconnectedDrones', 'checkDroneConnectivity'],
-            mission: ['getSwarmStatus', 'getMissionStats', 'getFoundSurvivors', 'setSurvivorPin', 'resetMission', 'getMissionBriefing'],
+            mission: ['getSwarmStatus', 'getMissionStats', 'getFoundSurvivors', 'setSurvivorPin', 'resetMission', 'setSimulationRunning', 'getMissionBriefing'],
             swarmIntel: ['getExplorationGradient', 'getUnassignedHotspots', 'getDroneAssignmentMap']
         }
     });
@@ -88,6 +89,23 @@ app.post('/api/tools/:toolName', async (req, res) => {
 
     const result = await executeTool(toolName, params);
     
+    res.json(result);
+});
+
+// Orchestrator chat endpoint (frontend AI chat)
+app.post('/api/orchestrator/chat', async (req, res) => {
+    const { message } = req.body as { message?: string };
+
+    if (!message || !message.trim()) {
+        res.status(400).json({
+            success: false,
+            error: 'message is required',
+            timestamp: Date.now()
+        });
+        return;
+    }
+
+    const result = await processOrchestratorChat(message.trim());
     res.json(result);
 });
 
@@ -247,7 +265,7 @@ app.listen(PORT, () => {
 ║    • Drone (6 tools): Status, targeting, mode control                      ║
 ║    • Scan (4 tools): Sector queries, heatmap access                        ║
 ║    • Communication (3 tools): Network status, connectivity                 ║
-║    • Mission (6 tools): Swarm status, mission control                      ║
+║    • Mission (7 tools): Swarm status, mission control + run/pause          ║
 ╚═══════════════════════════════════════════════════════════════════════════╝
     `);
 });

@@ -9,13 +9,16 @@
 
 export type OrchestratorAction =
     | { type: 'move_drone';       droneId: string; x: number; y: number; reason: string }
+    | { type: 'set_drone_mode';   droneId: string; mode: 'Wide' | 'Micro' | 'Relay' | 'Charging'; reason: string }
     | { type: 'scan_area';        droneId: string; reason: string }
     | { type: 'capture_image';    droneId: string; x: number; y: number; reason: string }
     | { type: 'recall_drone';     droneId: string; reason: string }
     | { type: 'reallocate_swarm'; reason: string }
-    | { type: 'deploy_team';      teamName: string; cellId: string; reason: string }
-    | { type: 'create_alert';     severity: 'low' | 'medium' | 'high' | 'critical'; message: string }
+    | { type: 'deploy_team';      teamName: string; cellId: string; x: number; y: number; reason: string }
     | { type: 'search_pattern';   droneId: string; pattern: 'spiral' | 'lawnmower' | 'expanding_sq'; x: number; y: number; reason: string }
+    | { type: 'reset_simulation'; reason: string }
+    | { type: 'set_simulation_state'; running: boolean; reason: string }
+    | { type: 'create_alert';     severity: 'low' | 'medium' | 'high' | 'critical'; message: string }
     | { type: 'no_action';        reason: string };
 
 export interface OrchestratorDecision {
@@ -92,6 +95,7 @@ export interface EnvironmentSnapshot {
     inactiveDrones: number;
     overallBatteryAvg: number;
     tickNumber: number;
+    simulationRunning: boolean;
     latestVisionResult?: string;
     objectives: MissionObjective[];
     sensorTrends: SensorTrend[];

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, FastForward, Target, Radio, Crosshair, RotateCcw, Activity, Hexagon, MapPin, X, Shield, Wifi, WifiOff, Terminal } from 'lucide-react';
+import { Play, Pause, FastForward, Target, Radio, Crosshair, RotateCcw, Activity, Hexagon, MapPin, X, Shield, Wifi, WifiOff, Terminal, MessageSquare, Send } from 'lucide-react';
 
 const GRID_W = 20;
 const GRID_H = 20;
@@ -13,6 +13,8 @@ const THRESHOLD_FOUND = 0.75;
 
 // MCP Sync interval (every N ticks)
 const MCP_SYNC_INTERVAL = 10;
+const AI_DECISION_INTERVAL_MS = 3000;
+const AI_DECISION_POLL_MS = 1000;
 
 // Types
 type Sector = {
@@ -77,6 +79,11 @@ type FoundPin = {
     x: number;
     y: number;
     info: { message: string, battery: string, img?: string };
+};
+
+type OrchestratorChatMessage = {
+    role: 'user' | 'ai' | 'system';
+    text: string;
 };
 
 // Utilities
@@ -243,6 +250,24 @@ const SimulationMapMCP: React.FC = () => {
     const [mcpToolOutput, setMcpToolOutput] = useState<string>('');
     const [mcpSelectedTool, setMcpSelectedTool] = useState<string>('getSwarmStatus');
     const [mcpToolParams, setMcpToolParams] = useState<string>('{}');
+    const [chatOpen, setChatOpen] = useState(false);
+    const [chatInput, setChatInput] = useState('');
+    const [chatSending, setChatSending] = useState(false);
+    const aiBusyRef = useRef(false);
+    const aiLastRunRef = useRef(0);
+    const chatScrollRef = useRef<HTMLDivElement | null>(null);
+    const [chatMessages, setChatMessages] = useState<OrchestratorChatMessage[]>([
+        { role: 'system', text: 'AI chat ready. Ask status or issue commands (e.g. "move DRN-Alpha to 5,8"). Use THINK NOW to force one AI decision cycle.' }
+    ]);
+
+    useEffect(() => {
+        if (!chatOpen) return;
+        const el = chatScrollRef.current;
+        if (!el) return;
+        requestAnimationFrame(() => {
+            el.scrollTop = el.scrollHeight;
+        });
+    }, [chatMessages, chatOpen]);
 
     // MCP Connection Check
     useEffect(() => {
@@ -268,9 +293,87 @@ const SimulationMapMCP: React.FC = () => {
         }
     };
 
+    const runOrchestratorPrompt = useCallback(async (message: string, source: 'user' | 'auto' = 'user') => {
+        const trimmed = message.trim();
+        if (!trimmed || aiBusyRef.current) return;
+
+        aiBusyRef.current = true;
+        setChatSending(true);
+
+        if (source === 'user') {
+            setChatMessages(prev => [...prev, { role: 'user', text: trimmed }]);
+        } else {
+            setChatMessages(prev => [...prev, { role: 'system', text: 'Auto-think: AI is evaluating current swarm state...' }]);
+        }
+
+        const result = await mcpClient.orchestratorChat(trimmed);
+
+        if (!result.success) {
+            setChatMessages(prev => [...prev, { role: 'system', text: `Error: ${result.error ?? 'Unknown error'}` }]);
+            setChatSending(false);
+            aiBusyRef.current = false;
+            return;
+        }
+
+        const decision = result.decision;
+        if (decision) {
+            const actions = decision.actions ?? [];
+            const actionSummary = actions
+                .map((a) => {
+                    const type = String(a.type ?? 'unknown');
+                    if (type === 'move_drone') {
+                        return `${type}(${String(a.droneId ?? '?')} -> ${String(a.x ?? '?')},${String(a.y ?? '?')})`;
+                    }
+                    if (type === 'set_drone_mode') {
+                        return `${type}(${String(a.droneId ?? '?')} -> ${String(a.mode ?? '?')})`;
+                    }
+                    if (type === 'set_simulation_state') {
+                        return `${type}(${String(a.running ?? '?')})`;
+                    }
+                    return type;
+                })
+                .join(' | ');
+
+            setChatMessages(prev => [
+                ...prev,
+                {
+                    role: 'ai',
+                    text: `Decision [${(decision.priority ?? 'medium').toUpperCase()}]\nReasoning: ${decision.reasoning}\nActions: ${actionSummary || 'none'}`
+                }
+            ]);
+        } else {
+            const replyText = result.reply;
+            if (replyText) {
+                setChatMessages(prev => [...prev, { role: 'ai', text: replyText }]);
+            }
+        }
+
+        const executionLog = result.executionLog;
+        if (executionLog && executionLog.length > 0) {
+            setChatMessages(prev => [...prev, { role: 'system', text: `Executed: ${executionLog.join(' | ')}` }]);
+        }
+
+        setChatSending(false);
+        aiBusyRef.current = false;
+    }, []);
+
+    const sendChatMessage = useCallback(async () => {
+        const message = chatInput.trim();
+        if (!message || chatSending) return;
+        setChatInput('');
+        await runOrchestratorPrompt(message, 'user');
+    }, [chatInput, chatSending, runOrchestratorPrompt]);
+
+    const runThinkNow = useCallback(async () => {
+        await runOrchestratorPrompt(
+            'Analyze the latest swarm state, explain your reasoning briefly, and output the best immediate actions to improve search coverage and survivor detection.',
+            'auto'
+        );
+    }, [runOrchestratorPrompt]);
+
     // MCP State Sync Helper
-    const syncToMcp = useCallback(async () => {
-        if (!mcpConnected) return;
+    const syncToMcp = useCallback(async (forceMcpConnected = false) => {
+        if (!mcpConnected && !forceMcpConnected) return;
         
         const drones = dronesRef.current;
         const grid = gridRef.current;
@@ -301,21 +404,21 @@ const SimulationMapMCP: React.FC = () => {
         // Sync tick and running state
         await mcpClient.syncTick(timeRef.current, running);
 
-        // Sync grid state (every 50 ticks to reduce load)
-        if (timeRef.current % 50 === 0) {
-            const gridState = grid.map(row => row.map(s => ({
-                gridCell: String.fromCharCode(65 + s.x) + (s.y + 1),
-                x: s.x,
-                y: s.y,
-                probability: s.prob,
-                pheromone: s.pheromone,
-                terrain: s.terrain,
-                scanned: s.scanned,
-                lastScannedTick: s.lastScanned,
-                signals: s.signals
-            })));
-            await mcpClient.syncGridState(gridState);
-        }
+        // Sync full grid state on every MCP sync so orchestrator stats stay fresh
+        // (20x20 grid is small enough; this prevents stale "0% scan progress" in AI chat)
+        const gridState = grid.map(row => row.map(s => ({
+            gridCell: String.fromCharCode(65 + s.x) + (s.y + 1),
+            x: s.x,
+            y: s.y,
+            probability: s.prob,
+            pheromone: s.pheromone,
+            terrain: s.terrain,
+            scanned: s.scanned,
+            lastScannedTick: s.lastScanned,
+            disasterImage: s.disasterImage,
+            signals: s.signals
+        })));
+        await mcpClient.syncGridState(gridState);
     }, [mcpConnected, running]);
 
     // MCP Command Polling
@@ -368,6 +471,12 @@ const SimulationMapMCP: React.FC = () => {
                     addLog('MCP: Mission reset', 'info');
                     break;
                 }
+                case 'SET_SIMULATION_STATE': {
+                    const shouldRun = cmd.params.running as boolean;
+                    setRunning(shouldRun);
+                    addLog(`MCP: Simulation ${shouldRun ? 'started' : 'paused'} remotely`, 'info');
+                    break;
+                }
                 case 'SET_SURVIVOR_PIN': {
                     const sx = cmd.params.x as number;
                     const sy = cmd.params.y as number;
@@ -401,6 +510,17 @@ const SimulationMapMCP: React.FC = () => {
             await mcpClient.acknowledgeCommand(cmd.id);
         }
     }, [mcpConnected]);
+
+    const toggleRunning = useCallback(async () => {
+        const nextRunning = !running;
+        setRunning(nextRunning);
+
+        // Push running-state change immediately so external orchestrators
+        // can react without waiting for periodic MCP sync.
+        if (mcpConnected) {
+            await mcpClient.syncTick(timeRef.current, nextRunning);
+        }
+    }, [running, mcpConnected]);
 
     // If OSM terrain loads after this page, refresh the grid automatically
     useEffect(() => {
@@ -1043,6 +1163,28 @@ const SimulationMapMCP: React.FC = () => {
         return () => clearInterval(interval);
     }, [running, speed, performTick]);
 
+    // Initial sync on connection
+    useEffect(() => {
+        if (mcpConnected) {
+            syncToMcp(true); // Force sync skip connection check to be safe
+            addLog('MCP: Link established - Initial state synced', 'info');
+        }
+    }, [mcpConnected, syncToMcp]);
+
+    // Background State Sync (works even when simulation is paused)
+    useEffect(() => {
+        if (!mcpConnected) return;
+        
+        const syncInterval = setInterval(() => {
+            // Only sync if not already handled by performTick
+            if (!running) {
+                syncToMcp();
+            }
+        }, 5000); // Sync every 5 seconds when paused
+        
+        return () => clearInterval(syncInterval);
+    }, [mcpConnected, running, syncToMcp]);
+
     // MCP Command Polling (works even when simulation is paused)
     useEffect(() => {
         if (!mcpConnected) return;
@@ -1053,6 +1195,29 @@ const SimulationMapMCP: React.FC = () => {
         
         return () => clearInterval(pollInterval);
     }, [mcpConnected, processMcpCommands]);
+
+    // Trigger one immediate AI decision when simulation starts
+    useEffect(() => {
+        if (!mcpConnected || !running) return;
+        if (aiBusyRef.current) return;
+
+        aiLastRunRef.current = Date.now();
+        runThinkNow();
+    }, [mcpConnected, running, runThinkNow]);
+
+    // Always-on auto decision loop (terminal-like behavior)
+    useEffect(() => {
+        if (!mcpConnected || !running) return;
+
+        const interval = setInterval(() => {
+            const now = Date.now();
+            if (now - aiLastRunRef.current < AI_DECISION_INTERVAL_MS) return;
+            aiLastRunRef.current = now;
+            runThinkNow();
+        }, AI_DECISION_POLL_MS);
+
+        return () => clearInterval(interval);
+    }, [mcpConnected, running, runThinkNow]);
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '16px', color: 'var(--text-primary)' }}>
@@ -1065,7 +1230,7 @@ const SimulationMapMCP: React.FC = () => {
                 </div>
 
                 <div style={{ display: 'flex', gap: '12px', background: 'var(--panel-bg)', padding: '12px', border: '1px solid var(--panel-border)', borderRadius: '4px' }}>
-                    <button onClick={() => setRunning(!running)} className="hud-btn" style={{ padding: '8px 16px', display: 'flex', gap: '8px', cursor: 'pointer' }}>
+                    <button onClick={toggleRunning} className="hud-btn" style={{ padding: '8px 16px', display: 'flex', gap: '8px', cursor: 'pointer' }}>
                         {running ? <Pause size={18} /> : <Play size={18} />} {running ? 'PAUSE' : 'START SCAN'}
                     </button>
                     <button onClick={() => setSpeed(s => s === 1 ? 5 : 1)} className={`hud-btn ${speed > 1 ? 'glow-text' : ''}`} style={{ padding: '8px 16px', display: 'flex', gap: '8px', cursor: 'pointer', borderColor: speed > 1 ? 'var(--accent-primary)' : '' }}>
@@ -1094,6 +1259,19 @@ const SimulationMapMCP: React.FC = () => {
                     >
                         {mcpConnected ? <Wifi size={18} /> : <WifiOff size={18} />} 
                         MCP {mcpConnected ? 'ONLINE' : 'OFFLINE'}
+                    </button>
+                    <button
+                        onClick={() => setChatOpen(!chatOpen)}
+                        className={`hud-btn ${chatOpen ? 'glow-text' : ''}`}
+                        style={{
+                            padding: '8px 16px',
+                            display: 'flex',
+                            gap: '8px',
+                            cursor: 'pointer',
+                            borderColor: chatOpen ? 'var(--accent-primary)' : ''
+                        }}
+                    >
+                        <MessageSquare size={18} /> AI CHAT
                     </button>
                 </div>
             </header>
@@ -1494,6 +1672,7 @@ const SimulationMapMCP: React.FC = () => {
                                     'getFoundSurvivors': '{}',
                                     'setSurvivorPin': '{"x": 5, "y": 5, "droneId": "DRN-Alpha", "message": "Survivor found"}',
                                     'resetMission': '{}',
+                                    'setSimulationRunning': '{"running": true}',
                                     'getMissionBriefing': '{}',
                                     'getExplorationGradient': '{}',
                                     'getUnassignedHotspots': '{"probabilityThreshold": 0.3, "maxResults": 10}',
@@ -1536,6 +1715,7 @@ const SimulationMapMCP: React.FC = () => {
                                 <option value="getFoundSurvivors">getFoundSurvivors</option>
                                 <option value="setSurvivorPin">setSurvivorPin</option>
                                 <option value="resetMission">resetMission</option>
+                                <option value="setSimulationRunning">setSimulationRunning</option>
                                 <option value="getMissionBriefing">getMissionBriefing</option>
                             </optgroup>
                             <optgroup label="Swarm Intelligence">
@@ -1599,6 +1779,123 @@ const SimulationMapMCP: React.FC = () => {
                         }}>
                             {mcpToolOutput || 'No output yet. Execute a tool to see results.'}
                         </pre>
+                    </div>
+                </div>
+            )}
+
+            {/* AI Orchestrator Chat Panel */}
+            {chatOpen && (
+                <div style={{
+                    position: 'fixed',
+                    bottom: 20,
+                    right: 20,
+                    width: 420,
+                    height: 420,
+                    background: 'rgba(5, 10, 16, 0.98)',
+                    border: '1px solid #00ffcc',
+                    borderRadius: 8,
+                    padding: 12,
+                    zIndex: 1000,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    boxShadow: '0 0 30px rgba(0, 255, 204, 0.2)'
+                }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <h3 style={{ margin: 0, color: '#00ffcc', display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
+                            <MessageSquare size={16} /> Orchestrator Chat
+                        </h3>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <button
+                                onClick={runThinkNow}
+                                disabled={!mcpConnected || chatSending}
+                                style={{
+                                    background: '#00ffcc',
+                                    border: 'none',
+                                    color: '#001018',
+                                    borderRadius: 4,
+                                    padding: '4px 8px',
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    cursor: !mcpConnected || chatSending ? 'not-allowed' : 'pointer',
+                                    opacity: !mcpConnected || chatSending ? 0.5 : 1
+                                }}
+                            >
+                                THINK NOW
+                            </button>
+                            <button onClick={() => setChatOpen(false)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}>
+                                <X size={16} />
+                            </button>
+                        </div>
+                    </div>
+
+                    <div style={{
+                        flex: 1,
+                        overflowY: 'auto',
+                        border: '1px solid #243444',
+                        borderRadius: 6,
+                        padding: 8,
+                        marginBottom: 8,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 8
+                    }} ref={chatScrollRef}>
+                        {chatMessages.map((m, i) => (
+                            <div key={i} style={{
+                                alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
+                                maxWidth: '90%',
+                                background: m.role === 'user' ? 'rgba(0,255,204,0.15)' : m.role === 'ai' ? 'rgba(77, 163, 255, 0.15)' : 'rgba(255,255,255,0.06)',
+                                border: '1px solid rgba(255,255,255,0.12)',
+                                borderRadius: 6,
+                                padding: '6px 8px',
+                                fontSize: 12,
+                                whiteSpace: 'pre-wrap'
+                            }}>
+                                {m.text}
+                            </div>
+                        ))}
+                    </div>
+
+                    <div style={{ fontSize: 10, color: '#7fa3b8', marginBottom: 8 }}>
+                        AI auto-evaluates every ~3s while simulation is running. Click THINK NOW to force immediate decision.
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <input
+                            value={chatInput}
+                            onChange={(e) => setChatInput(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    sendChatMessage();
+                                }
+                            }}
+                            placeholder={mcpConnected ? 'Ask AI...' : 'Connect MCP server first'}
+                            disabled={!mcpConnected || chatSending}
+                            style={{
+                                flex: 1,
+                                background: '#0a1520',
+                                border: '1px solid #334455',
+                                color: '#fff',
+                                borderRadius: 6,
+                                padding: '8px 10px',
+                                fontSize: 12
+                            }}
+                        />
+                        <button
+                            onClick={sendChatMessage}
+                            disabled={!mcpConnected || chatSending || !chatInput.trim()}
+                            style={{
+                                border: 'none',
+                                borderRadius: 6,
+                                padding: '8px 10px',
+                                background: '#00ffcc',
+                                color: '#001018',
+                                cursor: !mcpConnected || chatSending || !chatInput.trim() ? 'not-allowed' : 'pointer',
+                                opacity: !mcpConnected || chatSending || !chatInput.trim() ? 0.5 : 1
+                            }}
+                        >
+                            <Send size={14} />
+                        </button>
                     </div>
                 </div>
             )}
