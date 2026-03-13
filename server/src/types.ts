@@ -44,6 +44,44 @@ export interface SetDroneModeParams {
     mode: DroneMode;
 }
 
+export interface GetBatteryForecastParams {
+    droneId: string;
+    targetX: number;
+    targetY: number;
+    assumedMode?: 'Wide' | 'Micro'; // defaults to drone's current mode
+}
+
+export interface BatteryForecast {
+    droneId: string;
+    currentBattery: number;
+    assumedMode: 'Wide' | 'Micro';
+    distanceToTarget: number;
+    distanceTargetToBase: number;
+    estimatedBatteryUsed: number;
+    projectedBatteryOnReturn: number;
+    canReach: boolean; // projectedBatteryOnReturn > 5 (safety buffer)
+    warning: string | null;
+}
+
+export interface DroneDiscoveryEntry {
+    id: string;
+    isActive: boolean;
+    mode: DroneMode;
+    battery: number;
+    position: DronePosition;
+}
+
+export interface DroneDiscoveryList {
+    drones: DroneDiscoveryEntry[];
+    activeCount: number;
+    totalCount: number;
+}
+
+export interface SetAutoRecallThresholdParams {
+    droneId: string;
+    batteryThreshold: number; // 0-100
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // SCAN MODULE TYPES
 // ═══════════════════════════════════════════════════════════════════════════
@@ -189,6 +227,22 @@ export interface SetSurvivorPinParams {
     y: number;
     droneId: string;
     message?: string;
+}
+
+export interface SectorAssignment {
+    gridCell: string;
+    x: number;
+    y: number;
+    reservedByDrone: string | null; // null = free to assign
+    isReserved: boolean;            // true only if drone is still en-route (dist > 0.3)
+    probability: number;
+    pheromone: number;
+}
+
+export interface SectorAssignmentsResult {
+    assignments: SectorAssignment[];
+    reservedCount: number;
+    freeCount: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

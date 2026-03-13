@@ -232,6 +232,8 @@ const SimulationMapMCP: React.FC = () => {
     const swarmMessagesRef = useRef<SwarmMessage[]>([]);
     const sensorWeightsRef = useRef(gridDataService.getSensorWeights());
     const logsRef = useRef<{ time: number, msg: string, type: 'alert' | 'info' | 'success' }[]>([]);
+    // Per-drone auto-recall thresholds set via MCP (droneId -> batteryThreshold %)
+    const autoRecallThresholdsRef = useRef<Map<string, number>>(new Map());
 
     const [, setTickFlip] = useState(0);
     const [selectedPin, setSelectedPin] = useState<FoundPin | null>(null);
@@ -394,6 +396,13 @@ const SimulationMapMCP: React.FC = () => {
                         mcpClient.syncSurvivor({ id: pinId, x: sx, y: sy, droneId: sdroneId, message: smessage, tick: timeRef.current });
                         addLog(`MCP: Survivor pin placed at (${sx}, ${sy}) by ${sdroneId}`, 'success');
                     }
+                    break;
+                }
+                case 'SET_AUTO_RECALL': {
+                    const targetDroneId = cmd.params.droneId as string;
+                    const threshold = cmd.params.batteryThreshold as number;
+                    autoRecallThresholdsRef.current.set(targetDroneId, threshold);
+                    addLog(`MCP: Auto-recall threshold for ${targetDroneId} set to ${threshold}%`, 'info');
                     break;
                 }
             }
@@ -669,6 +678,20 @@ const SimulationMapMCP: React.FC = () => {
             if (d.mode === 'Relay') {
                 d.battery -= 0.01;
                 return;
+            }
+
+            // --- MCP Auto-Recall Policy (checked BEFORE movement to prevent overshoot) ---
+            const mcpRecallThreshold = autoRecallThresholdsRef.current.get(d.id);
+            if (mcpRecallThreshold !== undefined && d.battery <= mcpRecallThreshold) {
+                if (d.tx !== BASE_STATION.x || d.ty !== BASE_STATION.y) {
+                    if (d.savedTx === undefined) {
+                        d.savedTx = d.tx;
+                        d.savedTy = d.ty;
+                    }
+                    d.tx = BASE_STATION.x;
+                    d.ty = BASE_STATION.y;
+                    addLog(`${d.id} MCP auto-recall triggered at ${Math.floor(d.battery)}% (threshold: ${mcpRecallThreshold}%)`, 'alert');
+                }
             }
 
             // --- Battery & RTB Logic ---
@@ -1482,6 +1505,9 @@ const SimulationMapMCP: React.FC = () => {
                                     'setDroneMode': '{"droneId": "DRN-Alpha", "mode": "Micro"}',
                                     'recallDroneToBase': '{"droneId": "DRN-Alpha"}',
                                     'killDrone': '{"droneId": "DRN-Alpha"}',
+                                    'getBatteryForecast': '{"droneId": "DRN-Alpha", "targetX": 15, "targetY": 3}',
+                                    'getDroneDiscoveryList': '{}',
+                                    'setAutoRecallThreshold': '{"droneId": "DRN-Alpha", "batteryThreshold": 25}',
                                     'getSectorScanResult': '{"sector": "E10"}',
                                     'getGridHeatmap': '{}',
                                     'getScannedSectors': '{}',
@@ -1495,6 +1521,7 @@ const SimulationMapMCP: React.FC = () => {
                                     'setSurvivorPin': '{"x": 5, "y": 5, "droneId": "DRN-Alpha", "message": "Survivor found"}',
                                     'resetMission': '{}',
                                     'getMissionBriefing': '{}',
+                                    'getSectorAssignments': '{}',
                                     'getExplorationGradient': '{}',
                                     'getUnassignedHotspots': '{"probabilityThreshold": 0.3, "maxResults": 10}',
                                     'getDroneAssignmentMap': '{}'
@@ -1518,6 +1545,9 @@ const SimulationMapMCP: React.FC = () => {
                                 <option value="setDroneMode">setDroneMode</option>
                                 <option value="recallDroneToBase">recallDroneToBase</option>
                                 <option value="killDrone">killDrone</option>
+                                <option value="getBatteryForecast">getBatteryForecast ✦</option>
+                                <option value="getDroneDiscoveryList">getDroneDiscoveryList ✦</option>
+                                <option value="setAutoRecallThreshold">setAutoRecallThreshold ✦</option>
                             </optgroup>
                             <optgroup label="Scan Tools">
                                 <option value="getSectorScanResult">getSectorScanResult</option>
@@ -1537,6 +1567,7 @@ const SimulationMapMCP: React.FC = () => {
                                 <option value="setSurvivorPin">setSurvivorPin</option>
                                 <option value="resetMission">resetMission</option>
                                 <option value="getMissionBriefing">getMissionBriefing</option>
+                                <option value="getSectorAssignments">getSectorAssignments ✦</option>
                             </optgroup>
                             <optgroup label="Swarm Intelligence">
                                 <option value="getExplorationGradient">getExplorationGradient</option>
