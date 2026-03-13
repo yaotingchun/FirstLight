@@ -1,14 +1,18 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, FastForward, Target, Radio, Crosshair, RotateCcw, Activity, Hexagon, MapPin, X, Shield } from 'lucide-react';
+import { Play, Pause, FastForward, Target, Radio, Crosshair, RotateCcw, Activity, Hexagon, MapPin, X, Shield, Wifi, WifiOff, Terminal } from 'lucide-react';
 
 const GRID_W = 20;
 const GRID_H = 20;
 const CELL_SIZE = 35;
 
 import { gridDataService, INITIAL_SENSORS } from '../services/gridDataService';
+import * as mcpClient from '../services/mcpClient';
 
 const THRESHOLD_MICRO = 0.30;
 const THRESHOLD_FOUND = 0.75;
+
+// MCP Sync interval (every N ticks)
+const MCP_SYNC_INTERVAL = 10;
 
 // Types
 type Sector = {
@@ -214,7 +218,7 @@ const createSurvivors = (grid?: Sector[][]): HiddenSurvivor[] => {
 };
 
 // Component
-const SimulationMap: React.FC = () => {
+const SimulationMapMCP: React.FC = () => {
     const [running, setRunning] = useState(false);
     const [speed, setSpeed] = useState(1);
 
@@ -232,6 +236,171 @@ const SimulationMap: React.FC = () => {
     const [, setTickFlip] = useState(0);
     const [selectedPin, setSelectedPin] = useState<FoundPin | null>(null);
     const [showSensors, setShowSensors] = useState(false);
+
+    // MCP State
+    const [mcpConnected, setMcpConnected] = useState(false);
+    const [mcpPanelOpen, setMcpPanelOpen] = useState(false);
+    const [mcpToolOutput, setMcpToolOutput] = useState<string>('');
+    const [mcpSelectedTool, setMcpSelectedTool] = useState<string>('getSwarmStatus');
+    const [mcpToolParams, setMcpToolParams] = useState<string>('{}');
+
+    // MCP Connection Check
+    useEffect(() => {
+        const checkConnection = async () => {
+            const status = await mcpClient.getServerStatus();
+            setMcpConnected(!!status);
+        };
+        checkConnection();
+        const interval = setInterval(checkConnection, 5000);
+        return () => clearInterval(interval);
+    }, []);
+
+    // MCP Tool Execution
+    const executeMcpTool = async () => {
+        try {
+            const params = JSON.parse(mcpToolParams);
+            const result = await mcpClient.executeTool(mcpSelectedTool, params);
+            setMcpToolOutput(JSON.stringify(result, null, 2));
+            addLog(`MCP: ${mcpSelectedTool} executed`, 'info');
+        } catch (error) {
+            setMcpToolOutput(`Error: ${error instanceof Error ? error.message : String(error)}`);
+            addLog(`MCP: ${mcpSelectedTool} failed`, 'alert');
+        }
+    };
+
+    // MCP State Sync Helper
+    const syncToMcp = useCallback(async () => {
+        if (!mcpConnected) return;
+        
+        const drones = dronesRef.current;
+        const grid = gridRef.current;
+        
+        // Build drone states for sync
+        const droneStates: mcpClient.DroneStateForSync[] = drones.map(d => ({
+            id: d.id,
+            position: { 
+                x: d.x, 
+                y: d.y, 
+                gridCell: String.fromCharCode(65 + Math.floor(d.x)) + (Math.floor(d.y) + 1)
+            },
+            target: d.tx !== undefined ? { 
+                x: d.tx, 
+                y: d.ty, 
+                gridCell: String.fromCharCode(65 + Math.floor(d.tx)) + (Math.floor(d.ty) + 1)
+            } : null,
+            mode: d.mode,
+            battery: d.battery,
+            isConnected: d.isConnected,
+            isActive: d.mode !== 'Charging' || d.battery > 0,
+            assignedRegion: null
+        }));
+
+        // Sync drone states
+        await mcpClient.syncDroneStates(droneStates);
+        
+        // Sync tick and running state
+        await mcpClient.syncTick(timeRef.current, running);
+
+        // Sync grid state (every 50 ticks to reduce load)
+        if (timeRef.current % 50 === 0) {
+            const gridState = grid.map(row => row.map(s => ({
+                gridCell: String.fromCharCode(65 + s.x) + (s.y + 1),
+                x: s.x,
+                y: s.y,
+                probability: s.prob,
+                pheromone: s.pheromone,
+                terrain: s.terrain,
+                scanned: s.scanned,
+                lastScannedTick: s.lastScanned,
+                signals: s.signals
+            })));
+            await mcpClient.syncGridState(gridState);
+        }
+    }, [mcpConnected, running]);
+
+    // MCP Command Polling
+    const processMcpCommands = useCallback(async () => {
+        if (!mcpConnected) return;
+        
+        const commands = await mcpClient.getPendingCommands();
+        for (const cmd of commands) {
+            if (cmd.processed) continue;
+            
+            const drones = dronesRef.current;
+            
+            switch (cmd.type) {
+                case 'SET_TARGET': {
+                    const drone = drones.find(d => d.id === cmd.params.droneId);
+                    if (drone) {
+                        drone.tx = cmd.params.targetX as number;
+                        drone.ty = cmd.params.targetY as number;
+                        addLog(`MCP: ${drone.id} target set to (${drone.tx}, ${drone.ty})`, 'info');
+                    }
+                    break;
+                }
+                case 'SET_MODE': {
+                    const drone = drones.find(d => d.id === cmd.params.droneId);
+                    if (drone) {
+                        drone.mode = cmd.params.mode as Drone['mode'];
+                        addLog(`MCP: ${drone.id} mode set to ${drone.mode}`, 'info');
+                    }
+                    break;
+                }
+                case 'RECALL_TO_BASE': {
+                    const drone = drones.find(d => d.id === cmd.params.droneId);
+                    if (drone) {
+                        drone.tx = BASE_STATION.x;
+                        drone.ty = BASE_STATION.y;
+                        addLog(`MCP: ${drone.id} recalled to base`, 'info');
+                    }
+                    break;
+                }
+                case 'KILL_DRONE': {
+                    const droneIndex = drones.findIndex(d => d.id === cmd.params.droneId);
+                    if (droneIndex >= 0) {
+                        drones.splice(droneIndex, 1);
+                        addLog(`MCP: ${cmd.params.droneId} killed`, 'alert');
+                    }
+                    break;
+                }
+                case 'RESET_MISSION': {
+                    resetSim();
+                    addLog('MCP: Mission reset', 'info');
+                    break;
+                }
+                case 'SET_SURVIVOR_PIN': {
+                    const sx = cmd.params.x as number;
+                    const sy = cmd.params.y as number;
+                    const sdroneId = cmd.params.droneId as string;
+                    const smessage = (cmd.params.message as string) || 'Survivor confirmed by MCP';
+                    const pinId = `MCP-${Date.now()}`;
+                    // Avoid duplicate pins at same location
+                    if (!pinsRef.current.find(p => p.x === sx && p.y === sy)) {
+                        pinsRef.current.push({
+                            id: pinId,
+                            x: sx,
+                            y: sy,
+                            info: { message: smessage, battery: 'unknown' }
+                        });
+                        // Clear probability in surrounding area so drones stop targeting it
+                        const grid = gridRef.current;
+                        for (let py = Math.max(0, sy - 3); py <= Math.min(GRID_H - 1, sy + 3); py++) {
+                            for (let px = Math.max(0, sx - 3); px <= Math.min(GRID_W - 1, sx + 3); px++) {
+                                grid[py][px].pheromone = 0;
+                                grid[py][px].prob = 0;
+                            }
+                        }
+                        // Sync the new pin back to the server's found survivors list
+                        mcpClient.syncSurvivor({ id: pinId, x: sx, y: sy, droneId: sdroneId, message: smessage, tick: timeRef.current });
+                        addLog(`MCP: Survivor pin placed at (${sx}, ${sy}) by ${sdroneId}`, 'success');
+                    }
+                    break;
+                }
+            }
+            
+            await mcpClient.acknowledgeCommand(cmd.id);
+        }
+    }, [mcpConnected]);
 
     // If OSM terrain loads after this page, refresh the grid automatically
     useEffect(() => {
@@ -849,9 +1018,19 @@ const SimulationMap: React.FC = () => {
             gridDataService.setWeights(weightGrid, 'scan');
         }
 
+        // MCP Sync: Send state to MCP server every MCP_SYNC_INTERVAL ticks
+        if (timeRef.current % MCP_SYNC_INTERVAL === 0) {
+            syncToMcp();
+        }
+
+        // MCP Commands: Process pending commands every 5 ticks
+        if (timeRef.current % 5 === 0) {
+            processMcpCommands();
+        }
+
         setTickFlip(f => f + 1);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [syncToMcp, processMcpCommands]);
 
     useEffect(() => {
         let interval: ReturnType<typeof setInterval>;
@@ -863,6 +1042,17 @@ const SimulationMap: React.FC = () => {
         // Source is only released on full reset (resetSim).
         return () => clearInterval(interval);
     }, [running, speed, performTick]);
+
+    // MCP Command Polling (works even when simulation is paused)
+    useEffect(() => {
+        if (!mcpConnected) return;
+        
+        const pollInterval = setInterval(() => {
+            processMcpCommands();
+        }, 500); // Poll every 500ms
+        
+        return () => clearInterval(pollInterval);
+    }, [mcpConnected, processMcpCommands]);
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '16px', color: 'var(--text-primary)' }}>
@@ -890,6 +1080,21 @@ const SimulationMap: React.FC = () => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 16px', borderLeft: '1px solid var(--panel-border)', color: '#00ffcc', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
                         <Shield size={16} /> COLLISION AVOIDANCE ACTIVE
                     </div>
+                    <button 
+                        onClick={() => setMcpPanelOpen(!mcpPanelOpen)} 
+                        className={`hud-btn ${mcpPanelOpen ? 'glow-text' : ''}`} 
+                        style={{ 
+                            padding: '8px 16px', 
+                            display: 'flex', 
+                            gap: '8px', 
+                            cursor: 'pointer',
+                            borderColor: mcpPanelOpen ? 'var(--accent-primary)' : '',
+                            marginLeft: '8px'
+                        }}
+                    >
+                        {mcpConnected ? <Wifi size={18} /> : <WifiOff size={18} />} 
+                        MCP {mcpConnected ? 'ONLINE' : 'OFFLINE'}
+                    </button>
                 </div>
             </header>
 
@@ -1235,6 +1440,169 @@ const SimulationMap: React.FC = () => {
                 </div>
             </div>
 
+            {/* MCP Tools Panel */}
+            {mcpPanelOpen && (
+                <div style={{
+                    position: 'fixed',
+                    top: 80,
+                    right: 20,
+                    width: 450,
+                    maxHeight: 'calc(100vh - 120px)',
+                    background: 'rgba(5, 10, 16, 0.98)',
+                    border: '1px solid #00ffcc',
+                    borderRadius: 8,
+                    padding: 16,
+                    zIndex: 1000,
+                    overflow: 'auto',
+                    boxShadow: '0 0 30px rgba(0, 255, 204, 0.3)'
+                }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                        <h3 style={{ margin: 0, color: '#00ffcc', display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <Terminal size={18} /> MCP Tools
+                        </h3>
+                        <button 
+                            onClick={() => setMcpPanelOpen(false)}
+                            style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}
+                        >
+                            <X size={18} />
+                        </button>
+                    </div>
+                    
+                    <div style={{ marginBottom: 12 }}>
+                        <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 4 }}>Tool</label>
+                        <select 
+                            value={mcpSelectedTool}
+                            onChange={(e) => {
+                                setMcpSelectedTool(e.target.value);
+                                // Set default params based on tool
+                                const paramTemplates: Record<string, string> = {
+                                    'getDroneStatus': '{"droneId": "DRN-Alpha"}',
+                                    'getAllDroneStatuses': '{}',
+                                    'setDroneTarget': '{"droneId": "DRN-Alpha", "targetX": 5, "targetY": 5}',
+                                    'setDroneMode': '{"droneId": "DRN-Alpha", "mode": "Micro"}',
+                                    'recallDroneToBase': '{"droneId": "DRN-Alpha"}',
+                                    'killDrone': '{"droneId": "DRN-Alpha"}',
+                                    'getSectorScanResult': '{"sector": "E10"}',
+                                    'getGridHeatmap': '{}',
+                                    'getScannedSectors': '{}',
+                                    'getSurroundingSectors': '{"centerSector": "J10", "radius": 2}',
+                                    'getCommNetworkStatus': '{}',
+                                    'getDisconnectedDrones': '{}',
+                                    'checkDroneConnectivity': '{"droneId": "DRN-Alpha"}',
+                                    'getSwarmStatus': '{}',
+                                    'getMissionStats': '{}',
+                                    'getFoundSurvivors': '{}',
+                                    'setSurvivorPin': '{"x": 5, "y": 5, "droneId": "DRN-Alpha", "message": "Survivor found"}',
+                                    'resetMission': '{}',
+                                    'getMissionBriefing': '{}',
+                                    'getExplorationGradient': '{}',
+                                    'getUnassignedHotspots': '{"probabilityThreshold": 0.3, "maxResults": 10}',
+                                    'getDroneAssignmentMap': '{}'
+                                };
+                                setMcpToolParams(paramTemplates[e.target.value] || '{}');
+                            }}
+                            style={{
+                                width: '100%',
+                                padding: 8,
+                                background: '#0a1520',
+                                border: '1px solid #333',
+                                borderRadius: 4,
+                                color: '#fff',
+                                fontSize: 13
+                            }}
+                        >
+                            <optgroup label="Drone Tools">
+                                <option value="getDroneStatus">getDroneStatus</option>
+                                <option value="getAllDroneStatuses">getAllDroneStatuses</option>
+                                <option value="setDroneTarget">setDroneTarget</option>
+                                <option value="setDroneMode">setDroneMode</option>
+                                <option value="recallDroneToBase">recallDroneToBase</option>
+                                <option value="killDrone">killDrone</option>
+                            </optgroup>
+                            <optgroup label="Scan Tools">
+                                <option value="getSectorScanResult">getSectorScanResult</option>
+                                <option value="getGridHeatmap">getGridHeatmap</option>
+                                <option value="getScannedSectors">getScannedSectors</option>
+                                <option value="getSurroundingSectors">getSurroundingSectors</option>
+                            </optgroup>
+                            <optgroup label="Communication Tools">
+                                <option value="getCommNetworkStatus">getCommNetworkStatus</option>
+                                <option value="getDisconnectedDrones">getDisconnectedDrones</option>
+                                <option value="checkDroneConnectivity">checkDroneConnectivity</option>
+                            </optgroup>
+                            <optgroup label="Mission Tools">
+                                <option value="getSwarmStatus">getSwarmStatus</option>
+                                <option value="getMissionStats">getMissionStats</option>
+                                <option value="getFoundSurvivors">getFoundSurvivors</option>
+                                <option value="setSurvivorPin">setSurvivorPin</option>
+                                <option value="resetMission">resetMission</option>
+                                <option value="getMissionBriefing">getMissionBriefing</option>
+                            </optgroup>
+                            <optgroup label="Swarm Intelligence">
+                                <option value="getExplorationGradient">getExplorationGradient</option>
+                                <option value="getUnassignedHotspots">getUnassignedHotspots</option>
+                                <option value="getDroneAssignmentMap">getDroneAssignmentMap</option>
+                            </optgroup>
+                        </select>
+                    </div>
+
+                    <div style={{ marginBottom: 12 }}>
+                        <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 4 }}>Parameters (JSON)</label>
+                        <textarea
+                            value={mcpToolParams}
+                            onChange={(e) => setMcpToolParams(e.target.value)}
+                            style={{
+                                width: '100%',
+                                height: 60,
+                                padding: 8,
+                                background: '#0a1520',
+                                border: '1px solid #333',
+                                borderRadius: 4,
+                                color: '#fff',
+                                fontFamily: 'monospace',
+                                fontSize: 12,
+                                resize: 'vertical'
+                            }}
+                        />
+                    </div>
+
+                    <button
+                        onClick={executeMcpTool}
+                        disabled={!mcpConnected}
+                        style={{
+                            width: '100%',
+                            padding: 10,
+                            background: mcpConnected ? '#00ffcc' : '#333',
+                            border: 'none',
+                            borderRadius: 4,
+                            color: mcpConnected ? '#000' : '#666',
+                            fontWeight: 'bold',
+                            cursor: mcpConnected ? 'pointer' : 'not-allowed',
+                            marginBottom: 12
+                        }}
+                    >
+                        Execute Tool
+                    </button>
+
+                    <div>
+                        <label style={{ fontSize: 12, color: '#888', display: 'block', marginBottom: 4 }}>Output</label>
+                        <pre style={{
+                            background: '#0a1520',
+                            border: '1px solid #333',
+                            borderRadius: 4,
+                            padding: 8,
+                            maxHeight: 300,
+                            overflow: 'auto',
+                            fontSize: 11,
+                            color: '#0f0',
+                            margin: 0
+                        }}>
+                            {mcpToolOutput || 'No output yet. Execute a tool to see results.'}
+                        </pre>
+                    </div>
+                </div>
+            )}
+
             <style>{`
                 @keyframes spin { 100% { transform: rotate(360deg); } }
             `}</style>
@@ -1242,4 +1610,4 @@ const SimulationMap: React.FC = () => {
     );
 };
 
-export default SimulationMap;
+export default SimulationMapMCP;
