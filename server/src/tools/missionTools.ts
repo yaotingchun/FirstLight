@@ -23,7 +23,9 @@ import type {
     SurvivorInfo,
     SetSurvivorPinParams,
     MCPToolResult,
-    DroneStatus
+    DroneStatus,
+    SectorAssignment,
+    SectorAssignmentsResult
 } from '../types.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -314,6 +316,75 @@ export async function getMissionBriefing(): Promise<MCPToolResult<MissionBriefin
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// TOOL: getSectorAssignments
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Get the current sector reservation map.
+ *
+ * A sector is "reserved" only if a drone is actively en-route to it
+ * (distance between current position and target > 0.3 grid units).
+ * Drones that have arrived and are idle do NOT reserve their sector,
+ * preventing ghost-blocking of already-cleared areas.
+ *
+ * Use this before dispatching a drone via setDroneTarget to avoid
+ * sending two drones to the same zone.
+ *
+ * Returns the full 20×20 grid as a flat list, plus summary counts.
+ */
+export async function getSectorAssignments(): Promise<MCPToolResult<SectorAssignmentsResult>> {
+    const drones = droneStore.getAllDrones();
+    const grid = droneStore.getGrid();
+
+    // Build map: "x,y" -> droneId for drones actively en-route
+    const reservationMap = new Map<string, string>();
+    drones.forEach(d => {
+        if (!d.isActive || !d.target) return;
+        const distToTarget = Math.sqrt(
+            Math.pow(d.position.x - d.target.x, 2) +
+            Math.pow(d.position.y - d.target.y, 2)
+        );
+        // Only count as reserved if drone hasn't yet arrived at target
+        if (distToTarget > 0.3) {
+            const key = `${Math.round(d.target.x)},${Math.round(d.target.y)}`;
+            reservationMap.set(key, d.id);
+        }
+    });
+
+    const assignments: SectorAssignment[] = [];
+    let reservedCount = 0;
+    let freeCount = 0;
+
+    for (let y = 0; y < GRID_H; y++) {
+        for (let x = 0; x < GRID_W; x++) {
+            const key = `${x},${y}`;
+            const reservedByDrone = reservationMap.get(key) ?? null;
+            const isReserved = reservedByDrone !== null;
+            const s = grid[y][x];
+
+            assignments.push({
+                gridCell: gridToLabel(x, y),
+                x,
+                y,
+                reservedByDrone,
+                isReserved,
+                probability: Math.round(s.probability * 1000) / 1000,
+                pheromone: Math.round(s.pheromone * 1000) / 1000
+            });
+
+            if (isReserved) reservedCount++;
+            else freeCount++;
+        }
+    }
+
+    return {
+        success: true,
+        data: { assignments, reservedCount, freeCount },
+        timestamp: Date.now()
+    };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // TOOL REGISTRY
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -323,5 +394,6 @@ export const missionTools = {
     getFoundSurvivors,
     setSurvivorPin,
     resetMission,
-    getMissionBriefing
+    getMissionBriefing,
+    getSectorAssignments
 };

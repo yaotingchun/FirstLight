@@ -67,6 +67,9 @@ interface DroneStateStore {
     
     // Pending commands (to be picked up by frontend)
     pendingCommands: PendingCommand[];
+
+    // Per-drone auto-recall battery thresholds (MCP-set, overrides sim default)
+    autoRecallThresholds: Map<string, number>;
 }
 
 export type CommandType = 
@@ -75,7 +78,8 @@ export type CommandType =
     | 'RECALL_TO_BASE'
     | 'KILL_DRONE'
     | 'SET_SURVIVOR_PIN'
-    | 'RESET_MISSION';
+    | 'RESET_MISSION'
+    | 'SET_AUTO_RECALL';
 
 export interface PendingCommand {
     id: string;
@@ -94,7 +98,8 @@ class DroneStore {
         foundSurvivors: [],
         currentTick: 0,
         isRunning: false,
-        pendingCommands: []
+        pendingCommands: [],
+        autoRecallThresholds: new Map()
     };
     
     private listeners: Set<(state: DroneStateStore) => void> = new Set();
@@ -175,9 +180,18 @@ class DroneStore {
             foundSurvivors: [],
             currentTick: 0,
             isRunning: false,
-            pendingCommands: []
+            pendingCommands: [],
+            autoRecallThresholds: new Map()
         };
         this.notify();
+    }
+
+    setAutoRecallThreshold(droneId: string, threshold: number): void {
+        this.state.autoRecallThresholds.set(droneId, threshold);
+    }
+
+    getAutoRecallThreshold(droneId: string): number | undefined {
+        return this.state.autoRecallThresholds.get(droneId);
     }
 
     // ─────────────────────────────────────────────────────────────────────

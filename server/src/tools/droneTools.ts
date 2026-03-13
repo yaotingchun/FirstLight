@@ -22,7 +22,12 @@ import type {
     DroneMode,
     MCPToolResult,
     SetDroneTargetParams,
-    SetDroneModeParams 
+    SetDroneModeParams,
+    GetBatteryForecastParams,
+    BatteryForecast,
+    DroneDiscoveryList,
+    DroneDiscoveryEntry,
+    SetAutoRecallThresholdParams
 } from '../types.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -359,6 +364,187 @@ export async function killDrone(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// TOOL: getBatteryForecast
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Estimate whether a drone can reach a target and return to base before its battery dies.
+ *
+ * Battery drain model (mirrors SimulationMapMCP.tsx constants):
+ *   movement drain  = distance × 0.075 per tile
+ *   sensor overhead = 0.015 per estimated tick (Wide) | 0.005 per tick (Micro)
+ *   speed           = 0.4 tile/tick (Wide) | 0.1 tile/tick (Micro)
+ *
+ * Optional `assumedMode` lets the caller override the drone's current mode
+ * to forecast battery usage if the mode will change mid-trip.
+ *
+ * Safety buffer: canReach = true only if projectedBatteryOnReturn > 5.
+ */
+export async function getBatteryForecast(
+    params: GetBatteryForecastParams
+): Promise<MCPToolResult<BatteryForecast>> {
+    const drone = droneStore.getDrone(params.droneId);
+
+    if (!drone) {
+        return {
+            success: false,
+            error: `Drone ${params.droneId} not found. Available drones: ${
+                droneStore.getAllDrones().map(d => d.id).join(', ') || 'none'
+            }`,
+            timestamp: Date.now()
+        };
+    }
+
+    // Validate coordinates
+    if (params.targetX < 0 || params.targetX >= 20 || params.targetY < 0 || params.targetY >= 20) {
+        return {
+            success: false,
+            error: `Invalid coordinates (${params.targetX}, ${params.targetY}). Must be within 0-19.`,
+            timestamp: Date.now()
+        };
+    }
+
+    const mode = params.assumedMode ?? (drone.mode === 'Micro' ? 'Micro' : 'Wide');
+    const speed = mode === 'Wide' ? 0.4 : 0.1;       // tile/tick
+    const sensorDrain = mode === 'Wide' ? 0.015 : 0.005; // per tick
+    const moveDrainPerTile = 0.075;
+
+    const distToTarget = Math.sqrt(
+        Math.pow(params.targetX - drone.position.x, 2) +
+        Math.pow(params.targetY - drone.position.y, 2)
+    );
+    const distTargetToBase = Math.sqrt(
+        Math.pow(BASE_X - params.targetX, 2) +
+        Math.pow(BASE_Y - params.targetY, 2)
+    );
+
+    const totalDist = distToTarget + distTargetToBase;
+    const estimatedTicks = totalDist / speed;
+    const movementDrain = totalDist * moveDrainPerTile;
+    const sensorTotal = sensorDrain * estimatedTicks;
+    const estimatedBatteryUsed = movementDrain + sensorTotal;
+    const projectedBatteryOnReturn = drone.battery - estimatedBatteryUsed;
+    const canReach = projectedBatteryOnReturn > 5;
+
+    let warning: string | null = null;
+    if (!canReach) {
+        warning = `Insufficient battery. Drone needs ~${estimatedBatteryUsed.toFixed(1)}% but only has ${drone.battery.toFixed(1)}%.`;
+    } else if (projectedBatteryOnReturn < 15) {
+        warning = `Low margin: only ${projectedBatteryOnReturn.toFixed(1)}% battery on return. Consider charging first.`;
+    }
+
+    return {
+        success: true,
+        data: {
+            droneId: drone.id,
+            currentBattery: drone.battery,
+            assumedMode: mode,
+            distanceToTarget: Math.round(distToTarget * 100) / 100,
+            distanceTargetToBase: Math.round(distTargetToBase * 100) / 100,
+            estimatedBatteryUsed: Math.round(estimatedBatteryUsed * 100) / 100,
+            projectedBatteryOnReturn: Math.round(projectedBatteryOnReturn * 100) / 100,
+            canReach,
+            warning
+        },
+        timestamp: Date.now()
+    };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOOL: getDroneDiscoveryList
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Enumerate ALL drones known to the system (both active and inactive).
+ *
+ * IMPORTANT: Call this tool FIRST before issuing any drone commands.
+ * Use the returned IDs for subsequent tool calls — do NOT hard-code drone IDs.
+ * This tool satisfies the MCP dynamic discovery requirement.
+ *
+ * Returns:
+ * - Full drone list with isActive flag, mode, battery, and position
+ * - activeCount and totalCount summary
+ */
+export async function getDroneDiscoveryList(): Promise<MCPToolResult<DroneDiscoveryList>> {
+    const allDrones = droneStore.getAllDrones();
+
+    const drones: DroneDiscoveryEntry[] = allDrones.map(d => ({
+        id: d.id,
+        isActive: d.isActive,
+        mode: d.mode,
+        battery: Math.round(d.battery * 10) / 10,
+        position: d.position
+    }));
+
+    const activeCount = drones.filter(d => d.isActive).length;
+
+    return {
+        success: true,
+        data: {
+            drones,
+            activeCount,
+            totalCount: drones.length
+        },
+        timestamp: Date.now()
+    };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOOL: setAutoRecallThreshold
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Set a per-drone auto-recall battery threshold.
+ *
+ * When the drone's battery falls below this percentage the simulation will
+ * immediately initiate return-to-base — overriding the default distance-based
+ * threshold. This lets the agent set policy rather than micromanage each tick.
+ *
+ * Parameters:
+ * - droneId: The drone to configure
+ * - batteryThreshold: Battery % at which to auto-recall (0-100)
+ *
+ * The policy persists until the mission is reset or a new threshold is set.
+ */
+export async function setAutoRecallThreshold(
+    params: SetAutoRecallThresholdParams
+): Promise<MCPToolResult<{ commandId: string; message: string }>> {
+    const drone = droneStore.getDrone(params.droneId);
+
+    if (!drone) {
+        return {
+            success: false,
+            error: `Drone ${params.droneId} not found`,
+            timestamp: Date.now()
+        };
+    }
+
+    if (params.batteryThreshold < 0 || params.batteryThreshold > 100) {
+        return {
+            success: false,
+            error: `batteryThreshold must be between 0 and 100, got ${params.batteryThreshold}`,
+            timestamp: Date.now()
+        };
+    }
+
+    // Persist in store (so other tools can read it) AND queue to frontend
+    droneStore.setAutoRecallThreshold(params.droneId, params.batteryThreshold);
+    const commandId = droneStore.enqueueCommand('SET_AUTO_RECALL', {
+        droneId: params.droneId,
+        batteryThreshold: params.batteryThreshold
+    });
+
+    return {
+        success: true,
+        data: {
+            commandId,
+            message: `Auto-recall threshold for ${params.droneId} set to ${params.batteryThreshold}%. Drone will RTB when battery drops below this level.`
+        },
+        timestamp: Date.now()
+    };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // TOOL REGISTRY
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -368,5 +554,8 @@ export const droneTools = {
     setDroneTarget,
     setDroneMode,
     recallDroneToBase,
-    killDrone
+    killDrone,
+    getBatteryForecast,
+    getDroneDiscoveryList,
+    setAutoRecallThreshold
 };

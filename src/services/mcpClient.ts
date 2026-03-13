@@ -256,6 +256,11 @@ export const mcpTools = {
     recallDroneToBase: (droneId: string) =>
         executeTool('recallDroneToBase', { droneId }),
     killDrone: (droneId: string) => executeTool('killDrone', { droneId }),
+    getBatteryForecast: (droneId: string, targetX: number, targetY: number, assumedMode?: 'Wide' | 'Micro') =>
+        executeTool('getBatteryForecast', { droneId, targetX, targetY, ...(assumedMode ? { assumedMode } : {}) }),
+    getDroneDiscoveryList: () => executeTool('getDroneDiscoveryList'),
+    setAutoRecallThreshold: (droneId: string, batteryThreshold: number) =>
+        executeTool('setAutoRecallThreshold', { droneId, batteryThreshold }),
 
     // Scan tools
     getSectorScanResult: (sector: string) =>
@@ -278,5 +283,6 @@ export const mcpTools = {
     setSurvivorPin: (x: number, y: number, droneId: string, message?: string) =>
         executeTool('setSurvivorPin', { x, y, droneId, message }),
     resetMission: () => executeTool('resetMission'),
-    getMissionBriefing: () => executeTool('getMissionBriefing')
+    getMissionBriefing: () => executeTool('getMissionBriefing'),
+    getSectorAssignments: () => executeTool('getSectorAssignments')
 };

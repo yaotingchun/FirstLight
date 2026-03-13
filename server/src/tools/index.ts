@@ -110,6 +110,63 @@ export const toolSchemas = {
             required: ['droneId']
         }
     },
+    getBatteryForecast: {
+        name: 'getBatteryForecast',
+        description: 'Estimate if a drone can reach a target grid cell and return to base before its battery runs out. Returns canReach, projectedBatteryOnReturn, and estimatedBatteryUsed. Use this before dispatching a drone to a distant sector to enable proactive battery management.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                droneId: {
+                    type: 'string',
+                    description: 'The drone ID to forecast for'
+                },
+                targetX: {
+                    type: 'number',
+                    description: 'Target X coordinate (0-19)'
+                },
+                targetY: {
+                    type: 'number',
+                    description: 'Target Y coordinate (0-19)'
+                },
+                assumedMode: {
+                    type: 'string',
+                    enum: ['Wide', 'Micro'],
+                    description: 'Override the mode used for battery calculation (defaults to drone\'s current mode)'
+                }
+            },
+            required: ['droneId', 'targetX', 'targetY']
+        }
+    },
+    getDroneDiscoveryList: {
+        name: 'getDroneDiscoveryList',
+        description: 'Call this tool FIRST to enumerate all drone IDs before issuing any commands. Returns all drones (active and inactive) with id, isActive, mode, battery, and position. Required for dynamic drone discovery — do not hard-code drone IDs.',
+        inputSchema: {
+            type: 'object',
+            properties: {}
+        }
+    },
+    setAutoRecallThreshold: {
+        name: 'setAutoRecallThreshold',
+        description: 'Set a per-drone auto-recall battery threshold. When the drone battery drops below this %, it will immediately RTB regardless of its current mission. Lets the agent set policy rather than monitoring each tick.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                droneId: {
+                    type: 'string',
+                    description: 'The drone ID to configure'
+                },
+                batteryThreshold: {
+                    type: 'number',
+                    description: 'Battery percentage (0-100) at which to auto-recall'
+                }
+            },
+            required: ['droneId', 'batteryThreshold']
+        }
+    },
+    // NOTE: The following low-level primitives are intentionally NOT exposed as MCP tools:
+    //   thermal_scan()        — covered by getSectorScanResult (includes thermal readings in signals)
+    //   move_to(x, y)         — replaced by setDroneTarget (correct abstraction level with validation)
+    //   get_battery_status()  — included in getDroneStatus and getDroneDiscoveryList
 
     // ─────────────────────────────────────────────────────────────────────
     // SCAN MODULE
@@ -266,6 +323,14 @@ export const toolSchemas = {
             properties: {}
         }
     },
+    getSectorAssignments: {
+        name: 'getSectorAssignments',
+        description: 'Get the current sector reservation map. A sector is reserved only if a drone is actively en-route to it. Use this before dispatching drones to avoid sending two drones to the same zone.',
+        inputSchema: {
+            type: 'object',
+            properties: {}
+        }
+    },
 
     // ─────────────────────────────────────────────────────────────────────
     // SWARM INTELLIGENCE MODULE
@@ -317,6 +382,9 @@ export const toolHandlers: Record<string, Function> = {
     setDroneMode: droneTools.setDroneMode,
     recallDroneToBase: droneTools.recallDroneToBase,
     killDrone: droneTools.killDrone,
+    getBatteryForecast: droneTools.getBatteryForecast,
+    getDroneDiscoveryList: droneTools.getDroneDiscoveryList,
+    setAutoRecallThreshold: droneTools.setAutoRecallThreshold,
 
     // Scan tools
     getSectorScanResult: scanTools.getSectorScanResult,
@@ -336,6 +404,7 @@ export const toolHandlers: Record<string, Function> = {
     setSurvivorPin: missionTools.setSurvivorPin,
     resetMission: missionTools.resetMission,
     getMissionBriefing: missionTools.getMissionBriefing,
+    getSectorAssignments: missionTools.getSectorAssignments,
 
     // Swarm intelligence tools
     getExplorationGradient: swarmIntelTools.getExplorationGradient,
