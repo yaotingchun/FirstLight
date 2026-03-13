@@ -7,6 +7,7 @@
 
 import type { OrchestratorAction, OrchestratorDecision } from './types.js';
 import type { SearchDrone } from '../utils/swarmRouting.js';
+import type { SearchZone } from '../utils/zoneClustering.js';
 import {
     aStarPath,
     OBSTACLE_SET,
@@ -37,6 +38,7 @@ export const executeDecision = async (
     drones: SearchDrone[],
     _heatmap: number[][],
     isLiveMode = false,
+    zoneMap?: Map<string, SearchZone>,
 ): Promise<{ drones: SearchDrone[]; result: ExecutionResult }> => {
     let currentDrones = [...drones];
     const log: string[] = [];
@@ -271,6 +273,119 @@ export const executeDecision = async (
 
                 case 'no_action': {
                     log.push(`○ no_action: ${action.reason}`);
+                    executed++;
+                    break;
+                }
+
+                // ── Zone-level planner intents (translation layer) ────────
+                case 'deploy_wide_scan':
+                case 'deploy_micro_scan': {
+                    const zone = zoneMap?.get(action.zoneId);
+                    if (!zone) {
+                        log.push(`⚠ SKIP ${action.type}: zone ${action.zoneId} not found`);
+                        skipped++;
+                        break;
+                    }
+
+                    // Find nearest available drone
+                    const targetMode = action.type === 'deploy_wide_scan' ? 'Wide' : 'Micro';
+                    const candidates = currentDrones
+                        .filter(d => d.active && d.battery > 20)
+                        .map(d => ({
+                            drone: d,
+                            dist: Math.sqrt((d.x - zone.centroid.x) ** 2 + (d.y - zone.centroid.y) ** 2),
+                        }))
+                        .sort((a, b) => a.dist - b.dist);
+
+                    if (candidates.length === 0) {
+                        log.push(`⚠ SKIP ${action.type}: no available drones for zone ${action.zoneId}`);
+                        skipped++;
+                        break;
+                    }
+
+                    const chosen = candidates[0].drone;
+                    const chosenIdx = currentDrones.findIndex(d => d.id === chosen.id);
+                    const cx = zone.centroid.x;
+                    const cy = zone.centroid.y;
+
+                    if (isLiveMode) {
+                        await fetch(`${MCP_SERVER_URL}/api/tools/setDroneMode`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ droneId: chosen.id, mode: targetMode })
+                        }).catch(e => console.error(`Remote mode set failed: ${e}`));
+                        await fetch(`${MCP_SERVER_URL}/api/tools/setDroneTarget`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ droneId: chosen.id, targetX: cx, targetY: cy })
+                        }).catch(e => console.error(`Remote move failed: ${e}`));
+                    } else {
+                        const path = aStarPath(
+                            { x: chosen.x, y: chosen.y },
+                            { x: cx, y: cy },
+                            OBSTACLE_SET,
+                            GRID_W,
+                            GRID_H,
+                        );
+                        currentDrones[chosenIdx] = {
+                            ...chosen,
+                            mode: targetMode as SearchDrone['mode'],
+                            tx: cx,
+                            ty: cy,
+                            path,
+                            pathIndex: 0,
+                        };
+                    }
+
+                    const reasonStr = action.reason ? ` -- ${action.reason}` : '';
+                    log.push(`✓ ${action.type}: ${chosen.id} -> zone ${action.zoneId} centroid=(${cx},${cy}) mode=${targetMode}${reasonStr}`);
+                    executed++;
+                    break;
+                }
+
+                case 'assign_drone_to_zone': {
+                    const zone = zoneMap?.get(action.zoneId);
+                    if (!zone) {
+                        log.push(`⚠ SKIP assign_drone_to_zone: zone ${action.zoneId} not found`);
+                        skipped++;
+                        break;
+                    }
+                    const idx = currentDrones.findIndex(d => d.id === action.droneId);
+                    if (idx === -1 || !currentDrones[idx].active) {
+                        log.push(`⚠ SKIP assign_drone_to_zone: ${action.droneId} not found or inactive`);
+                        skipped++;
+                        break;
+                    }
+
+                    const drone = currentDrones[idx];
+                    const targetX = zone.centroid.x;
+                    const targetY = zone.centroid.y;
+
+                    if (isLiveMode) {
+                        await fetch(`${MCP_SERVER_URL}/api/tools/setDroneTarget`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ droneId: action.droneId, targetX, targetY })
+                        }).catch(e => console.error(`Remote move failed: ${e}`));
+                    } else {
+                        const path = aStarPath(
+                            { x: drone.x, y: drone.y },
+                            { x: targetX, y: targetY },
+                            OBSTACLE_SET,
+                            GRID_W,
+                            GRID_H,
+                        );
+                        currentDrones[idx] = { ...drone, tx: targetX, ty: targetY, path, pathIndex: 0 };
+                    }
+
+                    const reasonStr = action.reason ? ` -- ${action.reason}` : '';
+                    log.push(`✓ assign_drone_to_zone: ${action.droneId} -> zone ${action.zoneId} centroid=(${targetX},${targetY})${reasonStr}`);
+                    executed++;
+                    break;
+                }
+
+                case 'scan_area': {
+                    log.push(`○ scan_area: ${action.droneId} (handled by simulation tick)`);
                     executed++;
                     break;
                 }

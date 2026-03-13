@@ -17,6 +17,8 @@ import type {
     SensorSummary,
     MissionObjective,
     SensorTrend,
+    ZoneSnapshot,
+    SwarmMetrics,
 } from './types.js';
 import type { SearchDrone } from '../utils/swarmRouting.js';
 import type { GridWeightMap, SensorWeights, TerrainGrid, TerrainType } from '../services/gridDataService.js';
@@ -42,6 +44,8 @@ export const buildEnvironmentSnapshot = (
     objectives: MissionObjective[] = [],
     sensorTrends: SensorTrend[] = [],
     simulationRunning = false,
+    zoneSnapshots?: ZoneSnapshot[],
+    metrics?: SwarmMetrics,
 ): EnvironmentSnapshot => {
 
     const gridSize = weights.length;
@@ -168,6 +172,20 @@ export const buildEnvironmentSnapshot = (
         sensorTrends.length > 0 ? `SENSOR TRENDS: ${sensorTrends.map(t => `${t.sensor}=${t.direction}`).join(', ')}` : '',
         latestVisionResult ? `\nLATEST PHOTO ANALYSIS: ${latestVisionResult}` : '',
         ``,
+        // ── Zone summaries ────────────────────────────────────────────────────
+        ...(zoneSnapshots && zoneSnapshots.length > 0 ? [
+            `TOP ZONES (by score):`,
+            ...zoneSnapshots.slice(0, 8).map((z, i) =>
+                `  ${i + 1}. ${z.zoneId} score=${z.zoneScore.toFixed(2)} prob=${z.probabilityScore.toFixed(2)} peak=${z.maxProbability.toFixed(2)} unscanned=${z.unscannedCells}/${z.totalCells} drones=${z.assignedDroneCount} recency=${z.recencyPenalty.toFixed(2)} centroid=(${z.centroidX},${z.centroidY})`
+            ),
+            ``,
+        ] : []),
+        // ── Metrics ───────────────────────────────────────────────────────────
+        ...(metrics ? [
+            `SWARM METRICS:`,
+            `  repeatScanRate=${metrics.repeatedScanRate.toFixed(1)}% zoneCoverage=${metrics.averageZoneCoverage.toFixed(1)}% idleTime=${metrics.droneIdleTime} meanProbScanned=${metrics.meanProbabilityScanned.toFixed(3)} totalScans=${metrics.totalScans}`,
+            ``,
+        ] : []),
         `MISSION OBJECTIVES:`,
         ...(objectives.length > 0
             ? objectives.map(o => `  - [${o.priority.toUpperCase()}] ${o.description} (${o.status})`)
@@ -194,5 +212,7 @@ export const buildEnvironmentSnapshot = (
         objectives,
         sensorTrends,
         simulationRunning,
+        zoneSnapshots,
+        metrics,
     };
 };

@@ -19,6 +19,10 @@ export type OrchestratorAction =
     | { type: 'reset_simulation'; reason: string }
     | { type: 'set_simulation_state'; running: boolean; reason: string }
     | { type: 'create_alert';     severity: 'low' | 'medium' | 'high' | 'critical'; message: string }
+    // ── Zone-level planner intents ────────────────────────────────────────
+    | { type: 'deploy_wide_scan';      zoneId: string; reason: string }
+    | { type: 'deploy_micro_scan';     zoneId: string; reason: string }
+    | { type: 'assign_drone_to_zone';  droneId: string; zoneId: string; reason: string }
     | { type: 'no_action';        reason: string };
 
 export interface OrchestratorDecision {
@@ -78,6 +82,35 @@ export interface SensorSummary {
     wifi: { confidence: number; active: boolean };
 }
 
+// ── Zone-level snapshot for AI consumption ──────────────────────────────────
+
+export interface ZoneSnapshot {
+    zoneId: string;
+    centroidX: number;
+    centroidY: number;
+    zoneScore: number;
+    probabilityScore: number;
+    maxProbability: number;
+    sensorScore: number;
+    recencyPenalty: number;
+    assignedDroneCount: number;
+    assignedDroneIds: string[];
+    unscannedCells: number;
+    totalCells: number;
+    lastScannedTick: number;
+}
+
+// ── Validation metrics ──────────────────────────────────────────────────────
+
+export interface SwarmMetrics {
+    repeatedScanRate: number;        // % of scans that were repeat visits
+    averageZoneCoverage: number;     // % of zones with at least one scan
+    droneIdleTime: number;           // ticks where drones had no target
+    meanProbabilityScanned: number;  // avg probability of scanned cells
+    totalScans: number;
+    totalRepeatScans: number;
+}
+
 export interface EnvironmentSnapshot {
     /** Pre-computed plain-text summary — most important field for the AI */
     summary: string;
@@ -99,4 +132,8 @@ export interface EnvironmentSnapshot {
     latestVisionResult?: string;
     objectives: MissionObjective[];
     sensorTrends: SensorTrend[];
+    /** Zone-level summaries for AI reasoning */
+    zoneSnapshots?: ZoneSnapshot[];
+    /** Swarm performance metrics */
+    metrics?: SwarmMetrics;
 }
