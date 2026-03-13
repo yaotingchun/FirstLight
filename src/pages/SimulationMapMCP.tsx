@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, FastForward, Target, Radio, Crosshair, RotateCcw, Activity, Hexagon, MapPin, X, Shield, Wifi, WifiOff, Terminal, MessageSquare, Send } from 'lucide-react';
+import { Play, Pause, FastForward, Target, Radio, Crosshair, RotateCcw, Activity, Hexagon, MapPin, X, Wifi, WifiOff, Terminal, MessageSquare, Send } from 'lucide-react';
 
 const GRID_W = 20;
 const GRID_H = 20;
@@ -100,16 +100,21 @@ type OrchestratorChatMessage = {
 
 
 // Grid generation — uses real terrain from OSM data via gridDataService
-const createGrid = (): Sector[][] => {
+const createGrid = (survivors?: HiddenSurvivor[]): Sector[][] => {
     const g: Sector[][] = [];
     const terrainData = gridDataService.getTerrainGrid();
     const sensorWeights = gridDataService.getSensorWeights();
+    const tacticalWeights = gridDataService.getWeights();
 
-    // 1. Initialize sparse grid
+    // 1. Initialize grid with baseline noise and tactical map influence
     for (let y = 0; y < GRID_H; y++) {
         const row: Sector[] = [];
         for (let x = 0; x < GRID_W; x++) {
             const terrain = terrainData[y]?.[x] ?? 'Open Field';
+            // Influence initial signals with tactical weights (OSM findings)
+            const tacWeight = tacticalWeights[y]?.[x] ?? 0.05;
+            const noise = () => Math.pow(Math.random(), 15) * 0.1; // Reduced background noise
+
             row.push({
                 x, y,
                 prob: 0,
@@ -118,41 +123,73 @@ const createGrid = (): Sector[][] => {
                 scanned: false,
                 lastScanned: 0,
                 signals: {
-                    mobile: Math.pow(Math.random(), 15),
-                    thermal: Math.pow(Math.random(), 15),
-                    sound: Math.pow(Math.random(), 15),
-                    wifi: Math.pow(Math.random(), 15)
+                    mobile: tacWeight * 0.2 + noise(),
+                    thermal: tacWeight * 0.2 + noise(),
+                    sound: tacWeight * 0.2 + noise(),
+                    wifi: tacWeight * 0.2 + noise()
                 }
             });
         }
         g.push(row);
     }
 
-    // 2. Inject high-intensity hotspots
-    const numHotspots = 3;
-    for (let i = 0; i < numHotspots; i++) {
-        const hx = Math.floor(Math.random() * GRID_W);
-        const hy = Math.floor(Math.random() * GRID_H);
+    // 2. If survivors provided, generate wide signal gradients leading to them
+    if (survivors) {
+        survivors.forEach(s => {
+            // "Bread crumbs" range - how far out the signal "trail" starts
+            const gradientRadius = 8;
 
-        // Boost center and surrounding
-        for (let dy = -1; dy <= 1; dy++) {
-            for (let dx = -1; dx <= 1; dx++) {
-                const nx = hx + dx;
-                const ny = hy + dy;
-                if (nx >= 0 && nx < GRID_W && ny >= 0 && ny < GRID_H) {
-                    const dist = Math.abs(dx) + Math.abs(dy); // 0 at center, 1 or 2 at neighbors
-                    const boost = dist === 0 ? 0.8 : 0.4;
-                    const s = g[ny][nx].signals;
-                    s.mobile = Math.min(1.0, s.mobile + boost + Math.random() * 0.2);
-                    s.thermal = Math.min(1.0, s.thermal + boost + Math.random() * 0.2);
-                    s.sound = Math.min(1.0, s.sound + boost + Math.random() * 0.2);
-                    s.wifi = Math.min(1.0, s.wifi + boost + Math.random() * 0.2);
+            for (let dy = -gradientRadius; dy <= gradientRadius; dy++) {
+                for (let dx = -gradientRadius; dx <= gradientRadius; dx++) {
+                    const nx = s.x + dx;
+                    const ny = s.y + dy;
+                    if (nx >= 0 && nx < GRID_W && ny >= 0 && ny < GRID_H) {
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        if (dist <= gradientRadius) {
+                            // Exponential decay for the gradient: 1.0 at center, drops off to near 0 at radius
+                            // Signal = base * exp(-dist / scale)
+                            // Sharpened gradient (from 2.5 to 1.5) for smaller, more difficult hotspots
+                            const intensity = Math.exp(-dist / 1.5);
+                            const signals = g[ny][nx].signals;
+
+                            // 2. Calibrated Peak: Ensure discovery (Prob > 0.85) at center
+                            // We target 0.86 for ALL signals at center to ensure a safe margin for discovery
+                            const targetVal = 0.86;
+
+                            signals.mobile = Math.min(1.0, signals.mobile + intensity * Math.max(0, targetVal - signals.mobile));
+                            signals.thermal = Math.min(1.0, signals.thermal + intensity * Math.max(0, targetVal - signals.thermal));
+                            signals.sound = Math.min(1.0, signals.sound + intensity * Math.max(0, targetVal - signals.sound));
+                            signals.wifi = Math.min(1.0, signals.wifi + intensity * Math.max(0, targetVal - signals.wifi));
+                        }
+                    }
+                }
+            }
+        });
+    } else {
+        // Fallback to legacy hotspots if no survivors provided during init
+        const numHotspots = 3;
+        for (let i = 0; i < numHotspots; i++) {
+            const hx = Math.floor(Math.random() * GRID_W);
+            const hy = Math.floor(Math.random() * GRID_H);
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    const nx = hx + dx;
+                    const ny = hy + dy;
+                    if (nx >= 0 && nx < GRID_W && ny >= 0 && ny < GRID_H) {
+                        const dist = Math.abs(dx) + Math.abs(dy);
+                        const boost = dist === 0 ? 0.8 : 0.4;
+                        const s = g[ny][nx].signals;
+                        s.mobile = Math.min(1.0, s.mobile + boost);
+                        s.thermal = Math.min(1.0, s.thermal + boost);
+                        s.sound = Math.min(1.0, s.sound + boost);
+                        s.wifi = Math.min(1.0, s.wifi + boost);
+                    }
                 }
             }
         }
     }
 
-    // 3. Calculate initial probabilities and assign disaster images
+    // 3. Calculate initial probabilities
     const getProb = (signals: Sector['signals']) => {
         const score = (sensorWeights.mobile.base * sensorWeights.mobile.conf * signals.mobile) +
             (sensorWeights.thermal.base * sensorWeights.thermal.conf * signals.thermal) +
@@ -180,7 +217,13 @@ const createGrid = (): Sector[][] => {
     ];
 
     topSectors.forEach((s, i) => {
-        s.disasterImage = disasterImages[i];
+        // Some images on peak, some in surrounding (40% center, 60% surrounding)
+        const isCenter = Math.random() < 0.4;
+        const dx = isCenter ? 0 : Math.floor(Math.random() * 5) - 2; // -2 to 2
+        const dy = isCenter ? 0 : Math.floor(Math.random() * 5) - 2; // -2 to 2
+        const nx = Math.max(0, Math.min(GRID_W - 1, s.x + dx));
+        const ny = Math.max(0, Math.min(GRID_H - 1, s.y + dy));
+        g[ny][nx].disasterImage = disasterImages[i];
     });
 
     return g;
@@ -197,15 +240,30 @@ const createDrones = (): Drone[] => {
 };
 
 const createSurvivors = (grid?: Sector[][]): HiddenSurvivor[] => {
+    const messages = [
+        "Trapped under concrete. Leg injured.",
+        "Safe but cannot exit building. 3 people here.",
+        "Need water asap."
+    ];
+
     if (grid) {
         const allSectors = grid.flat();
-        const topSectors = [...allSectors].sort((a, b) => b.prob - a.prob).slice(0, 3);
-        const messages = [
-            "Trapped under concrete. Leg injured.",
-            "Safe but cannot exit building. 3 people here.",
-            "Need water asap."
-        ];
-        return topSectors.map((s, i) => ({
+        // Sort by probability but enforce spreading
+        const sorted = [...allSectors].sort((a, b) => b.prob - a.prob);
+        const selected: Sector[] = [];
+        const MIN_DIST = 6; // Enforce at least 6 cells distance between survivors
+
+        for (const s of sorted) {
+            if (selected.length >= 3) break;
+            const tooClose = selected.some(sel =>
+                Math.sqrt(Math.pow(s.x - sel.x, 2) + Math.pow(s.y - sel.y, 2)) < MIN_DIST
+            );
+            if (!tooClose) {
+                selected.push(s);
+            }
+        }
+
+        return selected.map((s, i) => ({
             id: `S${i + 1}`,
             x: s.x,
             y: s.y,
@@ -213,11 +271,32 @@ const createSurvivors = (grid?: Sector[][]): HiddenSurvivor[] => {
             info: { message: messages[i], battery: `${Math.floor(Math.random() * 50 + 5)}%` }
         }));
     }
-    return [
-        { id: 'S1', x: 5, y: 5, found: false, info: { message: "Trapped under concrete. Leg injured.", battery: "12%" } },
-        { id: 'S2', x: 15, y: 12, found: false, info: { message: "Safe but cannot exit building. 3 people here.", battery: "45%" } },
-        { id: 'S3', x: 8, y: 18, found: false, info: { message: "Need water asap.", battery: "5%" } }
-    ];
+
+    // Fallback if no grid provided (bootstrap phase)
+    // We'll use the tactical map weights if available to find spread centers
+    const tacticalWeights = gridDataService.getWeights();
+    const candidates: { x: number, y: number, w: number }[] = [];
+    for (let y = 0; y < GRID_H; y++) {
+        for (let x = 0; x < GRID_W; x++) {
+            candidates.push({ x, y, w: tacticalWeights[y][x] + Math.random() * 0.1 });
+        }
+    }
+    candidates.sort((a, b) => b.w - a.w);
+
+    const selectedPoints: { x: number, y: number }[] = [];
+    for (const c of candidates) {
+        if (selectedPoints.length >= 3) break;
+        const tooClose = selectedPoints.some(p => Math.sqrt(Math.pow(c.x - p.x, 2) + Math.pow(c.y - p.y, 2)) < 6);
+        if (!tooClose) selectedPoints.push(c);
+    }
+
+    return selectedPoints.map((p, i) => ({
+        id: `S${i + 1}`,
+        x: p.x,
+        y: p.y,
+        found: false,
+        info: { message: messages[i % messages.length], battery: "45%" }
+    }));
 };
 
 // Component
@@ -226,9 +305,10 @@ const SimulationMapMCP: React.FC = () => {
     const [speed, setSpeed] = useState(1);
 
     // Sim State Refs
-    const gridRef = useRef<Sector[][]>(createGrid());
+    const initialSurvivors = createSurvivors(); // Phase 1: Determine spread positions
+    const gridRef = useRef<Sector[][]>(createGrid(initialSurvivors)); // Phase 2: Create grid with gradients
     const dronesRef = useRef<Drone[]>(createDrones());
-    const survivorsRef = useRef<HiddenSurvivor[]>(createSurvivors(gridRef.current));
+    const survivorsRef = useRef<HiddenSurvivor[]>(initialSurvivors);
     const pinsRef = useRef<FoundPin[]>([]);
     const timeRef = useRef<number>(0);
     const commLinksRef = useRef<CommEdge[]>([]);
@@ -544,16 +624,18 @@ const SimulationMapMCP: React.FC = () => {
     // If OSM terrain loads after this page, refresh the grid automatically
     useEffect(() => {
         if (gridDataService.isTerrainReady()) {
-            // Already loaded — refresh grid right away if it was random
-            const newGrid = createGrid();
+            // Already loaded — refresh grid right away
+            const newSurvivors = createSurvivors();
+            const newGrid = createGrid(newSurvivors);
             gridRef.current = newGrid;
-            survivorsRef.current = createSurvivors(newGrid);
+            survivorsRef.current = newSurvivors;
             setTickFlip(f => f + 1);
         } else {
             gridDataService.onTerrainReady(() => {
-                const newGrid = createGrid();
+                const newSurvivors = createSurvivors();
+                const newGrid = createGrid(newSurvivors);
                 gridRef.current = newGrid;
-                survivorsRef.current = createSurvivors(newGrid);
+                survivorsRef.current = newSurvivors;
                 setTickFlip(f => f + 1);
             });
         }
@@ -567,10 +649,11 @@ const SimulationMapMCP: React.FC = () => {
     const resetSim = () => {
         setRunning(false);
         gridDataService.releaseSource(); // allow prediction to write again after full reset
-        const newGrid = createGrid();
+        const newSurvivors = createSurvivors();
+        const newGrid = createGrid(newSurvivors);
         gridRef.current = newGrid;
         dronesRef.current = createDrones();
-        survivorsRef.current = createSurvivors(newGrid);
+        survivorsRef.current = newSurvivors;
         pinsRef.current = [];
         commLinksRef.current = [];
         swarmMessagesRef.current = [];
@@ -627,7 +710,8 @@ const SimulationMapMCP: React.FC = () => {
             });
         };
 
-        // 1. Prediction / Markov Chain: Hidden survivors might move
+        // 1. Prediction / Markov Chain: (Disabled) Hidden survivors no longer move per USER request
+        /*
         if (timeRef.current % 50 === 0) {
             survivors.forEach(s => {
                 if (s.found) return;
@@ -643,6 +727,7 @@ const SimulationMapMCP: React.FC = () => {
                 }
             });
         }
+        */
 
         // 1.5a Mesh Network Position Broadcast (for collision avoidance)
         const COMMS_RANGE = 8;
@@ -956,7 +1041,9 @@ const SimulationMapMCP: React.FC = () => {
 
                 sector.scanned = true;
                 sector.lastScanned = timeRef.current;
-                const newProb = getSectorProbability(sx, sy);
+                // Add realistic temporal jitter (+/- 2%) to simulate environmental noise
+                const jitter = (Math.random() * 0.04) - 0.02; 
+                const newProb = Math.max(0, Math.min(1.0, getSectorProbability(sx, sy) + jitter));
 
                 // Record scan in zone memory
                 const zone = getZoneForCell(zonesRef.current, sx, sy);
@@ -1022,64 +1109,55 @@ const SimulationMapMCP: React.FC = () => {
                             }
                         }
                     }
-                } else if (d.mode === 'Micro') {
-                    if (newProb > THRESHOLD_FOUND) {
-                        const s = survivors.find(s => s.x === sx && s.y === sy && !s.found);
-                        if (s) {
-                            s.found = true;
-                            for (let py = Math.max(0, sy - 3); py <= Math.min(GRID_H - 1, sy + 3); py++) {
-                                for (let px = Math.max(0, sx - 3); px <= Math.min(GRID_W - 1, sx + 3); px++) {
-                                    grid[py][px].pheromone = 0;
-                                    grid[py][px].prob = 0;
-                                }
-                            }
+                }
 
-                            d.memory.push(s.id);
-
-                            // Adaptive Learning: increase sensor confidence
-                            const weights = sensorWeightsRef.current;
-                            (Object.keys(weights) as Array<keyof typeof INITIAL_SENSORS>).forEach(k => {
-                                weights[k].conf = Math.min(1.0, weights[k].conf + 0.04);
-                            });
-                            gridDataService.setSensorWeights({ ...weights });
-
-                            if (d.isConnected) addMessage(d.id, 'HIGH_SIGNAL', { survivorId: s.id });
-
-                            if (!pinsRef.current.find(p => p.id === s.id)) {
-                                pinsRef.current.push({ id: s.id, x: sx, y: sy, info: s.info });
-                                addLog(`${d.id} confirmed Survivor ${s.id} at [${sx},${sy}]`, 'success');
-                            }
-
-                            d.mode = 'Wide';
-                            // Zone-aware redeployment instead of random target
-                            if (zonesRef.current.length > 0) {
-                                // Find highest-scoring zone with unscanned cells
-                                const availZone = zonesRef.current.find(z =>
-                                    z.unscannedCount > 0 && z.assignedDroneIds.length < 2
-                                );
-                                if (availZone) {
-                                    d.tx = availZone.centroid.x;
-                                    d.ty = availZone.centroid.y;
-                                    addLog(`${d.id} found ${s.id}! Redeploying to zone ${availZone.zoneId}`, 'success');
-                                } else {
-                                    d.tx = Math.floor(GRID_W / 2);
-                                    d.ty = Math.floor(GRID_H / 2);
-                                }
-                            } else {
-                                d.tx = Math.floor(GRID_W / 2);
-                                d.ty = Math.floor(GRID_H / 2);
+                // --- Discovery Condition (Robust Check) ---
+                // Trigger discovery in ANY mode if the threshold is met and a survivor is at this location
+                if (newProb >= THRESHOLD_FOUND) {
+                    const s = survivors.find(s => s.x === sx && s.y === sy && !s.found);
+                    if (s) {
+                        s.found = true;
+                        // Avoid drones immediately targeting the same spot
+                        for (let py = Math.max(0, sy - 3); py <= Math.min(GRID_H - 1, sy + 3); py++) {
+                            for (let px = Math.max(0, sx - 3); px <= Math.min(GRID_W - 1, sx + 3); px++) {
+                                grid[py][px].pheromone = 0;
+                                grid[py][px].prob = 0;
                             }
                         }
+
+                        d.memory.push(s.id);
+
+                        // Adaptive Learning: increase sensor confidence
+                        const weights = sensorWeightsRef.current;
+                        (Object.keys(weights) as Array<keyof typeof INITIAL_SENSORS>).forEach(k => {
+                            weights[k].conf = Math.min(1.0, weights[k].conf + 0.04);
+                        });
+                        gridDataService.setSensorWeights({ ...weights });
+
+                        if (d.isConnected) addMessage(d.id, 'HIGH_SIGNAL', { survivorId: s.id });
+
+                        if (!pinsRef.current.find(p => p.id === s.id)) {
+                            pinsRef.current.push({ id: s.id, x: sx, y: sy, info: s.info });
+                            addLog(`${d.id} confirmed Survivor ${s.id} at [${sx},${sy}]`, 'success');
+                        }
+
+                        d.mode = 'Wide';
+                        // Redeploy
+                        d.tx = Math.floor(GRID_W / 2);
+                        d.ty = Math.floor(GRID_H / 2);
                     }
+                }
+
+                if (d.mode === 'Micro') {
 
                     // Abort Micro if signal drops or battery is low
                     if (d.mode === 'Micro' && (newProb < THRESHOLD_MICRO || d.battery < lowBattery)) {
                         d.mode = 'Wide';
                     }
 
-                    // Micro moves to adjacent high-prob cells
+                    // Micro moves to adjacent high-prob cells (including staying put if at peak)
                     if (d.mode === 'Micro') {
-                        const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, -1], [-1, 1], [1, -1]];
+                        const dirs = [[0, 0], [0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, -1], [-1, 1], [1, -1]];
 
                         let validDirs = dirs.filter(dir => {
                             const nx = sx + dir[0]; const ny = sy + dir[1];
@@ -1238,7 +1316,6 @@ const SimulationMapMCP: React.FC = () => {
                 const lowBattery = Math.max(20, criticalBattery + 15);
                 if (drone.battery < lowBattery) continue;
 
-                // Only reassign if drone is idle or in Wide mode exploring
                 const distToTarget = Math.sqrt(Math.pow(drone.tx - drone.x, 2) + Math.pow(drone.ty - drone.y, 2));
                 const isIdle = distToTarget < 0.5;
                 const isWideExploring = drone.mode === 'Wide';
@@ -1249,7 +1326,7 @@ const SimulationMapMCP: React.FC = () => {
                     if (mission.action === 'micro_scan' && drone.mode !== 'Micro') {
                         drone.mode = 'Micro';
                     }
-                    addLog(`[Zone] ${drone.id} -> ${mission.zoneId} (${mission.action}) score=${scoredZones.find(z => z.zoneId === mission.zoneId)?.zoneScore.toFixed(2) ?? '?'}`, 'info');
+                    addLog(`[Zone] ${drone.id} -> ${mission.zoneId} (${mission.action})`, 'info');
                 }
             }
 
@@ -1358,8 +1435,8 @@ const SimulationMapMCP: React.FC = () => {
     }, [mcpConnected, running, runThinkNow]);
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '16px', color: 'var(--text-primary)' }}>
-            <header style={{ padding: '24px', paddingBottom: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '8px', color: 'var(--text-primary)' }}>
+            <header style={{ padding: '16px', paddingBottom: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
                     <h2 className="hud-text glow-text" style={{ fontSize: '1.5rem', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <Hexagon /> MULTI-RES SWARM SIMULATION
@@ -1380,9 +1457,6 @@ const SimulationMapMCP: React.FC = () => {
                     <button onClick={resetSim} className="hud-btn" style={{ padding: '8px 16px', display: 'flex', gap: '8px', cursor: 'pointer' }}>
                         <RotateCcw size={18} /> RESET
                     </button>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 16px', borderLeft: '1px solid var(--panel-border)', color: '#00ffcc', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
-                        <Shield size={16} /> COLLISION AVOIDANCE ACTIVE
-                    </div>
                     <button
                         onClick={() => setMcpPanelOpen(!mcpPanelOpen)}
                         className={`hud-btn ${mcpPanelOpen ? 'glow-text' : ''}`}
@@ -1414,7 +1488,7 @@ const SimulationMapMCP: React.FC = () => {
                 </div>
             </header>
 
-            <div style={{ flex: 1, display: 'flex', gap: '24px', margin: '0 24px 24px 24px' }}>
+            <div style={{ flex: 1, display: 'flex', gap: '12px', margin: '0 12px 12px 12px' }}>
                 {/* Main Simulator Map */}
                 <div className="hud-panel" style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
 
@@ -1695,34 +1769,59 @@ const SimulationMapMCP: React.FC = () => {
                             })}
                         </div>
                     </div>
-                    1698:
-                    1699:                     {/* Swarm Strategy Analytics */}
-                    1700:                     <div className="hud-panel" style={{ padding: '16px', background: 'rgba(0, 255, 204, 0.02)' }}>
-                        1701:                         <h4 className="hud-text" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            1702:                             <Shield size={16} /> SWARM STRATEGY ANALYTICS
-                            1703:                         </h4>
-                        1704:                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                            1705:                             <div style={{ padding: '8px', border: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.3)' }}>
-                                1706:                                 <div style={{ fontSize: '0.6rem', color: 'var(--text-secondary)' }}>ZONE COVERAGE</div>
-                                1707:                                 <div style={{ fontSize: '1rem', color: '#00ffcc', fontFamily: 'var(--font-mono)' }}>{metricsRef.current.averageZoneCoverage.toFixed(1)}%</div>
-                                1708:                             </div>
-                            1709:                             <div style={{ padding: '8px', border: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.3)' }}>
-                                1710:                                 <div style={{ fontSize: '0.6rem', color: 'var(--text-secondary)' }}>REPEAT SCANS</div>
-                                1711:                                 <div style={{ fontSize: '1rem', color: metricsRef.current.repeatedScanRate > 15 ? '#ff4444' : '#00ffcc', fontFamily: 'var(--font-mono)' }}>{metricsRef.current.repeatedScanRate.toFixed(1)}%</div>
-                                1712:                             </div>
-                            1713:                             <div style={{ padding: '8px', border: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.3)' }}>
-                                1714:                                 <div style={{ fontSize: '0.6rem', color: 'var(--text-secondary)' }}>IDLE TIME</div>
-                                1715:                                 <div style={{ fontSize: '1rem', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{metricsRef.current.droneIdleTime}</div>
-                                1716:                             </div>
-                            1717:                             <div style={{ padding: '8px', border: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.3)' }}>
-                                1718:                                 <div style={{ fontSize: '0.6rem', color: 'var(--text-secondary)' }}>MEAN PROB</div>
-                                1719:                                 <div style={{ fontSize: '1rem', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{metricsRef.current.meanProbabilityScanned.toFixed(3)}</div>
-                                1720:                             </div>
-                            1721:                         </div>
-                        1722:                         <div style={{ marginTop: '10px', fontSize: '0.65rem', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
-                            1723:                             TOTAL SCANS: {metricsRef.current.totalScans}
-                            1724:                         </div>
-                        1725:                     </div>
+                    {/* Swarm Strategy Analytics Overhaul */}
+                    <div className="hud-panel" style={{ padding: '16px', background: 'rgba(0, 255, 204, 0.05)', border: '1px solid var(--panel-border)' }}>
+                        <h4 className="hud-text" style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', letterSpacing: '1px' }}>
+                            SWARM STRATEGY ANALYTICS
+                        </h4>
+                        
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                            {/* Metric: Zone Coverage */}
+                            <div style={{ padding: '10px', border: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.4)', position: 'relative', overflow: 'hidden' }}>
+                                <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
+                                    ZONE COVERAGE
+                                </div>
+                                <div style={{ fontSize: '1.2rem', color: '#00ffcc', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+                                    {metricsRef.current.averageZoneCoverage.toFixed(1)}%
+                                </div>
+                            </div>
+
+                            {/* Metric: Repeat Scans */}
+                            <div style={{ padding: '10px', border: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.4)', position: 'relative', overflow: 'hidden' }}>
+                                <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
+                                    REPEAT RATE
+                                </div>
+                                <div style={{ fontSize: '1.2rem', color: metricsRef.current.repeatedScanRate > 15 ? '#ff4444' : '#00ffcc', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+                                    {metricsRef.current.repeatedScanRate.toFixed(1)}%
+                                </div>
+                            </div>
+
+                            {/* Metric: Idle Time */}
+                            <div style={{ padding: '10px', border: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.4)', position: 'relative', overflow: 'hidden' }}>
+                                <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
+                                    IDLE CYCLES
+                                </div>
+                                <div style={{ fontSize: '1.2rem', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+                                    {metricsRef.current.droneIdleTime}
+                                </div>
+                            </div>
+
+                            {/* Metric: Mean Probability */}
+                            <div style={{ padding: '10px', border: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.4)', position: 'relative', overflow: 'hidden' }}>
+                                <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
+                                    MEAN PROB
+                                </div>
+                                <div style={{ fontSize: '1.2rem', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+                                    {metricsRef.current.meanProbabilityScanned.toFixed(3)}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: '1px solid rgba(0, 255, 204, 0.1)', fontSize: '0.7rem', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', display: 'flex', justifyContent: 'space-between' }}>
+                            <span>TOTAL SCANS:</span>
+                            <span style={{ color: 'var(--text-primary)' }}>{metricsRef.current.totalScans.toLocaleString()}</span>
+                        </div>
+                    </div>
 
                     <div className="hud-panel" style={{ padding: '16px', flex: 1, display: 'flex', flexDirection: 'column' }}>
                         <h4 className="hud-text" style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
