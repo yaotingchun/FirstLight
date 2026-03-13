@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
@@ -7,7 +7,6 @@ import ProbabilityMap3D from './pages/3DMap';
 import SimulationMap from './pages/SimulationMap';
 import SimulationMapMCP from './pages/SimulationMapMCP';
 import RoutingSandbox from './pages/RoutingSandbox';
-import SimulationMapDuplicate from './pages/SimulationMapDuplicate';
 import DroneCam from './pages/DroneCam';
 import LoadingScreen from './components/LoadingScreen';
 
@@ -18,7 +17,6 @@ const pages = [
   { path: '/simulation', element: <SimulationMap /> },
   { path: '/simulation-mcp', element: <SimulationMapMCP /> },
   { path: '/routing', element: <RoutingSandbox /> },
-  { path: '/simulation-duplicate', element: <SimulationMapDuplicate /> },
   { path: '/drone-cam', element: <DroneCam /> },
 ];
 
