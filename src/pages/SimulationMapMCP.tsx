@@ -1703,7 +1703,11 @@ const SimulationMapMCP: React.FC = () => {
                                     'getSectorAssignments': '{}',
                                     'getExplorationGradient': '{}',
                                     'getUnassignedHotspots': '{"probabilityThreshold": 0.3, "maxResults": 10}',
-                                    'getDroneAssignmentMap': '{}'
+                                    'getDroneAssignmentMap': '{}',
+                                    'validateAssignmentPlan': '{"assignments":[{"droneId":"DRN-Alpha","targetX":11,"targetY":8,"mode":"Wide"}]}',
+                                    'assignHotspotBatch': '{"assignments":[{"droneId":"DRN-Alpha","targetX":11,"targetY":8,"mode":"Wide"}]}',
+                                    'getRecommendedActions': '{"maxActions": 8}',
+                                    'getBatteryRiskMap': '{"safetyBuffer": 15}'
                                 };
                                 setMcpToolParams(paramTemplates[e.target.value] || '{}');
                             }}
@@ -1753,6 +1757,12 @@ const SimulationMapMCP: React.FC = () => {
                                 <option value="getExplorationGradient">getExplorationGradient</option>
                                 <option value="getUnassignedHotspots">getUnassignedHotspots</option>
                                 <option value="getDroneAssignmentMap">getDroneAssignmentMap</option>
+                            </optgroup>
+                            <optgroup label="Orchestration">
+                                <option value="validateAssignmentPlan">validateAssignmentPlan ✦</option>
+                                <option value="assignHotspotBatch">assignHotspotBatch ✦</option>
+                                <option value="getRecommendedActions">getRecommendedActions ✦</option>
+                                <option value="getBatteryRiskMap">getBatteryRiskMap ✦</option>
                             </optgroup>
                         </select>
                     </div>

@@ -16,7 +16,7 @@
 
 import express from 'express';
 import cors from 'cors';
-import { executeTool, listTools, toolSchemas } from './tools/index.js';
+import { executeTool, listTools, getToolSchema } from './tools/index.js';
 import { droneStore } from './droneStore.js';
 import { processOrchestratorChat } from './orchestratorChat.js';
 import type { DroneStatus, SectorScanResult, CommLink, SurvivorInfo } from './types.js';
@@ -56,7 +56,8 @@ app.get('/api/tools', (req, res) => {
             scan: ['getSectorScanResult', 'getGridHeatmap', 'getScannedSectors', 'getSurroundingSectors'],
             communication: ['getCommNetworkStatus', 'getDisconnectedDrones', 'checkDroneConnectivity'],
             mission: ['getSwarmStatus', 'getMissionStats', 'getFoundSurvivors', 'setSurvivorPin', 'resetMission', 'setSimulationRunning', 'getMissionBriefing'],
-            swarmIntel: ['getExplorationGradient', 'getUnassignedHotspots', 'getDroneAssignmentMap']
+            swarmIntel: ['getExplorationGradient', 'getUnassignedHotspots', 'getDroneAssignmentMap'],
+            orchestration: ['validateAssignmentPlan', 'assignHotspotBatch', 'getRecommendedActions', 'getBatteryRiskMap']
         }
     });
 });
@@ -64,7 +65,7 @@ app.get('/api/tools', (req, res) => {
 // Get specific tool schema
 app.get('/api/tools/:toolName', (req, res) => {
     const { toolName } = req.params;
-    const schema = toolSchemas[toolName as keyof typeof toolSchemas];
+    const schema = getToolSchema(toolName);
     
     if (!schema) {
         res.status(404).json({
@@ -266,6 +267,8 @@ app.listen(PORT, () => {
 ║    • Scan (4 tools): Sector queries, heatmap access                        ║
 ║    • Communication (3 tools): Network status, connectivity                 ║
 ║    • Mission (7 tools): Swarm status, mission control + run/pause          ║
+║    • SwarmIntel (3 tools): Urgency, hotspot, assignment insights           ║
+║    • Orchestration (4 tools): Plan validation + batch policy actions       ║
 ╚═══════════════════════════════════════════════════════════════════════════╝
     `);
 });

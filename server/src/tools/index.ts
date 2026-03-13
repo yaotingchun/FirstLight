@@ -10,6 +10,62 @@ import { scanTools } from './scanTools.js';
 import { communicationTools } from './communicationTools.js';
 import { missionTools } from './missionTools.js';
 import { swarmIntelTools } from './swarmIntelTools.js';
+import { orchestrationTools } from './orchestrationTools.js';
+
+type ToolSchema = {
+    name: string;
+    description: string;
+    inputSchema: Record<string, unknown>;
+    [key: string]: unknown;
+};
+
+// Canonical docstrings for AI orchestration clients.
+// These are surfaced by listTools() and getToolSchema().
+const TOOL_DOCSTRINGS: Record<string, string> = {
+    getDroneStatus: 'Observe one drone. Returns position, target, mode, battery, connectivity, activity, and assigned region. Use for spot checks after issuing commands.',
+    getAllDroneStatuses: 'Observe all drones in one call. Use as a periodic telemetry snapshot for orchestration loops and health monitoring.',
+    setDroneTarget: 'Action. Queue a movement target for one drone. Requires droneId,targetX,targetY (0-19). Drone must be active and not charging. Returns queued commandId.',
+    setDroneMode: 'Action. Queue a mode change for one drone. Valid modes: Wide, Micro, Relay, Charging. Charging requires being at base. Returns queued commandId.',
+    recallDroneToBase: 'Action. Queue return-to-base (RTB) for one drone. Use for battery risk, connectivity recovery, or mission reprioritization.',
+    killDrone: 'Action. Simulate drone failure/deactivation for resilience testing. Triggers reallocation behavior on the simulation side.',
+    getBatteryForecast: 'Predict if a drone can reach a target and return to base with safety margin. Returns canReach, estimatedBatteryUsed, projectedBatteryOnReturn, and warning.',
+    getDroneDiscoveryList: 'Discover current drone IDs dynamically. Call first before issuing commands to avoid hard-coding IDs.',
+    setAutoRecallThreshold: 'Action. Set per-drone battery threshold (0-100) that forces RTB when battery drops below it. Returns queued commandId.',
+
+    getSectorScanResult: 'Observe one sector by grid label (e.g., E10) or coordinates (x,y). Returns probability, pheromone, terrain, scanned state, lastScannedTick, and signal channels.',
+    getGridHeatmap: 'Observe full probability matrix and priority cell lists. Use for coarse global planning and hotspot selection.',
+    getScannedSectors: 'Observe coverage summary: scanned/unscanned counts and high-probability unscanned sectors.',
+    getSurroundingSectors: 'Observe neighborhood context around a center sector with optional radius. Returns average/max probability and suggested action hint.',
+
+    getCommNetworkStatus: 'Observe mesh network status: connected/disconnected nodes, links, relay position, and base position.',
+    getDisconnectedDrones: 'Observe disconnected drones with distance metrics and reconnection suggestions.',
+    checkDroneConnectivity: 'Observe connectivity path quality for a specific drone, including route to base and signal quality estimate.',
+
+    getSwarmStatus: 'Observe mission-level swarm snapshot: drones, active count, total count, and relay details.',
+    getMissionStats: 'Observe mission KPIs: scan progress, survivors found, battery/connectivity aggregates, current tick, and simulation state.',
+    getFoundSurvivors: 'Observe confirmed survivors list with location, message, battery note, finding drone, and timestamp tick.',
+    setSurvivorPin: 'Action. Mark a survivor at x,y by droneId with optional message. Queues SET_SURVIVOR_PIN for frontend handling.',
+    resetMission: 'Action. Queue full mission reset (state, drones, scan data, survivors).',
+    setSimulationRunning: 'Action. Start or pause simulation loop (running=true|false).',
+    getMissionBriefing: 'Observe mission phase and recommendations. Returns objectives, constraints, current phase, and strategic guidance.',
+    getSectorAssignments: 'Observe sector reservation map inferred from active drone targets, including reserved/free counts and probability/pheromone context.',
+
+    getExplorationGradient: 'Observe urgency per unscanned sector where urgency = probability * (1 - pheromone). Returns ranked cells plus critical/high zones.',
+    getUnassignedHotspots: 'Observe high-value unscanned sectors not currently targeted. Returns ranked hotspots and recommended dispatches.',
+    getDroneAssignmentMap: 'Observe per-drone assignment state with redundancy detection and coverageEfficiency metric.',
+
+    validateAssignmentPlan: 'Dry-run planner validation for batched assignments. Flags invalid drones/targets, low battery margin, and duplicate target conflicts.',
+    assignHotspotBatch: 'Action. Queue multiple assignments in one call. Each accepted item may queue SET_MODE and SET_TARGET. Returns accepted/rejected breakdown.',
+    getRecommendedActions: 'Policy tool. Returns prioritized machine-actionable recommendations derived from battery risk, connectivity, and unassigned hotspots.',
+    getBatteryRiskMap: 'Risk tool. Classify active drones by projected return battery and provide recommendation tiers (continue/monitor/avoid-micro/recall).'
+};
+
+function withDocstring(schema: ToolSchema): ToolSchema {
+    return {
+        ...schema,
+        docstring: TOOL_DOCSTRINGS[schema.name] ?? schema.description
+    };
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TOOL SCHEMAS (for MCP protocol)
@@ -381,6 +437,84 @@ export const toolSchemas = {
             type: 'object',
             properties: {}
         }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────
+    // ORCHESTRATION MODULE
+    // ─────────────────────────────────────────────────────────────────────
+    validateAssignmentPlan: {
+        name: 'validateAssignmentPlan',
+        description: 'Dry-run validation for a planned batch assignment. Checks inactive/charging drones, out-of-bounds targets, low battery return margin, and duplicate target conflicts before execution.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                assignments: {
+                    type: 'array',
+                    description: 'Planned assignments to validate',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            droneId: { type: 'string' },
+                            targetX: { type: 'number' },
+                            targetY: { type: 'number' },
+                            mode: { type: 'string', enum: ['Wide', 'Micro', 'Relay', 'Charging'] }
+                        },
+                        required: ['droneId', 'targetX', 'targetY']
+                    }
+                }
+            },
+            required: ['assignments']
+        }
+    },
+    assignHotspotBatch: {
+        name: 'assignHotspotBatch',
+        description: 'Queue a batch of hotspot assignments in one call. Each accepted assignment queues SET_TARGET and optionally SET_MODE. Rejected assignments include reasons.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                assignments: {
+                    type: 'array',
+                    description: 'Assignments to queue',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            droneId: { type: 'string' },
+                            targetX: { type: 'number' },
+                            targetY: { type: 'number' },
+                            mode: { type: 'string', enum: ['Wide', 'Micro', 'Relay', 'Charging'] }
+                        },
+                        required: ['droneId', 'targetX', 'targetY']
+                    }
+                }
+            },
+            required: ['assignments']
+        }
+    },
+    getRecommendedActions: {
+        name: 'getRecommendedActions',
+        description: 'Generate a prioritized action list for the current tick by combining battery risk, connectivity health, and unassigned hotspots. Returns machine-actionable tool calls.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                maxActions: {
+                    type: 'number',
+                    description: 'Maximum action suggestions to return (default 8)'
+                }
+            }
+        }
+    },
+    getBatteryRiskMap: {
+        name: 'getBatteryRiskMap',
+        description: 'Classify active drones by battery risk using projected return battery from current/target positions. Use before assigning long-range hotspots.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                safetyBuffer: {
+                    type: 'number',
+                    description: 'Battery percentage used as high-risk return threshold (default 15)'
+                }
+            }
+        }
     }
 };
 
@@ -424,7 +558,13 @@ export const toolHandlers: Record<string, Function> = {
     // Swarm intelligence tools
     getExplorationGradient: swarmIntelTools.getExplorationGradient,
     getUnassignedHotspots: swarmIntelTools.getUnassignedHotspots,
-    getDroneAssignmentMap: swarmIntelTools.getDroneAssignmentMap
+    getDroneAssignmentMap: swarmIntelTools.getDroneAssignmentMap,
+
+    // Orchestration tools
+    validateAssignmentPlan: orchestrationTools.validateAssignmentPlan,
+    assignHotspotBatch: orchestrationTools.assignHotspotBatch,
+    getRecommendedActions: orchestrationTools.getRecommendedActions,
+    getBatteryRiskMap: orchestrationTools.getBatteryRiskMap
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -456,12 +596,18 @@ export async function executeTool(
     }
 }
 
+export function getToolSchema(toolName: string): ToolSchema | undefined {
+    const schema = toolSchemas[toolName as keyof typeof toolSchemas] as unknown as ToolSchema | undefined;
+    if (!schema) return undefined;
+    return withDocstring(schema);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // LIST TOOLS (for MCP protocol)
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function listTools() {
-    return Object.values(toolSchemas);
+    return Object.values(toolSchemas).map(s => withDocstring(s as unknown as ToolSchema));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -473,3 +619,4 @@ export { scanTools } from './scanTools.js';
 export { communicationTools } from './communicationTools.js';
 export { missionTools } from './missionTools.js';
 export { swarmIntelTools } from './swarmIntelTools.js';
+export { orchestrationTools } from './orchestrationTools.js';

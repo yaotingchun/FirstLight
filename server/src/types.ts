@@ -252,6 +252,83 @@ export interface SetSimulationStateParams {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// ORCHESTRATION MODULE TYPES
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface AssignmentBatchItem {
+    droneId: string;
+    targetX: number;
+    targetY: number;
+    mode?: DroneMode;
+}
+
+export interface ValidateAssignmentPlanParams {
+    assignments: AssignmentBatchItem[];
+}
+
+export interface ValidateAssignmentPlanResult {
+    valid: boolean;
+    validCount: number;
+    invalidCount: number;
+    results: Array<{
+        assignment: AssignmentBatchItem;
+        valid: boolean;
+        errors: string[];
+        warnings: string[];
+    }>;
+}
+
+export interface AssignHotspotBatchParams {
+    assignments: AssignmentBatchItem[];
+}
+
+export interface AssignHotspotBatchResult {
+    accepted: Array<{
+        assignment: AssignmentBatchItem;
+        commandIds: string[];
+        message: string;
+    }>;
+    rejected: Array<{
+        assignment: AssignmentBatchItem;
+        reason: string;
+    }>;
+    queuedCount: number;
+}
+
+export interface RecommendedAction {
+    priority: 'low' | 'medium' | 'high' | 'critical';
+    type: string;
+    params: Record<string, unknown>;
+    reason: string;
+}
+
+export interface RecommendedActionsResult {
+    actions: RecommendedAction[];
+    generatedAtTick: number;
+}
+
+export interface BatteryRiskMapParams {
+    safetyBuffer?: number;
+}
+
+export interface BatteryRiskEntry {
+    droneId: string;
+    currentBattery: number;
+    targetSector: string;
+    projectedBatteryOnReturn: number;
+    riskLevel: 'low' | 'medium' | 'high' | 'critical';
+    recommendation: 'continue' | 'monitor' | 'avoid-micro' | 'recall';
+}
+
+export interface BatteryRiskMapResult {
+    entries: BatteryRiskEntry[];
+    critical: string[];
+    high: string[];
+    medium: string[];
+    low: string[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // MCP TOOL DEFINITIONS
 // ═══════════════════════════════════════════════════════════════════════════
 

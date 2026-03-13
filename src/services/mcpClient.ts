@@ -320,5 +320,24 @@ export const mcpTools = {
     resetMission: () => executeTool('resetMission'),
     getMissionBriefing: () => executeTool('getMissionBriefing'),
     getSectorAssignments: () => executeTool('getSectorAssignments'),
-    setSimulationRunning: (running: boolean) => executeTool('setSimulationRunning', { running })
+    setSimulationRunning: (running: boolean) => executeTool('setSimulationRunning', { running }),
+
+    // Swarm intelligence tools
+    getExplorationGradient: () => executeTool('getExplorationGradient'),
+    getUnassignedHotspots: (probabilityThreshold?: number, maxResults?: number) =>
+        executeTool('getUnassignedHotspots', {
+            ...(probabilityThreshold !== undefined ? { probabilityThreshold } : {}),
+            ...(maxResults !== undefined ? { maxResults } : {})
+        }),
+    getDroneAssignmentMap: () => executeTool('getDroneAssignmentMap'),
+
+    // Orchestration tools
+    validateAssignmentPlan: (assignments: Array<{ droneId: string; targetX: number; targetY: number; mode?: string }>) =>
+        executeTool('validateAssignmentPlan', { assignments }),
+    assignHotspotBatch: (assignments: Array<{ droneId: string; targetX: number; targetY: number; mode?: string }>) =>
+        executeTool('assignHotspotBatch', { assignments }),
+    getRecommendedActions: (maxActions?: number) =>
+        executeTool('getRecommendedActions', { ...(maxActions !== undefined ? { maxActions } : {}) }),
+    getBatteryRiskMap: (safetyBuffer?: number) =>
+        executeTool('getBatteryRiskMap', { ...(safetyBuffer !== undefined ? { safetyBuffer } : {}) })
 };
