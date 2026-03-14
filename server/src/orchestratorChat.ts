@@ -1,6 +1,6 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { VertexAI, type GenerativeModel } from '@google-cloud/vertexai';
+import { VertexAI, type GenerativeModel, type Content } from '@google-cloud/vertexai';
 import dotenv from 'dotenv';
 import { droneStore } from './droneStore.js';
 import { executeTool } from './tools/index.js';
@@ -42,6 +42,20 @@ interface RegionPlan {
 
 let model: GenerativeModel | null = null;
 let regionBootstrapDone = false;
+
+// Conversation history for stateful multi-turn chat (role: 'user' | 'model')
+const MAX_HISTORY_TURNS = 20; // 10 user + 10 model messages
+let chatHistory: Content[] = [];
+
+function trimHistory(): void {
+    if (chatHistory.length > MAX_HISTORY_TURNS) {
+        chatHistory = chatHistory.slice(chatHistory.length - MAX_HISTORY_TURNS);
+    }
+}
+
+function clearChatHistory(): void {
+    chatHistory = [];
+}
 
 function getModel(): GenerativeModel {
     if (model) return model;
@@ -287,6 +301,7 @@ export async function processOrchestratorChat(message: string): Promise<{
         const missionStats = droneStore.getMissionStats();
         if (missionStats.currentTick === 0 && missionStats.scanProgress < 1) {
             regionBootstrapDone = false;
+            clearChatHistory();
         }
 
         if (!regionBootstrapDone && shouldBootstrapRegions(message)) {
@@ -331,11 +346,18 @@ Critical rules:
         const userPrompt = `STATE:\n${stateSummary}\n\nUSER:\n${message}`;
 
         const result = await m.generateContent({
+        const chat = m.startChat({
             systemInstruction: { role: 'system', parts: [{ text: systemPrompt }] },
-            contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+            history: chatHistory,
         });
 
+        const result = await chat.sendMessage(userPrompt);
         const reply = result.response.candidates?.[0]?.content?.parts?.[0]?.text ?? '(no response)';
+
+        // Persist this turn into history
+        chatHistory.push({ role: 'user', parts: [{ text: userPrompt }] });
+        chatHistory.push({ role: 'model', parts: [{ text: reply }] });
+        trimHistory();
         const decision = parseDecision(reply);
 
         if (!decision) {
@@ -350,6 +372,7 @@ Critical rules:
 
         if (decision.actions.some(a => a.type === 'reset_simulation')) {
             regionBootstrapDone = false;
+            clearChatHistory();
         }
 
         return {
