@@ -59,6 +59,7 @@ type Drone = {
     memory: string[];
     savedTx?: number;
     savedTy?: number;
+    startTick?: number;
     knownOtherDrones: { [id: string]: { x: number; y: number; lastUpdate: number } };
 };
 
@@ -230,12 +231,18 @@ const createGrid = (survivors?: HiddenSurvivor[]): Sector[][] => {
 };
 
 const createDrones = (): Drone[] => {
+    const bx = BASE_STATION.x;
+    const by = BASE_STATION.y;
+    // Departure stagger: drones flying to distant targets leave first so all arrive roughly together.
+    // Alpha/Beta  → upper corners (~18.6 cells away) → depart tick 0
+    // RLY-Prime   → center      (~9 cells away)       → depart tick 15
+    // Gamma/Delta → lower corners (~7.8 cells away)  → depart tick 25
     return [
-        { id: 'DRN-Alpha', x: 9, y: 9, tx: 2, ty: 2, mode: 'Wide', battery: 100, targetSector: null, isConnected: true, memory: [], knownOtherDrones: {} },
-        { id: 'DRN-Beta', x: 10, y: 9, tx: 17, ty: 2, mode: 'Wide', battery: 100, targetSector: null, isConnected: true, memory: [], knownOtherDrones: {} },
-        { id: 'DRN-Gamma', x: 9, y: 10, tx: 2, ty: 17, mode: 'Wide', battery: 100, targetSector: null, isConnected: true, memory: [], knownOtherDrones: {} },
-        { id: 'DRN-Delta', x: 10, y: 10, tx: 17, ty: 17, mode: 'Wide', battery: 100, targetSector: null, isConnected: true, memory: [], knownOtherDrones: {} },
-        { id: 'RLY-Prime', x: 9.5, y: 9.5, tx: 9.5, ty: 9.5, mode: 'Relay', battery: 100, targetSector: null, isConnected: true, memory: [], knownOtherDrones: {} }
+        { id: 'DRN-Alpha', x: bx, y: by, tx: 2,  ty: 2,  mode: 'Wide',  battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 0,  knownOtherDrones: {} },
+        { id: 'DRN-Beta',  x: bx, y: by, tx: 17, ty: 2,  mode: 'Wide',  battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 0,  knownOtherDrones: {} },
+        { id: 'RLY-Prime', x: bx, y: by, tx: GRID_W / 2, ty: GRID_H / 2, mode: 'Relay', battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 15, knownOtherDrones: {} },
+        { id: 'DRN-Gamma', x: bx, y: by, tx: 2,  ty: 17, mode: 'Wide',  battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 25, knownOtherDrones: {} },
+        { id: 'DRN-Delta', x: bx, y: by, tx: 17, ty: 17, mode: 'Wide',  battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 25, knownOtherDrones: {} }
     ];
 };
 
@@ -836,6 +843,9 @@ const SimulationMapMCP: React.FC = () => {
         const BASE_Y = BASE_STATION.y;
 
         drones.forEach(d => {
+            // --- Staggered Departure Gate ---
+            if (d.startTick !== undefined && timeRef.current < d.startTick) return;
+
             // --- Charging Logic ---
             if (d.mode === 'Charging') {
                 d.battery += 0.5;
@@ -917,6 +927,16 @@ const SimulationMapMCP: React.FC = () => {
 
             if (d.mode === 'Relay') {
                 d.battery -= 0.01;
+                // Move relay toward its assigned target position
+                const relayDistToTarget = Math.sqrt(Math.pow(d.tx - d.x, 2) + Math.pow(d.ty - d.y, 2));
+                if (relayDistToTarget >= 0.3) {
+                    const relaySpeed = 0.3;
+                    const relayAngle = Math.atan2(d.ty - d.y, d.tx - d.x);
+                    d.x += Math.cos(relayAngle) * Math.min(relaySpeed, relayDistToTarget);
+                    d.y += Math.sin(relayAngle) * Math.min(relaySpeed, relayDistToTarget);
+                    d.x = Math.max(0, Math.min(GRID_W - 1, d.x));
+                    d.y = Math.max(0, Math.min(GRID_H - 1, d.y));
+                }
                 return;
             }
 
