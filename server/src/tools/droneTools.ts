@@ -213,13 +213,22 @@ export async function setDroneMode(
         };
     }
 
-    // MODE LOCK: Drones with 'RLY-' prefix MUST remain in 'Relay' or 'Charging' mode
+    // BIDIRECTIONAL MODE LOCK: Roles are strictly separated
     if (drone.id.startsWith('RLY-')) {
         const allowedRelayModes: DroneMode[] = ['Relay', 'Charging'];
         if (!allowedRelayModes.includes(params.mode)) {
             return {
                 success: false,
-                error: `Mode lock violation: Relay drone ${drone.id} cannot be converted to ${params.mode}. Relay drones must stay in Relay or Charging mode.`,
+                error: `Mode lock violation: Relay drone ${drone.id} cannot be converted to ${params.mode}.`,
+                timestamp: Date.now()
+            };
+        }
+    } else {
+        // This is a search drone (D1, D2, etc.)
+        if (params.mode === 'Relay') {
+            return {
+                success: false,
+                error: `Mode lock violation: Search drone ${drone.id} cannot be converted to Relay mode.`,
                 timestamp: Date.now()
             };
         }

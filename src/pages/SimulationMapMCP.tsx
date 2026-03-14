@@ -545,10 +545,15 @@ const SimulationMapMCP: React.FC = () => {
                     const drone = drones.find(d => d.id === cmd.params.droneId);
                     if (drone) {
                         const newMode = cmd.params.mode as Drone['mode'];
-                        // MODE LOCK: Relay drones cannot be converted to search modes
+                        // BIDIRECTIONAL MODE LOCK: Roles are strictly separated
                         if (drone.id.startsWith('RLY-')) {
                             if (newMode !== 'Relay' && newMode !== 'Charging') {
                                 addLog(`MCP Override denied: Relay drone ${drone.id} mode lock prevents conversion to ${newMode}`, 'alert');
+                                break;
+                            }
+                        } else {
+                            if (newMode === 'Relay') {
+                                addLog(`MCP Override denied: Search drone ${drone.id} mode lock prevents conversion to Relay`, 'alert');
                                 break;
                             }
                         }

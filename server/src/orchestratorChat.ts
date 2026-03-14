@@ -404,7 +404,9 @@ Critical rules:
 - BATTERY LOW (below 20%): emit recall_drone unless the drone is already heading to base.
 - DISCONNECTED DRONES: if disconnected drones > 0, emit move_relay to bridge communication gap.
 - RELAY BATTERY LOW (below 25%): emit replace_relay immediately, UNLESS it is <RETURNING>.
-- MODE LOCK: NEVER use set_drone_mode on drones with 'RLY-' prefix to change them to 'Wide' or 'Micro'. Relay drones must only be moved via 'move_relay' or swapped via 'replace_relay'.
+- MODE LOCK (Strict Role Separation): 
+    1. NEVER use set_drone_mode on 'RLY-' drones to change them to 'Wide' or 'Micro'. Relay drones stay in Relay/Charging.
+    2. NEVER use set_drone_mode on search drones ('D1'-'D8') to change them to 'Relay'. Search drones stay in Wide/Micro/Charging.
 - Use no_action only when the simulation is paused or all drones are already optimally placed.`;
 
         const userPrompt = `STATE:\n${stateSummary}\n\nUSER:\n${message}`;

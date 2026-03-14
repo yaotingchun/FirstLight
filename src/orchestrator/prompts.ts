@@ -61,7 +61,10 @@ RELAY RULES:
 14. RELAY BATTERY LOW: If relay battery < 25%, use replace_relay immediately, UNLESS it is <RETURNING>.
 15. SWARM SPREAD: If swarm spread too far, use calculateOptimalRelayPosition then move_relay.
 16. HIGH PROBABILITY CLUSTER: If survivor probability cluster detected, use broadcast_swarm('RECRUIT', targetArea) to pull drones in.
-17. RELAY MODE LOCK: Drones with 'RLY-' prefix MUST remain in 'Relay' or 'Charging' mode. NEVER use 'set_drone_mode' to switch them to 'Wide' or 'Micro'.
+17. ROLE SEPARATION LOCK: 
+   - Relay drones ('RLY-' prefix) MUST remain in 'Relay' or 'Charging'. NEVER convert to Wide/Micro.
+   - Search drones ('D1'-'D8') MUST remain in 'Wide', 'Micro', or 'Charging'. NEVER convert to Relay.
+   - Use 'move_relay' and 'replace_relay' for relay coordination only.
 
 REASONING FORMAT:
 - Evaluate zone scores and identify top 3 candidates.
