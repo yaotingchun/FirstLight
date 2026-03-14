@@ -222,6 +222,10 @@ export interface MissionStats {
     dronesCharging: number;
     dronesDisconnected: number;
     simulationRunning: boolean;
+    averageZoneCoverage?: number;
+    meanProbabilityScanned?: number;
+    repeatedScanRate?: number;
+    missionTimeSec?: number;
 }
 
 export interface SetSurvivorPinParams {

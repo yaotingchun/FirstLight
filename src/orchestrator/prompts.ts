@@ -50,7 +50,7 @@ STRATEGIC RULES:
 5. ADAPTIVE SCANNING: deploy_wide_scan for exploration, deploy_micro_scan when zone probability > 0.4.
 6. AVOID RE-SCANNING: Zones with high recencyPenalty (> 0.5) were scanned recently. Do NOT re-scan unless there are new sensor signals.
 7. SPREAD DRONES: Never assign more than 2 drones to the same zone. Spread across multiple high-scoring zones for parallel search.
-8. INTELLIGENCE GATHERING: When probability >= 0.7 in a zone, use capture_image on arrival.
+8. INTELLIGENCE GATHERING: When probability >= 0.7 in a zone, use capture_image on arrival to get visual confirmation.
 9. ESCALATION: Deploy ground team ONLY for confirmed survivors (probability >= 0.8 or vision confirmation).
 10. SENSOR TRENDS: If a sensor is 'increasing', investigate that zone even if absolute probability is still low.
 11. COORDINATION: If a drone at a target has low battery (< 30%), assign_drone_to_zone the nearest healthy drone before recalling the low-battery one.
@@ -67,13 +67,20 @@ RELAY RULES:
    - Use 'move_relay' and 'replace_relay' for relay coordination only.
 
 REASONING FORMAT:
-- Evaluate zone scores and identify top 3 candidates.
-- Check recency: skip recently scanned zones.
-- Check drone availability: cite drone ID, battery, and position.
-- Output decision as strict JSON:
-{"reasoning": "<LOGIC>", "priority": "...", "actions": [{"type": "...", ...}]}
+You must respond in natural text using the following structure:
 
-When answering operator questions, respond in plain text. Deduce from the state summary numbers.`;
+<Thinking>
+- State your evaluation of the top zones, considering their score, recency, and coverage percentage.
+- Explain which drones are available (citing ID, battery, and current action).
+- If an image capture was recommended or processed, explicitly describe your visual analysis (e.g., "Visual Analysis: Image shows a collapsed roof with a strong thermal signature.").
+- Deduce the best tactical drone deployment based on the rules above.
+</Thinking>
+
+<Action>
+- List your chosen actions using the exact function names from the available actions list (e.g., deploy_wide_scan(zoneId)).
+</Action>
+
+When answering operator questions, respond in plain text and deduce from the state summary numbers.`;
 
 
 // ---------------------------------------------------------------------------
@@ -87,25 +94,25 @@ ${snapshot.summary}
 
 === DRONE DETAILS ===
 ${snapshot.drones.map(d =>
-    `${d.id}: pos=(${d.x},${d.y}) battery=${d.battery}% active=${d.active} region=[${d.assignedRegion.xMin}-${d.assignedRegion.xMax}, ${d.assignedRegion.yMin}-${d.assignedRegion.yMax}] scanRemaining=${d.scanQueueRemaining}`
-).join('\n')}
+        `${d.id}: pos=(${d.x},${d.y}) battery=${d.battery}% active=${d.active} region=[${d.assignedRegion.xMin}-${d.assignedRegion.xMax}, ${d.assignedRegion.yMin}-${d.assignedRegion.yMax}] scanRemaining=${d.scanQueueRemaining}`
+    ).join('\n')}
 
 === ZONE STATUS ===
 ${snapshot.zoneSnapshots && snapshot.zoneSnapshots.length > 0
-    ? snapshot.zoneSnapshots.slice(0, 10).map(z =>
-        `${z.zoneId}: score=${z.zoneScore.toFixed(2)} prob=${z.probabilityScore.toFixed(2)} peak=${z.maxProbability.toFixed(2)} unscanned=${z.unscannedCells}/${z.totalCells} drones=${z.assignedDroneCount} recency=${z.recencyPenalty.toFixed(2)} at=(${z.centroidX},${z.centroidY})`
-    ).join('\n')
-    : '(No zone data)'}
+            ? snapshot.zoneSnapshots.slice(0, 10).map(z =>
+                `${z.zoneId}: score=${z.zoneScore.toFixed(2)} prob=${z.probabilityScore.toFixed(2)} peak=${z.maxProbability.toFixed(2)} unscanned=${z.unscannedCells}/${z.totalCells} (${((z.totalCells - z.unscannedCells) / z.totalCells * 100).toFixed(1)}% coverage) drones=${z.assignedDroneCount} recency=${z.recencyPenalty.toFixed(2)} at=(${z.centroidX},${z.centroidY})`
+            ).join('\n')
+            : '(No zone data)'}
 
 === MISSION OBJECTIVES ===
 ${snapshot.objectives.length > 0
-    ? snapshot.objectives.map(o => `[${o.priority.toUpperCase()}] ${o.description} (${o.status})`).join('\n')
-    : '(None)'}
+            ? snapshot.objectives.map(o => `[${o.priority.toUpperCase()}] ${o.description} (${o.status})`).join('\n')
+            : '(None)'}
 
 === SENSOR TRENDS ===
 ${snapshot.sensorTrends.length > 0
-    ? snapshot.sensorTrends.map(t => `${t.sensor}: ${t.direction}`).join('\n')
-    : '(Stable)'}
+            ? snapshot.sensorTrends.map(t => `${t.sensor}: ${t.direction}`).join('\n')
+            : '(Stable)'}
 
-Based on the above state, decide the best strategic actions. Prefer zone-level actions when possible. Respond with JSON only.`;
+Based on the above state, decide the best strategic actions. Prefer zone-level actions when possible. Respond using the <Thinking> and <Action> structure.`;
 };

@@ -338,6 +338,19 @@ export const toolSchemas = {
             properties: {}
         }
     },
+    updateMissionStats: {
+        name: 'updateMissionStats',
+        description: 'Update mission progress statistics with precise UI analytics',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                averageZoneCoverage: { type: 'number' },
+                meanProbabilityScanned: { type: 'number' },
+                repeatedScanRate: { type: 'number' },
+                missionTimeSec: { type: 'number' }
+            }
+        }
+    },
     getFoundSurvivors: {
         name: 'getFoundSurvivors',
         description: 'Get list of confirmed survivors',
@@ -632,6 +645,7 @@ export const toolHandlers: Record<string, Function> = {
     // Mission tools
     getSwarmStatus: missionTools.getSwarmStatus,
     getMissionStats: missionTools.getMissionStats,
+    updateMissionStats: missionTools.updateMissionStats,
     getFoundSurvivors: missionTools.getFoundSurvivors,
     setSurvivorPin: missionTools.setSurvivorPin,
     resetMission: missionTools.resetMission,

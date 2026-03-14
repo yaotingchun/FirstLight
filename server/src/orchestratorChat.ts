@@ -101,7 +101,13 @@ function buildStateSummary(): string {
         .slice(0, 8);
 
     const imageScanSummary = imageScans
-        .map(c => `${c.gridCell}(${c.x},${c.y}) img=${c.disasterImage}`)
+        .map(c => {
+            let label = 'unknown';
+            if (c.disasterImage?.includes('survivor')) label = 'survivor_visually_confirmed';
+            else if (c.disasterImage?.includes('thermal')) label = 'thermal_signature_confirmed';
+            else if (c.disasterImage?.includes('empty')) label = 'nothing_found';
+            return `${c.gridCell}(${c.x},${c.y}) finding=${label}`;
+        })
         .join(', ');
 
     const droneSummary = drones
@@ -135,6 +141,7 @@ function buildStateSummary(): string {
         `survivorsFound=${stats.survivorsFound}`,
         `highPriorityRemaining=${stats.highPriorityZonesRemaining}`,
         `avgBattery=${stats.averageBattery.toFixed(1)}%`,
+        `meanProbabilityScanned=${stats.meanProbabilityScanned?.toFixed(3) || 0}`,
         `imageScannedCells=${grid.flat().filter(c => c.scanned && !!c.disasterImage).length}`,
         '',
         'DRONES:',
@@ -154,16 +161,63 @@ function buildStateSummary(): string {
 }
 
 function parseDecision(raw: string): ParsedDecision | null {
-    let cleaned = raw.trim();
-    if (cleaned.startsWith('```')) {
-        cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
-    }
-
     try {
-        const parsed = JSON.parse(cleaned) as ParsedDecision;
-        if (!Array.isArray(parsed.actions)) return null;
-        return parsed;
-    } catch {
+        // Extract the <Thinking> block
+        const thinkingMatch = raw.match(/<Thinking>\s*([\s\S]*?)\s*<\/Thinking>/i);
+        const reasoning = thinkingMatch ? thinkingMatch[1].trim() : '';
+
+        // Extract the <Action> block
+        const actionMatch = raw.match(/<Action>\s*([\s\S]*?)\s*<\/Action>/i);
+        const actions: ChatAction[] = [];
+
+        if (actionMatch && actionMatch[1]) {
+            // Process each line in the action block
+            const actionLines = actionMatch[1].split('\n').filter(line => line.trim().length > 0);
+
+            for (const line of actionLines) {
+                const text = line.trim();
+
+                // Extremely simple "function call" parser for the action list
+                // e.g., move_drone("DRN-Alpha", 5, 5) or set_drone_mode("DRN-Beta", "Wide")
+
+                if (text.startsWith('move_drone')) {
+                    const match = text.match(/move_drone\s*\(\s*(['"]?)([^'",]+)\1\s*,\s*(\d+)\s*,\s*(\d+)/i);
+                    if (match) actions.push({ type: 'move_drone', droneId: match[2], x: parseInt(match[3], 10), y: parseInt(match[4], 10) });
+                } else if (text.startsWith('set_drone_mode')) {
+                    const match = text.match(/set_drone_mode\s*\(\s*(['"]?)([^'",]+)\1\s*,\s*(['"]?)([^'",]+)\3/i);
+                    if (match) actions.push({ type: 'set_drone_mode', droneId: match[2], mode: match[4] as 'Wide' | 'Micro' | 'Relay' | 'Charging' });
+                } else if (text.startsWith('recall_drone')) {
+                    const match = text.match(/recall_drone\s*\(\s*(['"]?)([^'",()]+)\1/i);
+                    if (match) actions.push({ type: 'recall_drone', droneId: match[2] });
+                } else if (text.startsWith('deploy_team')) {
+                    const match = text.match(/deploy_team\s*\(\s*(['"]?)([^'",]*)\1\s*,\s*(\d+)\s*,\s*(\d+)/i);
+                    // Handle case where team string might be omitted
+                    if (match) actions.push({ type: 'deploy_team', x: parseInt(match[3] || '0', 10), y: parseInt(match[4] || '0', 10) });
+                    else {
+                        const simpleMatch = text.match(/deploy_team\s*\(\s*(\d+)\s*,\s*(\d+)/i);
+                        if (simpleMatch) actions.push({ type: 'deploy_team', x: parseInt(simpleMatch[1], 10), y: parseInt(simpleMatch[2], 10) });
+                    }
+                } else if (text.startsWith('set_simulation_state')) {
+                    const match = text.match(/set_simulation_state\s*\(\s*(true|false)/i);
+                    if (match) actions.push({ type: 'set_simulation_state', running: match[1].toLowerCase() === 'true' });
+                } else if (text.startsWith('reset_simulation')) {
+                    actions.push({ type: 'reset_simulation' });
+                } else if (text.startsWith('no_action')) {
+                    actions.push({ type: 'no_action', reason: 'No action needed' });
+                }
+            }
+        }
+
+        // We should always return a ParsedDecision so the frontend formats it properly.
+        // Even if there are no actions, the reasoning is valuable.
+        if (actions.length === 0 && !reasoning) return null;
+
+        return {
+            reasoning: reasoning || 'No explicit <Thinking> block found.',
+            actions,
+        };
+    } catch (e) {
+        console.error('Failed to parse AI action decision', e);
         return null;
     }
 }
@@ -376,30 +430,29 @@ export async function processOrchestratorChat(message: string): Promise<{
         const m = getModel();
         const stateSummary = buildStateSummary();
 
-        const systemPrompt = `You are FirstLight rescue orchestrator AI. You ALWAYS respond with ONLY a JSON object matching the schema below — never plain text.
+        const systemPrompt = `You are FirstLight rescue orchestrator AI.
 
-JSON schema (output this and nothing else):
-{
-  "reasoning": string,
-  "priority": "low"|"medium"|"high"|"critical",
-  "actions": [
-    {"type":"move_drone","droneId":string,"x":number,"y":number,"reason":string?},
-    {"type":"set_drone_mode","droneId":string,"mode":"Wide"|"Micro"|"Relay"|"Charging","reason":string?},
-    {"type":"recall_drone","droneId":string,"reason":string?},
-    {"type":"deploy_team","x":number,"y":number,"droneId":string?,"reason":string?},
-    {"type":"set_simulation_state","running":boolean,"reason":string?},
-    {"type":"reset_simulation","reason":string?},
-    {"type":"no_action","reason":string},
-    {"type":"move_relay","relayId":string,"x":number,"y":number,"reason":string?},
-    {"type":"replace_relay","relayId":string,"reason":string?},
-    {"type":"broadcast_swarm","command":"RECRUIT"|"MICRO_SCAN"|"REDISTRIBUTE"|"RTB_ALL","targetArea":{"x":number,"y":number,"radius":number}?,"reason":string?}
-  ]
-}
+You MUST respond using the following strict format consisting of a <Thinking> block followed by an <Action> block.
+
+<Thinking>
+- Output your internal analysis here. Evaluate zones, coverage, drone states, and explicit visual analysis of captured images.
+</Thinking>
+
+<Action>
+- List your chosen actions exactly using these function names, ONE PER LINE:
+move_drone("DRN-ID", x, y)
+set_drone_mode("DRN-ID", "Wide" | "Micro" | "Relay" | "Charging")
+recall_drone("DRN-ID")
+deploy_team("TeamName", x, y)
+set_simulation_state(true|false)
+reset_simulation()
+no_action()
+</Action>
 
 Critical rules:
-- ALWAYS output valid JSON only. Never output plain text.
+- Provide explicit percentages: When discussing scan progress, state the exact percentage (e.g., "Scan Progress: 9.5%") instead of using vague phrases like "very low" or "moderate".
+- Natural phrasing for findings: Never literally mention "img=" or "finding=" or quote image paths. Use natural language: "A survivor has been confirmed at C13(2,12)" or "A thermal signature was detected at B4".
 - Never invent drone IDs; use only synced drones from state.
-- Keep reasoning concise (2-3 sentences max) to leave room for actions.
 - BATTERY CRITICAL (below 10% or negative): immediately emit recall_drone for that drone. This is the highest priority.
 - BATTERY LOW (below 20%): emit recall_drone unless the drone is already heading to base.
 - DISCONNECTED DRONES: if disconnected drones > 0, emit move_relay to bridge communication gap.
