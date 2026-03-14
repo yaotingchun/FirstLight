@@ -7,6 +7,7 @@ const CELL_SIZE = 35;
 
 import { gridDataService, INITIAL_SENSORS } from '../services/gridDataService';
 import * as mcpClient from '../services/mcpClient';
+import ReactMarkdown from 'react-markdown';
 
 // Zone-based planning modules
 import { clusterZones, getZoneForCell } from '../utils/zoneClustering';
@@ -14,11 +15,12 @@ import type { SearchZone, GridCell } from '../utils/zoneClustering';
 import { scoreZones } from '../utils/zoneScoring';
 import { allocateDrones } from '../utils/zoneAllocator';
 import type { DroneMission } from '../utils/zoneAllocator';
-import { createSearchMemory, recordCellScan, getRepeatScanRate } from '../utils/searchMemory';
+import { createSearchMemory, recordCellScan } from '../utils/searchMemory';
 import type { SearchMemory } from '../utils/searchMemory';
 
 const THRESHOLD_MICRO = 0.50;
 const THRESHOLD_FOUND = 0.85;
+const SIM_TICK_MS = 100;
 
 // Zone pipeline cadence (every N ticks)
 const ZONE_PIPELINE_INTERVAL = 15;
@@ -210,22 +212,44 @@ const createGrid = (survivors?: HiddenSurvivor[]): Sector[][] => {
         s.prob = getProb(s.signals);
     });
 
-    const topSectors = [...allSectors].sort((a, b) => b.prob - a.prob).slice(0, 3);
-    const disasterImages = [
-        '/assets/disasters/earthquake_1.png',
-        '/assets/disasters/earthquake_2.png',
-        '/assets/disasters/earthquake_3.png'
-    ];
+    const sorted = [...allSectors].sort((a, b) => b.prob - a.prob);
+    const selectedSectors: Sector[] = [];
+    const MIN_DIST = 6;
+    for (const s of sorted) {
+        if (selectedSectors.length >= 3) break;
+        const tooClose = selectedSectors.some(sel =>
+            Math.sqrt(Math.pow(s.x - sel.x, 2) + Math.pow(s.y - sel.y, 2)) < MIN_DIST
+        );
+        if (!tooClose) {
+            selectedSectors.push(s);
+        }
+    }
 
-    topSectors.forEach((s, i) => {
-        // Some images on peak, some in surrounding (40% center, 60% surrounding)
-        const isCenter = Math.random() < 0.4;
-        const dx = isCenter ? 0 : Math.floor(Math.random() * 5) - 2; // -2 to 2
-        const dy = isCenter ? 0 : Math.floor(Math.random() * 5) - 2; // -2 to 2
-        const nx = Math.max(0, Math.min(GRID_W - 1, s.x + dx));
-        const ny = Math.max(0, Math.min(GRID_H - 1, s.y + dy));
-        g[ny][nx].disasterImage = disasterImages[i];
-    });
+    if (selectedSectors.length >= 3) {
+        // Only assign images strictly to the first two survivors. 
+        // The third survivor grid will not have a direct image.
+        g[selectedSectors[0].y][selectedSectors[0].x].disasterImage = '/mock_images/survivor.png';
+        g[selectedSectors[1].y][selectedSectors[1].x].disasterImage = '/mock_images/thermal.png';
+
+        // Scatter empty images ONLY around the survivor grids without a direct image
+        selectedSectors.slice(2).forEach((s) => {
+            // Place 2 empty images scattered around the third survivor
+            for (let i = 0; i < 2; i++) {
+                let dx, dy;
+                do {
+                    dx = Math.floor(Math.random() * 5) - 2; // -2 to 2
+                    dy = Math.floor(Math.random() * 5) - 2; // -2 to 2
+                } while (dx === 0 && dy === 0);
+                const nx = Math.max(0, Math.min(GRID_W - 1, s.x + dx));
+                const ny = Math.max(0, Math.min(GRID_H - 1, s.y + dy));
+                
+                // Only place empty.png on grids that don't already have an image
+                if (!g[ny][nx].disasterImage) {
+                    g[ny][nx].disasterImage = '/mock_images/empty.png';
+                }
+            }
+        });
+    }
 
     return g;
 };
@@ -321,7 +345,6 @@ const SimulationMapMCP: React.FC = () => {
     const commLinksRef = useRef<CommEdge[]>([]);
     const swarmMessagesRef = useRef<SwarmMessage[]>([]);
     const sensorWeightsRef = useRef(gridDataService.getSensorWeights());
-    const logsRef = useRef<{ time: number, msg: string, type: 'alert' | 'info' | 'success' }[]>([]);
     // Per-drone auto-recall thresholds set via MCP (droneId -> batteryThreshold %)
     const autoRecallThresholdsRef = useRef<Map<string, number>>(new Map());
 
@@ -332,11 +355,12 @@ const SimulationMapMCP: React.FC = () => {
     const metricsRef = useRef({
         repeatedScanRate: 0,
         averageZoneCoverage: 0,
-        droneIdleTime: 0,
+        missionTimeSec: 0,
         meanProbabilityScanned: 0,
         totalScans: 0,
+        totalUniqueScans: 0,
         totalRepeatScans: 0,
-        scannedProbSum: 0,
+        uniqueProbSum: 0,
     });
 
     const [, setTickFlip] = useState(0);
@@ -385,10 +409,8 @@ const SimulationMapMCP: React.FC = () => {
             const params = JSON.parse(mcpToolParams);
             const result = await mcpClient.executeTool(mcpSelectedTool, params);
             setMcpToolOutput(JSON.stringify(result, null, 2));
-            addLog(`MCP: ${mcpSelectedTool} executed`, 'info');
         } catch (error) {
             setMcpToolOutput(`Error: ${error instanceof Error ? error.message : String(error)}`);
-            addLog(`MCP: ${mcpSelectedTool} failed`, 'alert');
         }
     };
 
@@ -431,19 +453,25 @@ const SimulationMapMCP: React.FC = () => {
                     }
                     return type;
                 })
-                .join(' | ');
+                .join('\n- '); // Format action summary with newlines for readability
 
-            setChatMessages(prev => [
-                ...prev,
-                {
-                    role: 'ai',
-                    text: `Decision [${(decision.priority ?? 'medium').toUpperCase()}]\nReasoning: ${decision.reasoning}\nActions: ${actionSummary || 'none'}`
-                }
-            ]);
+            setChatMessages(prev => {
+                const cleaned = prev.filter(m => !m.text.startsWith('Auto-think:'));
+                return [
+                    ...cleaned,
+                    {
+                        role: 'ai',
+                        text: `[${(decision.priority ?? 'medium').toUpperCase()}]\n${decision.reasoning}\n\nActions:\n- ${actionSummary || 'None'}`
+                    }
+                ];
+            });
         } else {
             const replyText = result.reply;
             if (replyText) {
-                setChatMessages(prev => [...prev, { role: 'ai', text: replyText }]);
+                setChatMessages(prev => {
+                    const cleaned = prev.filter(m => !m.text.startsWith('Auto-think:'));
+                    return [...cleaned, { role: 'ai', text: replyText }];
+                });
             }
         }
 
@@ -518,6 +546,18 @@ const SimulationMapMCP: React.FC = () => {
             signals: s.signals
         })));
         await mcpClient.syncGridState(gridState);
+
+        // Sync Mission Stats specifically to ensure AI progress matches UI
+        if (mcpConnected) {
+            await mcpClient.executeTool('updateMissionStats', {
+                totalUniqueScans: metricsRef.current.totalUniqueScans,
+                gridSize: 400,
+                missionTimeSec: metricsRef.current.missionTimeSec,
+                averageZoneCoverage: metricsRef.current.averageZoneCoverage,
+                meanProbabilityScanned: metricsRef.current.meanProbabilityScanned,
+                repeatedScanRate: metricsRef.current.repeatedScanRate
+            });
+        }
     }, [mcpConnected, running]);
 
     // MCP Command Polling
@@ -536,7 +576,6 @@ const SimulationMapMCP: React.FC = () => {
                     if (drone) {
                         drone.tx = cmd.params.targetX as number;
                         drone.ty = cmd.params.targetY as number;
-                        addLog(`MCP: ${drone.id} target set to (${drone.tx}, ${drone.ty})`, 'info');
                     }
                     break;
                 }
@@ -544,7 +583,6 @@ const SimulationMapMCP: React.FC = () => {
                     const drone = drones.find(d => d.id === cmd.params.droneId);
                     if (drone) {
                         drone.mode = cmd.params.mode as Drone['mode'];
-                        addLog(`MCP: ${drone.id} mode set to ${drone.mode}`, 'info');
                     }
                     break;
                 }
@@ -553,7 +591,6 @@ const SimulationMapMCP: React.FC = () => {
                     if (drone) {
                         drone.tx = BASE_STATION.x;
                         drone.ty = BASE_STATION.y;
-                        addLog(`MCP: ${drone.id} recalled to base`, 'info');
                     }
                     break;
                 }
@@ -561,19 +598,16 @@ const SimulationMapMCP: React.FC = () => {
                     const droneIndex = drones.findIndex(d => d.id === cmd.params.droneId);
                     if (droneIndex >= 0) {
                         drones.splice(droneIndex, 1);
-                        addLog(`MCP: ${cmd.params.droneId} killed`, 'alert');
                     }
                     break;
                 }
                 case 'RESET_MISSION': {
                     resetSim();
-                    addLog('MCP: Mission reset', 'info');
                     break;
                 }
                 case 'SET_SIMULATION_STATE': {
                     const shouldRun = cmd.params.running as boolean;
                     setRunning(shouldRun);
-                    addLog(`MCP: Simulation ${shouldRun ? 'started' : 'paused'} remotely`, 'info');
                     break;
                 }
                 case 'SET_SURVIVOR_PIN': {
@@ -600,7 +634,6 @@ const SimulationMapMCP: React.FC = () => {
                         }
                         // Sync the new pin back to the server's found survivors list
                         mcpClient.syncSurvivor({ id: pinId, x: sx, y: sy, droneId: sdroneId, message: smessage, tick: timeRef.current });
-                        addLog(`MCP: Survivor pin placed at (${sx}, ${sy}) by ${sdroneId}`, 'success');
                     }
                     break;
                 }
@@ -608,7 +641,6 @@ const SimulationMapMCP: React.FC = () => {
                     const targetDroneId = cmd.params.droneId as string;
                     const threshold = cmd.params.batteryThreshold as number;
                     autoRecallThresholdsRef.current.set(targetDroneId, threshold);
-                    addLog(`MCP: Auto-recall threshold for ${targetDroneId} set to ${threshold}%`, 'info');
                     break;
                 }
             }
@@ -648,10 +680,6 @@ const SimulationMapMCP: React.FC = () => {
         }
     }, []);
 
-    const addLog = (msg: string, type: 'alert' | 'info' | 'success') => {
-        logsRef.current.unshift({ time: timeRef.current, msg, type });
-        if (logsRef.current.length > 20) logsRef.current.pop();
-    };
 
     const resetSim = () => {
         setRunning(false);
@@ -666,15 +694,20 @@ const SimulationMapMCP: React.FC = () => {
         swarmMessagesRef.current = [];
         sensorWeightsRef.current = JSON.parse(JSON.stringify(INITIAL_SENSORS));
         gridDataService.setSensorWeights(sensorWeightsRef.current);
-        logsRef.current = [];
         timeRef.current = 0;
         // Reset zone planning state
         zonesRef.current = [];
         searchMemoryRef.current = createSearchMemory();
         activeMissionsRef.current = [];
         metricsRef.current = {
-            repeatedScanRate: 0, averageZoneCoverage: 0, droneIdleTime: 0,
-            meanProbabilityScanned: 0, totalScans: 0, totalRepeatScans: 0, scannedProbSum: 0,
+            repeatedScanRate: 0, 
+            averageZoneCoverage: 0, 
+            missionTimeSec: 0,
+            meanProbabilityScanned: 0, 
+            totalScans: 0, 
+            totalUniqueScans: 0,
+            totalRepeatScans: 0, 
+            uniqueProbSum: 0,
         };
         setSelectedPin(null);
         setTickFlip(f => f + 1);
@@ -872,11 +905,9 @@ const SimulationMapMCP: React.FC = () => {
                         d.tx = newTarget.x;
                         d.ty = newTarget.y;
                         d.mode = 'Micro';
-                        addLog(`${d.id} fully charged. Intercepting unassigned hotspot.`, 'info');
                     } else if (d.savedTx !== undefined && d.savedTy !== undefined) {
                         d.tx = d.savedTx;
                         d.ty = d.savedTy;
-                        addLog(`${d.id} fully charged. Resuming previous task.`, 'info');
                     } else {
                         // Zone-aware fallback: find highest-scoring zone instead of random
                         let assigned = false;
@@ -887,7 +918,6 @@ const SimulationMapMCP: React.FC = () => {
                             if (availZone) {
                                 d.tx = availZone.centroid.x;
                                 d.ty = availZone.centroid.y;
-                                addLog(`${d.id} fully charged. Assigned to zone ${availZone.zoneId} (score=${availZone.zoneScore.toFixed(2)}).`, 'info');
                                 assigned = true;
                             }
                         }
@@ -909,12 +939,10 @@ const SimulationMapMCP: React.FC = () => {
                             if (bestSector !== null) {
                                 d.tx = (bestSector as Sector).x;
                                 d.ty = (bestSector as Sector).y;
-                                addLog(`${d.id} fully charged. Assigned highest probability search block.`, 'info');
                             } else {
                                 // Last resort: grid center instead of purely random
                                 d.tx = Math.floor(GRID_W / 2);
                                 d.ty = Math.floor(GRID_H / 2);
-                                addLog(`${d.id} fully charged. No targets available, returning to center.`, 'info');
                             }
                         }
                     }
@@ -950,7 +978,6 @@ const SimulationMapMCP: React.FC = () => {
                     }
                     d.tx = BASE_STATION.x;
                     d.ty = BASE_STATION.y;
-                    addLog(`${d.id} MCP auto-recall triggered at ${Math.floor(d.battery)}% (threshold: ${mcpRecallThreshold}%)`, 'alert');
                 }
             }
 
@@ -991,7 +1018,6 @@ const SimulationMapMCP: React.FC = () => {
                     if (swapDrone) {
                         d.savedTx = (swapDrone as Drone).tx;
                         d.savedTy = (swapDrone as Drone).ty;
-                        addLog(`${d.id} low power. Handing over hotspot to ${(swapDrone as Drone).id}.`, 'alert');
                         if (d.isConnected) addMessage(d.id, 'REQUEST_ASSIST', { handoverTo: (swapDrone as Drone).id });
 
                         (swapDrone as Drone).tx = d.tx;
@@ -1011,7 +1037,6 @@ const SimulationMapMCP: React.FC = () => {
                 }
                 d.tx = BASE_X;
                 d.ty = BASE_Y;
-                addLog(`${d.id} adaptive RTB initiated (${Math.floor(d.battery)}%).`, 'alert');
             }
             // --- Low Battery Patrol: stay within 4-tile radius of base ---
             else if (d.battery < lowBattery && d.battery >= criticalBattery && distTargetToBase > 4 && d.mode === 'Wide') {
@@ -1040,7 +1065,6 @@ const SimulationMapMCP: React.FC = () => {
                 }
                 d.tx = bestX;
                 d.ty = bestY;
-                addLog(`${d.id} low battery (${Math.floor(d.battery)}%). Reassigning near base.`, 'info');
             }
 
             // Check if we reached target
@@ -1050,7 +1074,6 @@ const SimulationMapMCP: React.FC = () => {
                 // Dock at base if returning
                 if (d.tx === BASE_X && d.ty === BASE_Y && d.battery <= 50) {
                     d.mode = 'Charging';
-                    addLog(`${d.id} docked at Base. Charging...`, 'info');
                     return;
                 }
 
@@ -1059,8 +1082,6 @@ const SimulationMapMCP: React.FC = () => {
                 const sy = Math.round(d.ty);
                 const sector = grid[sy][sx];
 
-                sector.scanned = true;
-                sector.lastScanned = timeRef.current;
                 // Add realistic temporal jitter (+/- 2%) to simulate environmental noise
                 const jitter = (Math.random() * 0.04) - 0.02; 
                 const newProb = Math.max(0, Math.min(1.0, getSectorProbability(sx, sy) + jitter));
@@ -1073,13 +1094,23 @@ const SimulationMapMCP: React.FC = () => {
                         sx, sy, timeRef.current, newProb > THRESHOLD_MICRO
                     );
                 }
+                
                 // Update metrics
                 metricsRef.current.totalScans = searchMemoryRef.current.totalScans;
                 metricsRef.current.totalRepeatScans = searchMemoryRef.current.repeatScans;
-                metricsRef.current.repeatedScanRate = getRepeatScanRate(searchMemoryRef.current);
-                metricsRef.current.scannedProbSum += newProb;
-                metricsRef.current.meanProbabilityScanned = metricsRef.current.totalScans > 0
-                    ? metricsRef.current.scannedProbSum / metricsRef.current.totalScans : 0;
+
+                if (!sector.scanned) {
+                    metricsRef.current.totalUniqueScans++;
+                    metricsRef.current.uniqueProbSum += newProb;
+                }
+                sector.scanned = true;
+                sector.lastScanned = timeRef.current;
+                
+                metricsRef.current.meanProbabilityScanned = metricsRef.current.totalUniqueScans > 0
+                    ? metricsRef.current.uniqueProbSum / metricsRef.current.totalUniqueScans : 0;
+                
+                metricsRef.current.repeatedScanRate = (metricsRef.current.totalScans > 0 && metricsRef.current.totalUniqueScans > 0)
+                    ? (1 - (metricsRef.current.totalUniqueScans / metricsRef.current.totalScans)) * 100 : 0;
 
                 const oldProb = sector.prob;
                 sector.prob = newProb;
@@ -1158,7 +1189,6 @@ const SimulationMapMCP: React.FC = () => {
 
                         if (!pinsRef.current.find(p => p.id === s.id)) {
                             pinsRef.current.push({ id: s.id, x: sx, y: sy, info: s.info });
-                            addLog(`${d.id} confirmed Survivor ${s.id} at [${sx},${sy}]`, 'success');
                         }
 
                         d.mode = 'Wide';
@@ -1346,14 +1376,22 @@ const SimulationMapMCP: React.FC = () => {
                     if (mission.action === 'micro_scan' && drone.mode !== 'Micro') {
                         drone.mode = 'Micro';
                     }
-                    addLog(`[Zone] ${drone.id} -> ${mission.zoneId} (${mission.action})`, 'info');
                 }
             }
 
-            // Update zone coverage metric
-            const scannedZoneCount = scoredZones.filter(z => z.unscannedCount < z.totalCells).length;
+            // Update zone coverage metric (Weighted average of scans per zone)
+            const weightedCoverage = scoredZones.reduce((acc, z) => {
+                const scannedInZone = z.totalCells - z.unscannedCount;
+                return acc + (scannedInZone / z.totalCells);
+            }, 0);
             metricsRef.current.averageZoneCoverage = scoredZones.length > 0
-                ? (scannedZoneCount / scoredZones.length) * 100 : 0;
+                ? (weightedCoverage / scoredZones.length) * 100 : 0;
+
+            // Update Search Duration (Stopwatch)
+            // Baseline SIM_TICK_MS per tick, adjusted by speed
+            if (metricsRef.current.totalUniqueScans < 400) {
+                metricsRef.current.missionTimeSec = timeRef.current * (SIM_TICK_MS / 1000);
+            }
         }
 
         // Evaporate pheromones slowly
@@ -1391,7 +1429,7 @@ const SimulationMapMCP: React.FC = () => {
         let interval: ReturnType<typeof setInterval>;
         if (running) {
             gridDataService.claimSource('scan');
-            interval = setInterval(performTick, 100 / speed);
+            interval = setInterval(performTick, SIM_TICK_MS / speed);
         }
         // Don't release source on pause — scan data should persist on the tactical map.
         // Source is only released on full reset (resetSim).
@@ -1402,7 +1440,6 @@ const SimulationMapMCP: React.FC = () => {
     useEffect(() => {
         if (mcpConnected) {
             syncToMcp(true); // Force sync skip connection check to be safe
-            addLog('MCP: Link established - Initial state synced', 'info');
         }
     }, [mcpConnected, syncToMcp]);
 
@@ -1816,14 +1853,24 @@ const SimulationMapMCP: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* Metric: Idle Time */}
+                            {/* Metric: Search Duration */}
                             <div style={{ padding: '10px', border: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.4)', position: 'relative', overflow: 'hidden' }}>
                                 <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
-                                    IDLE CYCLES
+                                    SEARCH DURATION
                                 </div>
-                                <div style={{ fontSize: '1.2rem', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
-                                    {metricsRef.current.droneIdleTime}
+                                <div style={{ fontSize: '1.2rem', color: metricsRef.current.totalUniqueScans >= 400 ? '#00ffcc' : 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+                                    {(() => {
+                                        const s = Math.floor(metricsRef.current.missionTimeSec);
+                                        const hours = Math.floor(s / 3600);
+                                        const mins = Math.floor((s % 3600) / 60);
+                                        const secs = s % 60;
+                                        return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+                                    })()}
                                 </div>
+                                {metricsRef.current.totalUniqueScans >= 400 && (
+                                    <div style={{ fontSize: '0.55rem', color: '#00ffcc', fontWeight: 'bold', marginTop: '2px' }}>MISSION COMPLETE</div>
+                                )}
+                                <div style={{ position: 'absolute', bottom: 0, left: 0, height: '2px', background: '#00ccff', width: `${Math.min(100, (metricsRef.current.totalUniqueScans / 400) * 100)}%`, opacity: 0.5 }} />
                             </div>
 
                             {/* Metric: Mean Probability */}
@@ -1865,39 +1912,6 @@ const SimulationMapMCP: React.FC = () => {
                             })}
                         </div>
 
-                        {/* Algorithm Log */}
-                        <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--panel-border)', flex: 1, display: 'flex', flexDirection: 'column' }}>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px', display: 'flex', justifyContent: 'space-between' }}>
-                                <span>ALGORITHM LOG</span>
-                                <span className="animate-pulse" style={{ color: '#00ffcc' }}>● LIVE</span>
-                            </div>
-                            <div className="hud-text" style={{ fontSize: '0.65rem', color: 'var(--text-primary)', opacity: 0.8, overflowY: 'auto', flex: 1, maxHeight: '120px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                {logsRef.current.map((log, idx) => (
-                                    <div key={idx} style={{
-                                        color: log.type === 'alert' ? '#ff4444' : log.type === 'success' ? '#00ffcc' : 'var(--text-secondary)'
-                                    }}>
-                                        <span style={{ opacity: 0.5 }}>[{log.time}]</span> &gt; {log.msg}
-                                    </div>
-                                ))}
-                                {logsRef.current.length === 0 && (
-                                    <>
-                                        <div><span style={{ color: '#555' }}>[SYS]</span> Decentralized swarm initialized.</div>
-                                        <div><span style={{ color: '#555' }}>[SYS]</span> Using Haversine pathfinding.</div>
-                                        <div><span style={{ color: '#555' }}>[SYS]</span> ACO Exploration mode active.</div>
-                                    </>
-                                )}
-
-                                {swarmMessagesRef.current.map((msg) => (
-                                    <div key={msg.id} style={{ display: 'flex', gap: '4px' }}>
-                                        <span style={{ color: '#555' }}>[T-{msg.time}]</span>
-                                        <span style={{ color: '#00ffcc' }}>{msg.sender}:</span>
-                                        <span style={{ color: msg.type === 'HIGH_SIGNAL' ? '#ff4444' : msg.type === 'REQUEST_ASSIST' ? '#ffff00' : 'var(--text-primary)' }}>
-                                            {msg.type.toLowerCase()}({JSON.stringify(msg.payload)})
-                                        </span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
 
                     </div>
                 </div>
@@ -2150,10 +2164,21 @@ const SimulationMapMCP: React.FC = () => {
                                 border: '1px solid rgba(255,255,255,0.12)',
                                 borderRadius: 6,
                                 padding: '6px 8px',
-                                fontSize: 12,
-                                whiteSpace: 'pre-wrap'
+                                fontSize: 13,
+                                lineHeight: '1.4',
+                                overflowWrap: 'break-word',
                             }}>
-                                {m.text}
+                                <ReactMarkdown
+                                    components={{
+                                        p: ({ node, ...props }) => <p style={{ margin: '0 0 8px 0' }} {...props} />,
+                                        ul: ({ node, ...props }) => <ul style={{ margin: '0 0 8px 0', paddingLeft: '22px', listStyleType: 'disc' }} {...props} />,
+                                        ol: ({ node, ...props }) => <ol style={{ margin: '0 0 8px 0', paddingLeft: '22px', listStyleType: 'decimal' }} {...props} />,
+                                        li: ({ node, ...props }) => <li style={{ marginBottom: '4px' }} {...props} />,
+                                        strong: ({ node, ...props }) => <strong style={{ color: '#fff' }} {...props} />
+                                    }}
+                                >
+                                    {m.text}
+                                </ReactMarkdown>
                             </div>
                         ))}
                     </div>

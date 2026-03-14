@@ -119,6 +119,32 @@ export async function getFoundSurvivors(): Promise<MCPToolResult<SurvivorInfo[]>
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// TOOL: updateMissionStats
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface UpdateMissionStatsParams {
+    averageZoneCoverage?: number;
+    meanProbabilityScanned?: number;
+    repeatedScanRate?: number;
+    missionTimeSec?: number;
+}
+
+/**
+ * Updates the backend mission stats with precision analytics from the UI.
+ */
+export async function updateMissionStats(params: UpdateMissionStatsParams): Promise<MCPToolResult<{ message: string }>> {
+    droneStore.updateAnalytics(params);
+    
+    return {
+        success: true,
+        data: {
+            message: 'Mission analytics synced successfully'
+        },
+        timestamp: Date.now()
+    };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // TOOL: setSurvivorPin
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -426,6 +452,7 @@ export async function getSectorAssignments(): Promise<MCPToolResult<SectorAssign
 export const missionTools = {
     getSwarmStatus,
     getMissionStats,
+    updateMissionStats,
     getFoundSurvivors,
     setSurvivorPin,
     resetMission,

@@ -65,6 +65,12 @@ interface DroneStateStore {
     currentTick: number;
     isRunning: boolean;
     
+    // Advanced Mission Analytics
+    averageZoneCoverage: number;
+    meanProbabilityScanned: number;
+    repeatedScanRate: number;
+    missionTimeSec: number;
+    
     // Pending commands (to be picked up by frontend)
     pendingCommands: PendingCommand[];
 
@@ -99,6 +105,10 @@ class DroneStore {
         foundSurvivors: [],
         currentTick: 0,
         isRunning: false,
+        averageZoneCoverage: 0,
+        meanProbabilityScanned: 0,
+        repeatedScanRate: 0,
+        missionTimeSec: 0,
         pendingCommands: [],
         autoRecallThresholds: new Map()
     };
@@ -172,6 +182,14 @@ class DroneStore {
         this.notify();
     }
 
+    updateAnalytics(stats: Partial<DroneStateStore>): void {
+        if (stats.averageZoneCoverage !== undefined) this.state.averageZoneCoverage = stats.averageZoneCoverage;
+        if (stats.meanProbabilityScanned !== undefined) this.state.meanProbabilityScanned = stats.meanProbabilityScanned;
+        if (stats.repeatedScanRate !== undefined) this.state.repeatedScanRate = stats.repeatedScanRate;
+        if (stats.missionTimeSec !== undefined) this.state.missionTimeSec = stats.missionTimeSec;
+        this.notify();
+    }
+
     reset(): void {
         this.state = {
             drones: new Map(),
@@ -181,6 +199,10 @@ class DroneStore {
             foundSurvivors: [],
             currentTick: 0,
             isRunning: false,
+            averageZoneCoverage: 0,
+            meanProbabilityScanned: 0,
+            repeatedScanRate: 0,
+            missionTimeSec: 0,
             pendingCommands: [],
             autoRecallThresholds: new Map()
         };
@@ -299,7 +321,11 @@ class DroneStore {
             averageBattery: avgBattery,
             dronesCharging: charging,
             dronesDisconnected: disconnected,
-            simulationRunning: this.state.isRunning
+            simulationRunning: this.state.isRunning,
+            averageZoneCoverage: this.state.averageZoneCoverage,
+            meanProbabilityScanned: this.state.meanProbabilityScanned,
+            repeatedScanRate: this.state.repeatedScanRate,
+            missionTimeSec: this.state.missionTimeSec
         };
     }
 
