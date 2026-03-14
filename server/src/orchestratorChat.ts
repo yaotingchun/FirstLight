@@ -58,7 +58,7 @@ function getModel(): GenerativeModel {
         model: process.env.ORCHESTRATOR_MODEL ?? 'gemini-2.5-flash',
         generationConfig: {
             temperature: 0.3,
-            maxOutputTokens: 1024,
+            maxOutputTokens: 4096,
         },
     });
 
@@ -303,9 +303,9 @@ export async function processOrchestratorChat(message: string): Promise<{
         const m = getModel();
         const stateSummary = buildStateSummary();
 
-        const systemPrompt = `You are FirstLight rescue orchestrator AI.
+        const systemPrompt = `You are FirstLight rescue orchestrator AI. You ALWAYS respond with ONLY a JSON object matching the schema below — never plain text.
 
-Allowed action JSON schema:
+JSON schema (output this and nothing else):
 {
   "reasoning": string,
   "priority": "low"|"medium"|"high"|"critical",
@@ -320,10 +320,13 @@ Allowed action JSON schema:
   ]
 }
 
-Rules:
-- If user asks to control drones/simulation, output ONLY JSON matching schema.
-- If user asks a question, answer in concise plain text.
-- Never invent drone IDs; use only synced drones from state.`;
+Critical rules:
+- ALWAYS output valid JSON only. Never output plain text.
+- Never invent drone IDs; use only synced drones from state.
+- Keep reasoning concise (2-3 sentences max) to leave room for actions.
+- BATTERY CRITICAL (below 10% or negative): immediately emit recall_drone for that drone. This is the highest priority.
+- BATTERY LOW (below 20%): emit recall_drone unless the drone is already heading to base.
+- Use no_action only when the simulation is paused or all drones are already optimally placed.`;
 
         const userPrompt = `STATE:\n${stateSummary}\n\nUSER:\n${message}`;
 

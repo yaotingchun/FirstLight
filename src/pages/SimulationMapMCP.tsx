@@ -458,7 +458,7 @@ const SimulationMapMCP: React.FC = () => {
 
     const runThinkNow = useCallback(async () => {
         await runOrchestratorPrompt(
-            'Analyze the latest swarm state, explain your reasoning briefly, and output the best immediate actions to improve search coverage and survivor detection.',
+            'Evaluate current swarm state. Recall any drone with battery below 20% immediately. Then assign remaining drones to improve search coverage. Output JSON actions only.',
             'auto'
         );
     }, [runOrchestratorPrompt]);
