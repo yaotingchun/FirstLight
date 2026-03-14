@@ -594,6 +594,17 @@ const SimulationMapMCP: React.FC = () => {
                                 break;
                             }
                         }
+
+                        if (newMode === 'Micro') {
+                            const distToTarget = Math.sqrt(Math.pow(drone.tx - drone.x, 2) + Math.pow(drone.ty - drone.y, 2));
+                            if (distToTarget > 2.0) {
+                                // Defer micro mode until drone arrives to ensure high-speed transit
+                                console.log(`[SIM] Deferring Micro mode for ${drone.id} due to distance: ${distToTarget.toFixed(1)}`);
+                                drone.mode = 'Wide';
+                                break;
+                            }
+                        }
+                        
                         drone.mode = newMode;
                     }
                     break;
@@ -987,7 +998,9 @@ const SimulationMapMCP: React.FC = () => {
                     if (newTarget) {
                         d.tx = newTarget.x;
                         d.ty = newTarget.y;
-                        d.mode = 'Micro';
+                        const distToT = Math.sqrt(Math.pow(d.tx - d.x, 2) + Math.pow(d.ty - d.y, 2));
+                        // If the new hotspot is far, use Wide mode for transit; otherwise start Micro scanning.
+                        d.mode = distToT < 1.5 ? 'Micro' : 'Wide';
                     } else if (d.savedTx !== undefined && d.savedTy !== undefined) {
                         d.tx = d.savedTx;
                         d.ty = d.savedTy;
@@ -1458,14 +1471,27 @@ const SimulationMapMCP: React.FC = () => {
                 if (drone.battery < lowBattery) continue;
 
                 const distToTarget = Math.sqrt(Math.pow(drone.tx - drone.x, 2) + Math.pow(drone.ty - drone.y, 2));
-                const isIdle = distToTarget < 0.5;
-                const isWideExploring = drone.mode === 'Wide';
+                
+                // Allow reassignment if idle OR in Wide mode (divertable)
+                // OR if current target is far away (re-directed during transit)
+                const isDivertable = distToTarget < 0.5 || drone.mode === 'Wide' || distToTarget > 3.0;
 
-                if (isIdle || isWideExploring) {
+                if (isDivertable) {
                     drone.tx = mission.targetX;
                     drone.ty = mission.targetY;
-                    if (mission.action === 'micro_scan' && drone.mode !== 'Micro') {
-                        drone.mode = 'Micro';
+
+                    const distToNewTarget = Math.sqrt(Math.pow(drone.tx - drone.x, 2) + Math.pow(drone.ty - drone.y, 2));
+                    
+                    if (mission.action === 'micro_scan') {
+                        // Intelligent mode management: Stay in 'Wide' for faster transit (> 1.5 units)
+                        // then automatically switch to 'Micro' for precision once in vicinity.
+                        if (distToNewTarget < 1.5) {
+                            drone.mode = 'Micro';
+                        } else {
+                            drone.mode = 'Wide'; // Use high speed for transit
+                        }
+                    } else {
+                        drone.mode = 'Wide';
                     }
                 }
             }

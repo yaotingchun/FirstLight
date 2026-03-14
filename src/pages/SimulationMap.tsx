@@ -460,7 +460,8 @@ const SimulationMap: React.FC = () => {
                     if (newTarget) {
                         d.tx = newTarget.x;
                         d.ty = newTarget.y;
-                        d.mode = 'Micro';
+                        const distToT = Math.sqrt(Math.pow(d.tx - d.x, 2) + Math.pow(d.ty - d.y, 2));
+                        d.mode = distToT < 1.5 ? 'Micro' : 'Wide';
                         addLog(`${d.id} fully charged. Intercepting unassigned hotspot.`, 'info');
                     } else if (d.savedTx !== undefined && d.savedTy !== undefined) {
                         d.tx = d.savedTx;
