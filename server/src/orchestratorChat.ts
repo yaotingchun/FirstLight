@@ -345,7 +345,6 @@ Critical rules:
 
         const userPrompt = `STATE:\n${stateSummary}\n\nUSER:\n${message}`;
 
-        const result = await m.generateContent({
         const chat = m.startChat({
             systemInstruction: { role: 'system', parts: [{ text: systemPrompt }] },
             history: chatHistory,
