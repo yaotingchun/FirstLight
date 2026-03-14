@@ -213,6 +213,18 @@ export async function setDroneMode(
         };
     }
 
+    // MODE LOCK: Drones with 'RLY-' prefix MUST remain in 'Relay' or 'Charging' mode
+    if (drone.id.startsWith('RLY-')) {
+        const allowedRelayModes: DroneMode[] = ['Relay', 'Charging'];
+        if (!allowedRelayModes.includes(params.mode)) {
+            return {
+                success: false,
+                error: `Mode lock violation: Relay drone ${drone.id} cannot be converted to ${params.mode}. Relay drones must stay in Relay or Charging mode.`,
+                timestamp: Date.now()
+            };
+        }
+    }
+
     // Charging mode requires being at base
     if (params.mode === 'Charging') {
         const distToBase = Math.sqrt(

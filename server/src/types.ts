@@ -340,3 +340,103 @@ export interface MCPToolResult<T> {
 }
 
 export type MCPToolHandler<TParams, TResult> = (params: TParams) => Promise<MCPToolResult<TResult>>;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RELAY DRONE MODULE TYPES
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface RelayDroneStatus {
+    id: string;
+    position: DronePosition;
+    battery: number;
+    mode: 'Relay';
+    isConnected: boolean;
+    connectedSearchDrones: string[];
+    swarmKnowledge: SwarmKnowledge;
+    isBackup: boolean;
+    movementMode: 'centroid' | 'coverage';
+}
+
+export interface SwarmKnowledge {
+    probabilityHeatmap: { gridCell: string; probability: number }[];
+    exploredCells: string[];
+    detectedHazards: { gridCell: string; type: string; severity: number }[];
+    droneBatteryMap: { droneId: string; battery: number }[];
+    sensorDetections: { gridCell: string; signal: string; strength: number }[];
+    lastUpdated: number;
+}
+
+export interface NetworkTopology {
+    relayChain: string[];
+    links: NetworkLink[];
+    connectedDrones: string[];
+    disconnectedDrones: string[];
+    hopCounts: { droneId: string; hops: number }[];
+    isBaseConnected: boolean;
+    bufferedDataSize: number;
+}
+
+export interface NetworkLink {
+    source: string;
+    target: string;
+    quality: number;
+    hopCount: number;
+}
+
+// Relay MCP tool params
+export interface DeployRelayDroneParams {
+    x: number;
+    y: number;
+    relayId?: string;
+}
+
+export interface MoveRelayDroneParams {
+    relayId: string;
+    x: number;
+    y: number;
+}
+
+export interface ReplaceRelayDroneParams {
+    relayId: string;
+}
+
+export interface GetRelayStatusParams {
+    relayId: string;
+}
+
+export interface BroadcastSwarmCommandParams {
+    command: 'RECRUIT' | 'MICRO_SCAN' | 'REDISTRIBUTE' | 'RTB_ALL';
+    targetArea?: { x: number; y: number; radius: number };
+}
+
+// Relay MCP tool results
+export interface DeployRelayDroneResult {
+    relayId: string;
+    commandId: string;
+    message: string;
+}
+
+export interface MoveRelayDroneResult {
+    commandId: string;
+    message: string;
+}
+
+export interface ReplaceRelayDroneResult {
+    oldRelayId: string;
+    newRelayId: string;
+    commandIds: string[];
+    message: string;
+}
+
+export interface BroadcastSwarmCommandResult {
+    commandId: string;
+    reachableDrones: string[];
+    message: string;
+}
+
+export interface OptimalRelayPositionResult {
+    position: { x: number; y: number; gridCell: string };
+    coverageScore: number;
+    wouldConnect: string[];
+    currentDisconnected: string[];
+}

@@ -37,6 +37,11 @@ Your available actions:
 - reset_simulation - CLEAR and restart mission
 - no_action - nothing to do right now
 
+== RELAY ACTIONS ==
+- move_relay(relayId, x, y) - Reposition a relay drone to improve connectivity
+- replace_relay(relayId) - Replace low-battery relay with fresh backup
+- broadcast_swarm(command, targetArea?) - Broadcast RECRUIT/MICRO_SCAN/REDISTRIBUTE/RTB_ALL to drones via relay network
+
 STRATEGIC RULES:
 1. ZONE-FIRST THINKING: Reason about ZONES, not individual cells. The state summary lists TOP ZONES ranked by composite score. Use zone-level actions when possible.
 2. SURVIVAL FIRST: Battery < 20% -> recall_drone immediately, plus reallocate_swarm.
@@ -49,6 +54,14 @@ STRATEGIC RULES:
 9. ESCALATION: Deploy ground team ONLY for confirmed survivors (probability >= 0.8 or vision confirmation).
 10. SENSOR TRENDS: If a sensor is 'increasing', investigate that zone even if absolute probability is still low.
 11. COORDINATION: If a drone at a target has low battery (< 30%), assign_drone_to_zone the nearest healthy drone before recalling the low-battery one.
+
+RELAY RULES:
+12. DISCONNECTED DRONES: If disconnected drones > 0, use move_relay to bridge the gap.
+13. WEAK LINK: If any network link has signal < 0.3, use move_relay to improve coverage.
+14. RELAY BATTERY LOW: If relay battery < 25%, use replace_relay immediately, UNLESS it is <RETURNING>.
+15. SWARM SPREAD: If swarm spread too far, use calculateOptimalRelayPosition then move_relay.
+16. HIGH PROBABILITY CLUSTER: If survivor probability cluster detected, use broadcast_swarm('RECRUIT', targetArea) to pull drones in.
+17. RELAY MODE LOCK: Drones with 'RLY-' prefix MUST remain in 'Relay' or 'Charging' mode. NEVER use 'set_drone_mode' to switch them to 'Wide' or 'Micro'.
 
 REASONING FORMAT:
 - Evaluate zone scores and identify top 3 candidates.

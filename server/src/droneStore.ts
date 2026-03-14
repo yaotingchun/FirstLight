@@ -15,7 +15,10 @@ import type {
     CommLink,
     SurvivorInfo,
     MissionStats,
-    DronePosition
+    DronePosition,
+    RelayDroneStatus,
+    SwarmKnowledge,
+    NetworkTopology
 } from './types.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -70,6 +73,15 @@ interface DroneStateStore {
 
     // Per-drone auto-recall battery thresholds (MCP-set, overrides sim default)
     autoRecallThresholds: Map<string, number>;
+
+    // Relay drone states (edge intelligence)
+    relayStates: Map<string, RelayDroneStatus>;
+
+    // Network topology (relay mesh)
+    networkTopology: NetworkTopology | null;
+
+    // Aggregated swarm knowledge (updated by relays even when offline)
+    swarmKnowledge: SwarmKnowledge;
 }
 
 export type CommandType = 
@@ -80,7 +92,11 @@ export type CommandType =
     | 'SET_SURVIVOR_PIN'
     | 'RESET_MISSION'
     | 'SET_AUTO_RECALL'
-    | 'SET_SIMULATION_STATE';
+    | 'SET_SIMULATION_STATE'
+    | 'DEPLOY_RELAY'
+    | 'MOVE_RELAY'
+    | 'REPLACE_RELAY'
+    | 'BROADCAST_SWARM';
 
 export interface PendingCommand {
     id: string;
@@ -100,7 +116,17 @@ class DroneStore {
         currentTick: 0,
         isRunning: false,
         pendingCommands: [],
-        autoRecallThresholds: new Map()
+        autoRecallThresholds: new Map(),
+        relayStates: new Map(),
+        networkTopology: null,
+        swarmKnowledge: {
+            probabilityHeatmap: [],
+            exploredCells: [],
+            detectedHazards: [],
+            droneBatteryMap: [],
+            sensorDetections: [],
+            lastUpdated: 0,
+        },
     };
     
     private listeners: Set<(state: DroneStateStore) => void> = new Set();
@@ -182,7 +208,17 @@ class DroneStore {
             currentTick: 0,
             isRunning: false,
             pendingCommands: [],
-            autoRecallThresholds: new Map()
+            autoRecallThresholds: new Map(),
+            relayStates: new Map(),
+            networkTopology: null,
+            swarmKnowledge: {
+                probabilityHeatmap: [],
+                exploredCells: [],
+                detectedHazards: [],
+                droneBatteryMap: [],
+                sensorDetections: [],
+                lastUpdated: 0,
+            },
         };
         this.notify();
     }
@@ -301,6 +337,46 @@ class DroneStore {
             dronesDisconnected: disconnected,
             simulationRunning: this.state.isRunning
         };
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // RELAY STATE METHODS
+    // ─────────────────────────────────────────────────────────────────────
+
+    updateRelayState(relayStatus: RelayDroneStatus): void {
+        this.state.relayStates.set(relayStatus.id, relayStatus);
+        this.notify();
+    }
+
+    getRelayState(id: string): RelayDroneStatus | undefined {
+        return this.state.relayStates.get(id);
+    }
+
+    getAllRelayStates(): RelayDroneStatus[] {
+        return Array.from(this.state.relayStates.values());
+    }
+
+    removeRelayState(id: string): void {
+        this.state.relayStates.delete(id);
+        this.notify();
+    }
+
+    updateNetworkTopology(topology: NetworkTopology): void {
+        this.state.networkTopology = topology;
+        this.notify();
+    }
+
+    getNetworkTopology(): NetworkTopology | null {
+        return this.state.networkTopology;
+    }
+
+    updateSwarmKnowledge(knowledge: SwarmKnowledge): void {
+        this.state.swarmKnowledge = knowledge;
+        this.notify();
+    }
+
+    getSwarmKnowledge(): SwarmKnowledge {
+        return this.state.swarmKnowledge;
     }
 
     // ─────────────────────────────────────────────────────────────────────

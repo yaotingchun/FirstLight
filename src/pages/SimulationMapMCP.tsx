@@ -241,6 +241,7 @@ const createDrones = (): Drone[] => {
         { id: 'DRN-Alpha', x: bx, y: by, tx: 2,  ty: 2,  mode: 'Wide',  battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 0,  knownOtherDrones: {} },
         { id: 'DRN-Beta',  x: bx, y: by, tx: 17, ty: 2,  mode: 'Wide',  battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 0,  knownOtherDrones: {} },
         { id: 'RLY-Prime', x: bx, y: by, tx: GRID_W / 2, ty: GRID_H / 2, mode: 'Relay', battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 15, knownOtherDrones: {} },
+        { id: 'RLY-Backup', x: bx, y: by, tx: bx, ty: by, mode: 'Charging', battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 0, knownOtherDrones: {} },
         { id: 'DRN-Gamma', x: bx, y: by, tx: 2,  ty: 17, mode: 'Wide',  battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 25, knownOtherDrones: {} },
         { id: 'DRN-Delta', x: bx, y: by, tx: 17, ty: 17, mode: 'Wide',  battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 25, knownOtherDrones: {} }
     ];
@@ -543,7 +544,15 @@ const SimulationMapMCP: React.FC = () => {
                 case 'SET_MODE': {
                     const drone = drones.find(d => d.id === cmd.params.droneId);
                     if (drone) {
-                        drone.mode = cmd.params.mode as Drone['mode'];
+                        const newMode = cmd.params.mode as Drone['mode'];
+                        // MODE LOCK: Relay drones cannot be converted to search modes
+                        if (drone.id.startsWith('RLY-')) {
+                            if (newMode !== 'Relay' && newMode !== 'Charging') {
+                                addLog(`MCP Override denied: Relay drone ${drone.id} mode lock prevents conversion to ${newMode}`, 'alert');
+                                break;
+                            }
+                        }
+                        drone.mode = newMode;
                         addLog(`MCP: ${drone.id} mode set to ${drone.mode}`, 'info');
                     }
                     break;
@@ -574,6 +583,25 @@ const SimulationMapMCP: React.FC = () => {
                     const shouldRun = cmd.params.running as boolean;
                     setRunning(shouldRun);
                     addLog(`MCP: Simulation ${shouldRun ? 'started' : 'paused'} remotely`, 'info');
+                    break;
+                }
+                case 'REPLACE_RELAY': {
+                    const { oldRelayId, newRelayId, targetX, targetY } = cmd.params;
+                    const oldRelay = drones.find(d => d.id === oldRelayId);
+                    const newRelay = drones.find(d => d.id === newRelayId);
+                    
+                    if (oldRelay && newRelay) {
+                        // 1. Activate backup
+                        newRelay.mode = 'Relay';
+                        newRelay.tx = targetX as number;
+                        newRelay.ty = targetY as number;
+                        
+                        // 2. Recall old one
+                        oldRelay.tx = BASE_STATION.x;
+                        oldRelay.ty = BASE_STATION.y;
+                        
+                        addLog(`MCP: Atomic Relay Swap - ${newRelayId} deploying, ${oldRelayId} returning`, 'info');
+                    }
                     break;
                 }
                 case 'SET_SURVIVOR_PIN': {
@@ -609,6 +637,56 @@ const SimulationMapMCP: React.FC = () => {
                     const threshold = cmd.params.batteryThreshold as number;
                     autoRecallThresholdsRef.current.set(targetDroneId, threshold);
                     addLog(`MCP: Auto-recall threshold for ${targetDroneId} set to ${threshold}%`, 'info');
+                    break;
+                }
+                case 'MOVE_RELAY': {
+                    const relayId = cmd.params.relayId as string;
+                    const x = cmd.params.x as number;
+                    const y = cmd.params.y as number;
+                    const drone = drones.find(d => d.id === relayId);
+                    if (drone && drone.mode === 'Relay') {
+                        drone.tx = x;
+                        drone.ty = y;
+                        addLog(`MCP: Relay ${relayId} moving to (${x}, ${y})`, 'info');
+                    }
+                    break;
+                }
+                case 'BROADCAST_SWARM': {
+                    const command = cmd.params.command as string;
+                    const reachableDrones = cmd.params.reachableDrones as string[] || [];
+                    addLog(`MCP: Swarm Broadcast [${command}] received for ${reachableDrones.length} drones`, 'info');
+                    
+                    if (command === 'RTB_ALL') {
+                        reachableDrones.forEach(id => {
+                            const d = drones.find(dr => dr.id === id);
+                            if (d && d.mode !== 'Relay') {
+                                d.tx = BASE_STATION.x;
+                                d.ty = BASE_STATION.y;
+                            }
+                        });
+                    } else if (command === 'MICRO_SCAN' && cmd.params.targetArea) {
+                        const { x, y, radius } = cmd.params.targetArea as any;
+                        reachableDrones.forEach(id => {
+                            const d = drones.find(dr => dr.id === id);
+                            if (d && d.mode !== 'Relay' && d.mode !== 'Charging') {
+                                const dist = Math.sqrt(Math.pow(d.x - x, 2) + Math.pow(d.y - y, 2));
+                                if (dist <= radius) {
+                                    d.mode = 'Micro';
+                                    d.tx = x;
+                                    d.ty = y;
+                                }
+                            }
+                        });
+                    } else if (command === 'RECRUIT' && cmd.params.targetArea) {
+                         const { x, y } = cmd.params.targetArea as any;
+                         reachableDrones.forEach(id => {
+                            const d = drones.find(dr => dr.id === id);
+                            if (d && d.mode !== 'Charging' && d.mode !== 'Relay') {
+                                d.tx = x;
+                                d.ty = y;
+                            }
+                        });
+                    }
                     break;
                 }
             }
@@ -807,21 +885,23 @@ const SimulationMapMCP: React.FC = () => {
             if (!d.isConnected && d.mode !== 'Relay') disconnectedCount++;
         });
 
-        // Smart Relay Coverage Maximization
-        const relayDrone = drones.find(d => d.mode === 'Relay');
-        if (relayDrone && disconnectedCount > 0) {
-            const disconnected = drones.filter(d => !d.isConnected && d.mode !== 'Relay');
+        // Smart Relay Coverage Maximization (Reactive Centroid)
+        // Only apply this to the ACTIVE relay (the one not currently returning to base or charging)
+        const activeRelay = drones.find(d => d.mode === 'Relay' && (d.tx !== BASE_STATION.x || d.ty !== BASE_STATION.y));
+        if (activeRelay && disconnectedCount > 0) {
+            const disconnected = drones.filter(d => !d.isConnected && d.mode !== 'Relay' && d.mode !== 'Charging');
             if (disconnected.length > 0) {
                 let cx = 0, cy = 0;
                 disconnected.forEach(d => { cx += d.x; cy += d.y; });
                 cx /= disconnected.length;
                 cy /= disconnected.length;
-                relayDrone.tx = (cx + BASE_STATION.x) / 2;
-                relayDrone.ty = (cy + BASE_STATION.y) / 2;
+                activeRelay.tx = (cx + BASE_STATION.x) / 2;
+                activeRelay.ty = (cy + BASE_STATION.y) / 2;
             }
-        } else if (relayDrone && disconnectedCount === 0) {
-            relayDrone.tx = GRID_W / 2;
-            relayDrone.ty = GRID_H / 2;
+        } else if (activeRelay && disconnectedCount === 0) {
+            // Default active relay to center of map when everyone is connected
+            activeRelay.tx = GRID_W / 2;
+            activeRelay.ty = GRID_H / 2;
         }
 
         if (Math.random() < 0.2 && drones.length > 0) {
@@ -848,8 +928,12 @@ const SimulationMapMCP: React.FC = () => {
 
             // --- Charging Logic ---
             if (d.mode === 'Charging') {
-                d.battery += 0.5;
+                d.battery = Math.min(100, d.battery + 0.5);
                 if (d.battery >= 100) {
+                    if (d.id.startsWith('RLY')) {
+                        return; // Relay drones just wait here until AI commands replace_relay
+                    }
+
                     d.battery = 100;
                     d.mode = 'Wide';
 
@@ -926,9 +1010,16 @@ const SimulationMapMCP: React.FC = () => {
             }
 
             if (d.mode === 'Relay') {
-                d.battery -= 0.01;
+                d.battery = Math.max(0, d.battery - 0.035); // Accelerated battery drain to demonstrate handoff mechanism
                 // Move relay toward its assigned target position
                 const relayDistToTarget = Math.sqrt(Math.pow(d.tx - d.x, 2) + Math.pow(d.ty - d.y, 2));
+                
+                if (relayDistToTarget < 0.3 && d.tx === BASE_X && d.ty === BASE_Y) {
+                    d.mode = 'Charging';
+                    addLog(`${d.id} docked at Base. Charging...`, 'info');
+                    return;
+                }
+                
                 if (relayDistToTarget >= 0.3) {
                     const relaySpeed = 0.3;
                     const relayAngle = Math.atan2(d.ty - d.y, d.tx - d.x);
@@ -1088,7 +1179,7 @@ const SimulationMapMCP: React.FC = () => {
                 }
 
                 if (d.mode === 'Wide') {
-                    if (newProb > THRESHOLD_MICRO && d.battery >= lowBattery) {
+                    if (newProb > THRESHOLD_MICRO && d.battery >= lowBattery && !d.id.startsWith('RLY-')) {
                         d.mode = 'Micro';
                         if (d.isConnected) addMessage(d.id, 'REQUEST_ASSIST', { sector: `[${sx},${sy}]` });
                     } else {
@@ -1260,7 +1351,9 @@ const SimulationMapMCP: React.FC = () => {
                 d.y = Math.max(0, Math.min(GRID_H - 1, d.y));
 
                 // Battery drain: movement + sensor usage
+                // Battery drain: movement + sensor usage
                 const sensorDrain = d.mode === 'Wide' ? 0.015 : 0.005;
+                
                 const movementDrain = totalMove * 0.075;
                 d.battery -= (sensorDrain + movementDrain);
             }

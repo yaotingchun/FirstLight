@@ -11,6 +11,7 @@ import { communicationTools } from './communicationTools.js';
 import { missionTools } from './missionTools.js';
 import { swarmIntelTools } from './swarmIntelTools.js';
 import { orchestrationTools } from './orchestrationTools.js';
+import { relayTools } from './relayTools.js';
 
 type ToolSchema = {
     name: string;
@@ -57,7 +58,15 @@ const TOOL_DOCSTRINGS: Record<string, string> = {
     validateAssignmentPlan: 'Dry-run planner validation for batched assignments. Flags invalid drones/targets, low battery margin, and duplicate target conflicts.',
     assignHotspotBatch: 'Action. Queue multiple assignments in one call. Each accepted item may queue SET_MODE and SET_TARGET. Returns accepted/rejected breakdown.',
     getRecommendedActions: 'Policy tool. Returns prioritized machine-actionable recommendations derived from battery risk, connectivity, and unassigned hotspots.',
-    getBatteryRiskMap: 'Risk tool. Classify active drones by projected return battery and provide recommendation tiers (continue/monitor/avoid-micro/recall).'
+    getBatteryRiskMap: 'Risk tool. Classify active drones by projected return battery and provide recommendation tiers (continue/monitor/avoid-micro/recall).',
+
+    deployRelayDrone: 'Action. Deploy a new relay drone at specified position. Creates a drone in Relay mode that extends communication range and aggregates swarm data.',
+    moveRelayDrone: 'Action. Reposition an existing relay drone to a new target. Relay maintains function during transit.',
+    replaceRelayDrone: 'Action. Replace a low-battery relay: deploy backup at same position, recall old relay to base for charging.',
+    getRelayStatus: 'Observe one relay. Returns battery, position, connected search drones, edge intelligence data, and movement mode.',
+    getNetworkTopology: 'Observe full mesh network. Returns relay chain, links with quality, hop counts, connected/disconnected drones, and offline buffer size.',
+    broadcastSwarmCommand: 'Action. Broadcast RECRUIT/MICRO_SCAN/REDISTRIBUTE/RTB_ALL to all reachable search drones via relay network.',
+    calculateOptimalRelayPosition: 'Observe. Compute optimal relay position to maximize swarm coverage. Returns position, coverage score, and which disconnected drones would be reconnected.'
 };
 
 function withDocstring(schema: ToolSchema): ToolSchema {
@@ -515,6 +524,81 @@ export const toolSchemas = {
                 }
             }
         }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────
+    // RELAY MODULE
+    // ─────────────────────────────────────────────────────────────────────
+    moveRelayDrone: {
+        name: 'moveRelayDrone',
+        description: 'Reposition an existing relay drone to a new target position',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                relayId: { type: 'string', description: 'ID of the relay drone to move' },
+                x: { type: 'number', description: 'New target X coordinate (0-19)' },
+                y: { type: 'number', description: 'New target Y coordinate (0-19)' }
+            },
+            required: ['relayId', 'x', 'y']
+        }
+    },
+    replaceRelayDrone: {
+        name: 'replaceRelayDrone',
+        description: 'Replace a low-battery relay drone: deploy backup at same position, recall old relay to base',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                relayId: { type: 'string', description: 'ID of the relay drone to replace' }
+            },
+            required: ['relayId']
+        }
+    },
+    getRelayStatus: {
+        name: 'getRelayStatus',
+        description: 'Get relay-specific telemetry: battery, position, connected drones, edge intelligence data, movement mode',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                relayId: { type: 'string', description: 'ID of the relay drone' }
+            },
+            required: ['relayId']
+        }
+    },
+    getNetworkTopology: {
+        name: 'getNetworkTopology',
+        description: 'Get full mesh network topology: relay chain, links, hop counts, connected/disconnected drones, offline buffer status',
+        inputSchema: {
+            type: 'object',
+            properties: {}
+        }
+    },
+    broadcastSwarmCommand: {
+        name: 'broadcastSwarmCommand',
+        description: 'Broadcast a command to all search drones reachable through relay network. Commands: RECRUIT, MICRO_SCAN, REDISTRIBUTE, RTB_ALL',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                command: { type: 'string', enum: ['RECRUIT', 'MICRO_SCAN', 'REDISTRIBUTE', 'RTB_ALL'], description: 'Swarm command to broadcast' },
+                targetArea: {
+                    type: 'object',
+                    description: 'Target area for RECRUIT/MICRO_SCAN commands',
+                    properties: {
+                        x: { type: 'number' },
+                        y: { type: 'number' },
+                        radius: { type: 'number' }
+                    }
+                }
+            },
+            required: ['command']
+        }
+    },
+    calculateOptimalRelayPosition: {
+        name: 'calculateOptimalRelayPosition',
+        description: 'Compute optimal relay position to maximize swarm coverage. Returns position, coverage score, and which disconnected drones would be reconnected',
+        inputSchema: {
+            type: 'object',
+            properties: {}
+        }
     }
 };
 
@@ -564,7 +648,15 @@ export const toolHandlers: Record<string, Function> = {
     validateAssignmentPlan: orchestrationTools.validateAssignmentPlan,
     assignHotspotBatch: orchestrationTools.assignHotspotBatch,
     getRecommendedActions: orchestrationTools.getRecommendedActions,
-    getBatteryRiskMap: orchestrationTools.getBatteryRiskMap
+    getBatteryRiskMap: orchestrationTools.getBatteryRiskMap,
+
+    // Relay tools
+    moveRelayDrone: relayTools.moveRelayDrone,
+    replaceRelayDrone: relayTools.replaceRelayDrone,
+    getRelayStatus: relayTools.getRelayStatus,
+    getNetworkTopology: relayTools.getNetworkTopology,
+    broadcastSwarmCommand: relayTools.broadcastSwarmCommand,
+    calculateOptimalRelayPosition: relayTools.calculateOptimalRelayPosition
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -620,3 +712,4 @@ export { communicationTools } from './communicationTools.js';
 export { missionTools } from './missionTools.js';
 export { swarmIntelTools } from './swarmIntelTools.js';
 export { orchestrationTools } from './orchestrationTools.js';
+export { relayTools } from './relayTools.js';

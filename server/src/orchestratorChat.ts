@@ -2,7 +2,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { VertexAI, type GenerativeModel, type Content } from '@google-cloud/vertexai';
 import dotenv from 'dotenv';
-import { droneStore } from './droneStore.js';
+import { droneStore, BASE_X, BASE_Y } from './droneStore.js';
 import { executeTool } from './tools/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -22,7 +22,10 @@ type ChatAction =
     | { type: 'deploy_team'; x: number; y: number; droneId?: string; reason?: string }
     | { type: 'set_simulation_state'; running: boolean; reason?: string }
     | { type: 'reset_simulation'; reason?: string }
-    | { type: 'no_action'; reason: string };
+    | { type: 'no_action'; reason: string }
+    | { type: 'move_relay'; relayId: string; x: number; y: number; reason?: string }
+    | { type: 'replace_relay'; relayId: string; reason?: string }
+    | { type: 'broadcast_swarm'; command: 'RECRUIT' | 'MICRO_SCAN' | 'REDISTRIBUTE' | 'RTB_ALL'; targetArea?: { x: number; y: number; radius: number }; reason?: string };
 
 interface ParsedDecision {
     reasoning: string;
@@ -102,8 +105,28 @@ function buildStateSummary(): string {
         .join(', ');
 
     const droneSummary = drones
-        .map(d => `${d.id}: pos=(${d.position.x},${d.position.y}) mode=${d.mode} battery=${d.battery.toFixed(1)}% active=${d.isActive}`)
+        .map(d => {
+            const isReturning = d.position.x !== BASE_X && d.position.y !== BASE_Y && Math.round(d.target?.x ?? -1) === BASE_X && Math.round(d.target?.y ?? -1) === BASE_Y;
+            return `${d.id}: pos=(${d.position.x},${d.position.y}) mode=${d.mode} battery=${d.battery.toFixed(1)}% active=${d.isActive}${isReturning ? ' <RETURNING>' : ''}`;
+        })
         .join('\n');
+
+    // Relay and network state
+    const relayDrones = drones.filter(d => d.mode === 'Relay' && d.isActive);
+    const disconnectedDrones = drones.filter(d => d.isActive && !d.isConnected && d.mode !== 'Relay');
+    const networkTopology = droneStore.getNetworkTopology();
+    const swarmKnowledge = droneStore.getSwarmKnowledge();
+
+    const relaySummary = relayDrones.length > 0
+        ? relayDrones.map(r => {
+            const isReturning = r.position.x !== BASE_X && r.position.y !== BASE_Y && Math.round(r.target?.x ?? -1) === BASE_X && Math.round(r.target?.y ?? -1) === BASE_Y;
+            return `${r.id}: pos=(${r.position.x.toFixed(1)},${r.position.y.toFixed(1)}) battery=${r.battery.toFixed(1)}%${isReturning ? ' <RETURNING>' : ''}`;
+        }).join('\n')
+        : '(no relay drones)';
+
+    const networkHealth = networkTopology
+        ? `chain=${networkTopology.relayChain.join('→')} connected=${networkTopology.connectedDrones.length} disconnected=${networkTopology.disconnectedDrones.length} buffered=${networkTopology.bufferedDataSize}B`
+        : '(no topology data)';
 
     return [
         `tick=${stats.currentTick}`,
@@ -117,8 +140,16 @@ function buildStateSummary(): string {
         'DRONES:',
         droneSummary || '(none synced yet)',
         '',
+        'RELAY NETWORK:',
+        relaySummary,
+        `Network: ${networkHealth}`,
+        `Disconnected: ${disconnectedDrones.length > 0 ? disconnectedDrones.map(d => d.id).join(', ') : 'none'}`,
+        '',
         `TOP HOTSPOTS: ${hotspots || '(none)'}`,
         `IMAGE SCAN CELLS: ${imageScanSummary || '(none)'}`,
+        '',
+        'SWARM KNOWLEDGE:',
+        `exploredCells=${swarmKnowledge.exploredCells.length} hazards=${swarmKnowledge.detectedHazards.length} hotSignals=${swarmKnowledge.sensorDetections.filter(s => s.strength > 0.5).length}`,
     ].join('\n');
 }
 
@@ -278,6 +309,33 @@ async function executeActions(actions: ChatAction[]): Promise<string[]> {
                     logs.push(`no_action: ${action.reason}`);
                     break;
                 }
+                case 'move_relay': {
+                    const result = await executeTool('moveRelayDrone', {
+                        relayId: action.relayId,
+                        x: action.x,
+                        y: action.y,
+                    });
+                    const res = result as { success: boolean };
+                    logs.push(`[AI ORCHESTRATOR] moveRelayDrone({relayId:${action.relayId},x:${action.x},y:${action.y}}) → ${res.success ? 'Repositioned' : 'FAILED'}${action.reason ? ` | reason: ${action.reason}` : ''}`);
+                    break;
+                }
+                case 'replace_relay': {
+                    const result = await executeTool('replaceRelayDrone', {
+                        relayId: action.relayId,
+                    });
+                    const res = result as { success: boolean; data?: { newRelayId: string } };
+                    logs.push(`[AI ORCHESTRATOR] replaceRelayDrone({relayId:${action.relayId}}) → ${res.success ? `Replaced with ${res.data?.newRelayId}` : 'FAILED'}${action.reason ? ` | reason: ${action.reason}` : ''}`);
+                    break;
+                }
+                case 'broadcast_swarm': {
+                    const result = await executeTool('broadcastSwarmCommand', {
+                        command: action.command,
+                        targetArea: action.targetArea,
+                    });
+                    const res = result as { success: boolean; data?: { reachableDrones: string[] } };
+                    logs.push(`[AI ORCHESTRATOR] broadcastSwarmCommand({command:${action.command}}) → ${res.success ? `Broadcast to ${res.data?.reachableDrones?.length ?? 0} drones` : 'FAILED'}${action.reason ? ` | reason: ${action.reason}` : ''}`);
+                    break;
+                }
                 default:
                     logs.push(`unsupported action: ${(action as { type: string }).type}`);
             }
@@ -331,7 +389,10 @@ JSON schema (output this and nothing else):
     {"type":"deploy_team","x":number,"y":number,"droneId":string?,"reason":string?},
     {"type":"set_simulation_state","running":boolean,"reason":string?},
     {"type":"reset_simulation","reason":string?},
-    {"type":"no_action","reason":string}
+    {"type":"no_action","reason":string},
+    {"type":"move_relay","relayId":string,"x":number,"y":number,"reason":string?},
+    {"type":"replace_relay","relayId":string,"reason":string?},
+    {"type":"broadcast_swarm","command":"RECRUIT"|"MICRO_SCAN"|"REDISTRIBUTE"|"RTB_ALL","targetArea":{"x":number,"y":number,"radius":number}?,"reason":string?}
   ]
 }
 
@@ -341,6 +402,9 @@ Critical rules:
 - Keep reasoning concise (2-3 sentences max) to leave room for actions.
 - BATTERY CRITICAL (below 10% or negative): immediately emit recall_drone for that drone. This is the highest priority.
 - BATTERY LOW (below 20%): emit recall_drone unless the drone is already heading to base.
+- DISCONNECTED DRONES: if disconnected drones > 0, emit move_relay to bridge communication gap.
+- RELAY BATTERY LOW (below 25%): emit replace_relay immediately, UNLESS it is <RETURNING>.
+- MODE LOCK: NEVER use set_drone_mode on drones with 'RLY-' prefix to change them to 'Wide' or 'Micro'. Relay drones must only be moved via 'move_relay' or swapped via 'replace_relay'.
 - Use no_action only when the simulation is paused or all drones are already optimally placed.`;
 
         const userPrompt = `STATE:\n${stateSummary}\n\nUSER:\n${message}`;
