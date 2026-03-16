@@ -86,7 +86,8 @@ function buildStateSummary(): string {
     const stats = droneStore.getMissionStats();
     const drones = droneStore.getAllDrones();
     const grid = droneStore.getGrid();
-    const hotspots = droneStore.getGrid()
+
+    const hotspots = grid
         .flat()
         .filter(c => !c.scanned)
         .sort((a, b) => b.probability - a.probability)
@@ -139,7 +140,7 @@ function buildStateSummary(): string {
         `running=${stats.simulationRunning}`,
         `scanProgress=${stats.scanProgress.toFixed(1)}%`,
         `survivorsFound=${stats.survivorsFound}`,
-        `highPriorityRemaining=${stats.highPriorityZonesRemaining}`,
+        `totalExpectedSurvivors=${stats.totalEstimatedSurvivors}`,
         `avgBattery=${stats.averageBattery.toFixed(1)}%`,
         `meanProbabilityScanned=${stats.meanProbabilityScanned?.toFixed(3) || 0}`,
         `imageScannedCells=${grid.flat().filter(c => c.scanned && !!c.disasterImage).length}`,
@@ -460,7 +461,12 @@ Critical rules:
 - MODE LOCK (Strict Role Separation): 
     1. NEVER use set_drone_mode on 'RLY-' drones to change them to 'Wide' or 'Micro'. Relay drones stay in Relay/Charging.
     2. NEVER use set_drone_mode on search drones ('D1'-'D8') to change them to 'Relay'. Search drones stay in Wide/Micro/Charging.
-- Use no_action only when the simulation is paused or all drones are already optimally placed.`;
+- MISSION COMPLETION RULES:
+  1. If scanProgress < 100%, continue searching normally.
+  2. If scanProgress >= 100% and ANY drone is still in "Micro" mode, wait and let them finish (no_action, or move them closer to signals). DO NOT recall them.
+  3. If scanProgress >= 100% and NO drones are in "Micro" mode, check positions. If any drone is NOT at base (dist > 1 from 10,19), issue \`recall_drone\` ONLY for those drones.
+  4. If scanProgress >= 100% and ALL drones are safe at base (near 10,19 or battery=100 or mode=Charging), issue \`set_simulation_state\` with \`"running": false\` to successfully end the mission.
+- Use no_action only when the simulation is paused and there is nothing to do, or all drones are already optimally placed.`;
 
         const userPrompt = `STATE:\n${stateSummary}\n\nUSER:\n${message}`;
 

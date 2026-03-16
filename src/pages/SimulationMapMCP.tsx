@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, FastForward, Target, Radio, Crosshair, RotateCcw, Activity, Hexagon, MapPin, X, Wifi, WifiOff, Terminal, MessageSquare, Send } from 'lucide-react';
+import { Play, Pause, FastForward, Radio, RotateCcw, Activity, Hexagon, MapPin, X, Wifi, WifiOff, Terminal, MessageSquare, Send } from 'lucide-react';
 
 const GRID_W = 20;
 const GRID_H = 20;
@@ -101,6 +101,11 @@ type OrchestratorChatMessage = {
     text: string;
 };
 
+type FailureEvent = {
+    type: 'DRONE_CONNECTION_LOST';
+    droneId: string;
+    tick: number;
+};
 
 // Grid generation — uses real terrain from OSM data via gridDataService
 const createGrid = (survivors?: HiddenSurvivor[]): Sector[][] => {
@@ -262,8 +267,8 @@ const createDrones = (): Drone[] => {
     // RLY-Prime   → center      (~9 cells away)       → depart tick 15
     // Gamma/Delta → lower corners (~7.8 cells away)  → depart tick 25
     return [
-        { id: 'DRN-Alpha', x: bx, y: by, tx: 2,  ty: 2,  mode: 'Wide',  battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 0,  knownOtherDrones: {} },
-        { id: 'DRN-Beta',  x: bx, y: by, tx: 17, ty: 2,  mode: 'Wide',  battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 0,  knownOtherDrones: {} },
+        { id: 'DRN-Alpha', x: bx, y: by, tx: 2, ty: 2, mode: 'Wide', battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 0, knownOtherDrones: {} },
+        { id: 'DRN-Beta', x: bx, y: by, tx: 17, ty: 2, mode: 'Wide', battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 0, knownOtherDrones: {} },
         { id: 'RLY-Prime', x: bx, y: by, tx: GRID_W / 2, ty: GRID_H / 2, mode: 'Relay', battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 15, knownOtherDrones: {} },
         { id: 'RLY-Backup', x: bx, y: by, tx: bx, ty: by, mode: 'Charging', battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 0, knownOtherDrones: {} },
         { id: 'DRN-Gamma', x: bx, y: by, tx: 2,  ty: 17, mode: 'Wide',  battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 25, knownOtherDrones: {} },
@@ -348,6 +353,13 @@ const SimulationMapMCP: React.FC = () => {
     const sensorWeightsRef = useRef(gridDataService.getSensorWeights());
     // Per-drone auto-recall thresholds set via MCP (droneId -> batteryThreshold %)
     const autoRecallThresholdsRef = useRef<Map<string, number>>(new Map());
+    const failureEventsRef = useRef<FailureEvent[]>([]);
+    const aiDisconnectedRef = useRef<Set<string>>(new Set());
+    const aiReconnectAttemptTickRef = useRef<Map<string, number>>(new Map());
+    const aiReconnectedUntilTickRef = useRef<Map<string, number>>(new Map());
+
+    const missionReturnTriggeredRef = useRef(false);
+    const missionStopHandledRef = useRef(false);
 
     // Zone-based planning state
     const zonesRef = useRef<SearchZone[]>([]);
@@ -498,6 +510,30 @@ const SimulationMapMCP: React.FC = () => {
             'auto'
         );
     }, [runOrchestratorPrompt]);
+
+    const triggerFailureEvent = useCallback((droneId: string) => {
+        if (aiDisconnectedRef.current.has(droneId)) return;
+
+        const event: FailureEvent = {
+            type: 'DRONE_CONNECTION_LOST',
+            droneId,
+            tick: timeRef.current,
+        };
+
+        failureEventsRef.current.push(event);
+
+        const eventPayload = { type: 'DRONE_CONNECTION_LOST', droneId };
+        setChatMessages(prev => [...prev, { role: 'system', text: `[EVENT] ${JSON.stringify(eventPayload)}` }]);
+
+        // Notify orchestrator with explicit resilience tasking (event-driven, not direct state mutation)
+        if (mcpConnected && !aiBusyRef.current) {
+            runOrchestratorPrompt(
+                `Handle failure event ${JSON.stringify(eventPayload)}. Mark drone disconnected, reallocate abandoned sector to nearest active drone, continue mission, and plan reconnection attempts. Output JSON actions only.`,
+                'auto'
+            );
+        }
+        setTickFlip(f => f + 1);
+    }, [mcpConnected, runOrchestratorPrompt]);
 
     // MCP State Sync Helper
     const syncToMcp = useCallback(async (forceMcpConnected = false) => {
@@ -680,7 +716,8 @@ const SimulationMapMCP: React.FC = () => {
                 case 'SET_AUTO_RECALL': {
                     const targetDroneId = cmd.params.droneId as string;
                     const threshold = cmd.params.batteryThreshold as number;
-                    autoRecallThresholdsRef.current.set(targetDroneId, threshold);
+                    const normalized = Math.max(5, Math.min(95, Number.isFinite(threshold) ? threshold : 30));
+                    autoRecallThresholdsRef.current.set(targetDroneId, normalized);
                     break;
                 }
                 case 'MOVE_RELAY': {
@@ -769,6 +806,53 @@ const SimulationMapMCP: React.FC = () => {
     }, []);
 
 
+    const finalizeDiscovery = useCallback((survivorId: string, droneId: string, sx: number, sy: number) => {
+        const survivors = survivorsRef.current;
+        const grid = gridRef.current;
+        const survivor = survivors.find(s => s.id === survivorId && !s.found);
+        if (!survivor) return;
+
+        survivor.found = true;
+
+        for (let py = Math.max(0, sy - 3); py <= Math.min(GRID_H - 1, sy + 3); py++) {
+            for (let px = Math.max(0, sx - 3); px <= Math.min(GRID_W - 1, sx + 3); px++) {
+                grid[py][px].pheromone = 0;
+                grid[py][px].prob = 0;
+            }
+        }
+
+        const drone = dronesRef.current.find(d => d.id === droneId);
+        if (drone) {
+            drone.memory.push(survivor.id);
+
+            const weights = sensorWeightsRef.current;
+            (Object.keys(weights) as Array<keyof typeof INITIAL_SENSORS>).forEach(k => {
+                weights[k].conf = Math.min(1.0, weights[k].conf + 0.04);
+            });
+            gridDataService.setSensorWeights({ ...weights });
+
+            if (drone.isConnected) {
+                swarmMessagesRef.current.push({
+                    id: Math.random().toString(36).substring(2, 9),
+                    sender: drone.id,
+                    time: timeRef.current,
+                    type: 'HIGH_SIGNAL',
+                    payload: { survivorId: survivor.id }
+                });
+            }
+
+            drone.mode = 'Wide';
+            drone.tx = Math.floor(GRID_W / 2);
+            drone.ty = Math.floor(GRID_H / 2);
+        }
+
+        if (!pinsRef.current.find(p => p.id === survivor.id)) {
+            pinsRef.current.push({ id: survivor.id, x: sx, y: sy, info: survivor.info });
+        }
+
+
+    }, []);
+
     const resetSim = () => {
         setRunning(false);
         gridDataService.releaseSource(); // allow prediction to write again after full reset
@@ -783,6 +867,14 @@ const SimulationMapMCP: React.FC = () => {
         sensorWeightsRef.current = JSON.parse(JSON.stringify(INITIAL_SENSORS));
         gridDataService.setSensorWeights(sensorWeightsRef.current);
         timeRef.current = 0;
+
+        missionReturnTriggeredRef.current = false;
+        missionStopHandledRef.current = false;
+        autoRecallThresholdsRef.current.clear();
+        failureEventsRef.current = [];
+        aiDisconnectedRef.current.clear();
+        aiReconnectAttemptTickRef.current.clear();
+        aiReconnectedUntilTickRef.current.clear();
         // Reset zone planning state
         zonesRef.current = [];
         searchMemoryRef.current = createSearchMemory();
@@ -821,6 +913,9 @@ const SimulationMapMCP: React.FC = () => {
 
     const performTick = useCallback(() => {
         timeRef.current++;
+        aiReconnectedUntilTickRef.current.forEach((untilTick, droneId) => {
+            if (untilTick <= timeRef.current) aiReconnectedUntilTickRef.current.delete(droneId);
+        });
         const grid = gridRef.current;
         const drones = dronesRef.current;
         const survivors = survivorsRef.current;
@@ -838,24 +933,55 @@ const SimulationMapMCP: React.FC = () => {
             });
         };
 
-        // 1. Prediction / Markov Chain: (Disabled) Hidden survivors no longer move per USER request
-        /*
-        if (timeRef.current % 50 === 0) {
-            survivors.forEach(s => {
-                if (s.found) return;
-                const r = Math.random();
-                if (r < 0.1) {
-                    const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
-                    const validDirs = dirs.filter(d => s.x + d[0] >= 0 && s.x + d[0] < GRID_W && s.y + d[1] >= 0 && s.y + d[1] < GRID_H);
-                    if (validDirs.length > 0) {
-                        const move = validDirs[Math.floor(Math.random() * validDirs.length)];
-                        s.x += move[0];
-                        s.y += move[1];
-                    }
+        const totalCells = GRID_W * GRID_H;
+        const scannedCells = grid.reduce((sum, row) => sum + row.filter(sec => sec.scanned).length, 0);
+        const scanProgress = totalCells > 0 ? (scannedCells / totalCells) * 100 : 0;
+        const allSurvivorsFound = survivors.length > 0 && survivors.every(s => s.found);
+        const missionComplete = allSurvivorsFound && scanProgress >= 100;
+
+        // Safeguard: if all cells are scanned but some survivors are still unconfirmed,
+        // keep those cells scanned and dispatch nearest active drones for verification.
+        if (scanProgress >= 100 && !allSurvivorsFound) {
+            const unresolved = survivors.filter(s => !s.found);
+
+            unresolved.forEach(s => {
+                grid[s.y][s.x].prob = Math.max(grid[s.y][s.x].prob, THRESHOLD_MICRO + 0.25);
+                grid[s.y][s.x].pheromone = Math.max(grid[s.y][s.x].pheromone, 0.9);
+            });
+
+            const reserved = new Set<string>();
+            unresolved.forEach(s => {
+                const nearest = drones
+                    .filter(d =>
+                        d.mode !== 'Relay' &&
+                        d.mode !== 'Charging' &&
+                        !aiDisconnectedRef.current.has(d.id) &&
+                        !reserved.has(d.id)
+                    )
+                    .sort((a, b) => {
+                        const da = Math.sqrt(Math.pow(a.x - s.x, 2) + Math.pow(a.y - s.y, 2));
+                        const db = Math.sqrt(Math.pow(b.x - s.x, 2) + Math.pow(b.y - s.y, 2));
+                        return da - db;
+                    })[0];
+
+                if (nearest) {
+                    nearest.tx = s.x;
+                    nearest.ty = s.y;
+                    nearest.mode = 'Micro';
+                    reserved.add(nearest.id);
                 }
             });
         }
-        */
+
+        if (missionComplete && !missionReturnTriggeredRef.current) {
+            missionReturnTriggeredRef.current = true;
+            // Force all drones to RTB immediately
+            drones.forEach(d => {
+                d.tx = BASE_STATION.x;
+                d.ty = BASE_STATION.y;
+                if (d.mode !== 'Relay') d.mode = 'Wide'; // Ensure they don't linger in Micro
+            });
+        }
 
         // 1.5a Mesh Network Position Broadcast (for collision avoidance)
         const COMMS_RANGE = 8;
@@ -921,7 +1047,6 @@ const SimulationMapMCP: React.FC = () => {
                 }
             }
         }
-
         let disconnectedCount = 0;
         drones.forEach(d => {
             d.isConnected = visited.has(d.id);
@@ -968,6 +1093,24 @@ const SimulationMapMCP: React.FC = () => {
         drones.forEach(d => {
             // --- Staggered Departure Gate ---
             if (d.startTick !== undefined && timeRef.current < d.startTick) return;
+
+            const isAiDisconnected = aiDisconnectedRef.current.has(d.id);
+
+            if (isAiDisconnected) {
+                d.isConnected = false;
+                d.tx = d.x;
+                d.ty = d.y;
+                d.targetSector = null;
+                d.mode = d.mode === 'Charging' ? 'Charging' : 'Wide';
+                return;
+            }
+
+            if (missionComplete) {
+                d.savedTx = undefined;
+                d.savedTy = undefined;
+                d.tx = BASE_X;
+                d.ty = BASE_Y;
+            }
 
             // --- Charging Logic ---
             if (d.mode === 'Charging') {
@@ -1023,7 +1166,8 @@ const SimulationMapMCP: React.FC = () => {
                             let bestSector: Sector | null = null;
                             let maxProb = -1;
                             grid.forEach(row => row.forEach(sec => {
-                                if (!sec.scanned && sec.prob > maxProb) {
+                                const isSurvivor = pinsRef.current.some(p => p.x === sec.x && p.y === sec.y);
+                                if (!sec.scanned && sec.prob > maxProb && !isSurvivor) {
                                     const isOccupied = drones.some(other => other.id !== d.id && Math.round(other.tx) === sec.x && Math.round(other.ty) === sec.y);
                                     if (!isOccupied) {
                                         maxProb = sec.prob;
@@ -1036,9 +1180,9 @@ const SimulationMapMCP: React.FC = () => {
                                 d.tx = (bestSector as Sector).x;
                                 d.ty = (bestSector as Sector).y;
                             } else {
-                                // Last resort: grid center instead of purely random
-                                d.tx = Math.floor(GRID_W / 2);
-                                d.ty = Math.floor(GRID_H / 2);
+                                // 100% explored. Standby at base instead of going to center.
+                                d.tx = BASE_X;
+                                d.ty = BASE_Y;
                             }
                         }
                     }
@@ -1082,7 +1226,7 @@ const SimulationMapMCP: React.FC = () => {
                     d.ty = BASE_STATION.y;
                 }
             }
-
+            
             // --- Battery & RTB Logic ---
             const distToBase = Math.sqrt(Math.pow(BASE_X - d.x, 2) + Math.pow(BASE_Y - d.y, 2));
             const batteryReqForReturn = distToBase * 0.3;
@@ -1156,10 +1300,9 @@ const SimulationMapMCP: React.FC = () => {
                     if (found) break;
                 }
                 if (!found) {
-                    const angle = Math.random() * Math.PI * 2;
-                    const r = Math.random() * 4;
-                    bestX = Math.max(0, Math.min(GRID_W - 1, Math.round(BASE_X + Math.cos(angle) * r)));
-                    bestY = Math.max(0, Math.min(GRID_H - 1, Math.round(BASE_Y + Math.sin(angle) * r)));
+                    // Grid explored even near base. Just RTB instead of random wandering.
+                    bestX = BASE_X;
+                    bestY = BASE_Y;
                 }
                 if (d.savedTx === undefined) {
                     d.savedTx = d.tx;
@@ -1172,25 +1315,47 @@ const SimulationMapMCP: React.FC = () => {
             // Check if we reached target
             const distToTarget = Math.sqrt(Math.pow(d.tx - d.x, 2) + Math.pow(d.ty - d.y, 2));
 
-            if (distToTarget < 0.3) {
-                // Dock at base if returning
-                if (d.tx === BASE_X && d.ty === BASE_Y && d.battery <= 50) {
-                    d.mode = 'Charging';
-                    return;
+            if (distToTarget < 0.5) {
+                // Dock at base if returning (low battery OR mission complete)
+                if (d.tx === BASE_X && d.ty === BASE_Y) {
+                    if (d.battery <= 50 || metricsRef.current.averageZoneCoverage >= 99.9 || missionComplete) {
+                        d.mode = 'Charging';
+                        return;
+                    }
                 }
 
                 // At target! Scan and assign new
                 const sx = Math.round(d.tx);
                 const sy = Math.round(d.ty);
                 const sector = grid[sy][sx];
-
+                const isFirstScan = !sector.scanned;
+                sector.scanned = true;
+                sector.lastScanned = timeRef.current;
                 // Add realistic temporal jitter (+/- 2%) to simulate environmental noise
-                const jitter = (Math.random() * 0.04) - 0.02; 
-                const newProb = Math.max(0, Math.min(1.0, getSectorProbability(sx, sy) + jitter));
+                const jitter = (Math.random() * 0.04) - 0.02;
+                const rawProb = Math.max(0, Math.min(1.0, getSectorProbability(sx, sy) + jitter));
+                let newProb = rawProb;
+                const survivorAtSector = survivors.find(s => s.x === sx && s.y === sy && !s.found);
+                let holdPositionForVerification = false;
 
-                // Record scan in zone memory
+                // Clear probability for already-pinned cells so drones stop targeting them
+                const isPinned = pinsRef.current.some(p => Math.round(p.x) === sx && Math.round(p.y) === sy);
+                if (isPinned) {
+                    newProb = 0;
+                } else if (survivorAtSector && rawProb >= THRESHOLD_FOUND) {
+                    // --- Slow Discovery ---
+                    // Drone must "roll" 0.85+ to confirm the survivor (1/8 chance per scan visit).
+                    // Keep the drone focused on the exact cell until confirmation so it does not
+                    // wander around the hotspot and inflate nearby repeat scans.
+                    newProb = 0.79 + (Math.floor(Math.random() * 8) / 100);
+                    holdPositionForVerification = newProb < THRESHOLD_FOUND;
+                }
+
+                // Record scan in zone memory 
+                // 1. Always record the FIRST scan of a cell (to update progress)
+                // 2. Only record subsequent scans (repeats) for Wide-mode drones (to protect repeat rate metric)
                 const zone = getZoneForCell(zonesRef.current, sx, sy);
-                if (zone) {
+                if (zone && (isFirstScan || d.mode === 'Wide')) {
                     recordCellScan(
                         searchMemoryRef.current, zone.zoneId,
                         sx, sy, timeRef.current, newProb > THRESHOLD_MICRO
@@ -1223,13 +1388,20 @@ const SimulationMapMCP: React.FC = () => {
                 if (d.mode === 'Wide') {
                     if (newProb > THRESHOLD_MICRO && d.battery >= lowBattery && !d.id.startsWith('RLY-')) {
                         d.mode = 'Micro';
+                        if (holdPositionForVerification) {
+                            d.tx = sx;
+                            d.ty = sy;
+                        }
                         if (d.isConnected) addMessage(d.id, 'REQUEST_ASSIST', { sector: `[${sx},${sy}]` });
                     } else {
-                        // Zone-aware + probability-based next-cell selection (no randomness)
+                        // Restore local greedy search for UN-SCANNED neighbors
                         const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, -1], [-1, 1], [1, -1]];
                         let options = dirs
                             .map(dir => ({ x: sx + dir[0], y: sy + dir[1] }))
-                            .filter(pos => pos.x >= 0 && pos.x < GRID_W && pos.y >= 0 && pos.y < GRID_H);
+                            .filter(pos => pos.x >= 0 && pos.x < GRID_W && pos.y >= 0 && pos.y < GRID_H)
+                            .filter(pos => !grid[pos.y][pos.x].scanned)
+                            // Avoid cells near already pinned survivors
+                            .filter(pos => !pinsRef.current.some(p => Math.abs(p.x - pos.x) <= 1 && Math.abs(p.y - pos.y) <= 1));
 
                         // Avoid cells targeted by other drones
                         const filtered = options.filter(opt => {
@@ -1237,18 +1409,17 @@ const SimulationMapMCP: React.FC = () => {
                         });
                         if (filtered.length > 0) options = filtered;
 
-                        // Deterministic scoring: unscanned bonus + probability + pheromone (no random)
-                        options.sort((a, b) => {
-                            const cellA = grid[a.y][a.x];
-                            const cellB = grid[b.y][b.x];
-                            const unscannedBonusA = cellA.scanned ? 0 : 0.5;
-                            const unscannedBonusB = cellB.scanned ? 0 : 0.5;
-                            const scoreA = cellA.prob + unscannedBonusA + (cellA.pheromone * 0.1);
-                            const scoreB = cellB.prob + unscannedBonusB + (cellB.pheromone * 0.1);
-                            return scoreB - scoreA;
-                        });
-
                         if (options.length > 0) {
+                            // Deterministic scoring: unscanned bonus + probability + pheromone (no random)
+                            options.sort((a, b) => {
+                                const cellA = grid[a.y][a.x];
+                                const cellB = grid[b.y][b.x];
+                                const unscannedBonusA = cellA.scanned ? 0 : 0.5;
+                                const unscannedBonusB = cellB.scanned ? 0 : 0.5;
+                                const scoreA = cellA.prob + unscannedBonusA + (cellA.pheromone * 0.1);
+                                const scoreB = cellB.prob + unscannedBonusB + (cellB.pheromone * 0.1);
+                                return scoreB - scoreA;
+                            });
                             d.tx = options[0].x;
                             d.ty = options[0].y;
                         } else if (zonesRef.current.length > 0) {
@@ -1264,40 +1435,8 @@ const SimulationMapMCP: React.FC = () => {
                     }
                 }
 
-                // --- Discovery Condition (Robust Check) ---
-                // Trigger discovery in ANY mode if the threshold is met and a survivor is at this location
-                if (newProb >= THRESHOLD_FOUND) {
-                    const s = survivors.find(s => s.x === sx && s.y === sy && !s.found);
-                    if (s) {
-                        s.found = true;
-                        // Avoid drones immediately targeting the same spot
-                        for (let py = Math.max(0, sy - 3); py <= Math.min(GRID_H - 1, sy + 3); py++) {
-                            for (let px = Math.max(0, sx - 3); px <= Math.min(GRID_W - 1, sx + 3); px++) {
-                                grid[py][px].pheromone = 0;
-                                grid[py][px].prob = 0;
-                            }
-                        }
-
-                        d.memory.push(s.id);
-
-                        // Adaptive Learning: increase sensor confidence
-                        const weights = sensorWeightsRef.current;
-                        (Object.keys(weights) as Array<keyof typeof INITIAL_SENSORS>).forEach(k => {
-                            weights[k].conf = Math.min(1.0, weights[k].conf + 0.04);
-                        });
-                        gridDataService.setSensorWeights({ ...weights });
-
-                        if (d.isConnected) addMessage(d.id, 'HIGH_SIGNAL', { survivorId: s.id });
-
-                        if (!pinsRef.current.find(p => p.id === s.id)) {
-                            pinsRef.current.push({ id: s.id, x: sx, y: sy, info: s.info });
-                        }
-
-                        d.mode = 'Wide';
-                        // Redeploy
-                        d.tx = Math.floor(GRID_W / 2);
-                        d.ty = Math.floor(GRID_H / 2);
-                    }
+                if (newProb >= THRESHOLD_FOUND && survivorAtSector) {
+                    finalizeDiscovery(survivorAtSector.id, d.id, sx, sy);
                 }
 
                 if (d.mode === 'Micro') {
@@ -1309,12 +1448,21 @@ const SimulationMapMCP: React.FC = () => {
 
                     // Micro moves to adjacent high-prob cells (including staying put if at peak)
                     if (d.mode === 'Micro') {
-                        const dirs = [[0, 0], [0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, -1], [-1, 1], [1, -1]];
+                        if (holdPositionForVerification) {
+                            d.tx = sx;
+                            d.ty = sy;
+                            return;
+                        }
+
+                        const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, -1], [-1, 1], [1, -1]];
 
                         let validDirs = dirs.filter(dir => {
                             const nx = sx + dir[0]; const ny = sy + dir[1];
                             return nx >= 0 && nx < GRID_W && ny >= 0 && ny < GRID_H;
                         });
+
+                        const nonPendingDirs = validDirs;
+                        if (nonPendingDirs.length > 0) validDirs = nonPendingDirs;
 
                         const filteredDirs = validDirs.filter(dir => {
                             const nx = sx + dir[0]; const ny = sy + dir[1];
@@ -1381,7 +1529,8 @@ const SimulationMapMCP: React.FC = () => {
                     const finalDx = targetDx + sepX;
                     const finalDy = targetDy + sepY;
                     angle = Math.atan2(finalDy, finalDx);
-                    totalMove = Math.min(moveSpeed, Math.sqrt(finalDx * finalDx + finalDy * finalDy));
+                    // Clip to moveSpeed and the PREVIOUSLY calculated totalMove (which has distToTarget constraint)
+                    totalMove = Math.min(totalMove, Math.sqrt(finalDx * finalDx + finalDy * finalDy));
                 }
 
                 d.x += Math.cos(angle) * totalMove;
@@ -1431,7 +1580,7 @@ const SimulationMapMCP: React.FC = () => {
         }
 
         // 3. ZONE PIPELINE (replaces old Global Swarm Planner)
-        if (timeRef.current % ZONE_PIPELINE_INTERVAL === 0 && timeRef.current > 0) {
+        if (!missionComplete && timeRef.current % ZONE_PIPELINE_INTERVAL === 0 && timeRef.current > 0) {
             // Convert grid to GridCell format for zone clustering
             const gridCells: GridCell[][] = grid.map(row =>
                 row.map(sec => ({
@@ -1453,7 +1602,11 @@ const SimulationMapMCP: React.FC = () => {
 
             // Step 3: Allocate drones to zones
             const allocatable = drones
-                .filter(d => d.mode !== 'Relay' && d.mode !== 'Charging')
+                .filter(d =>
+                    d.mode !== 'Relay' &&
+                    d.mode !== 'Charging' &&
+                    !aiDisconnectedRef.current.has(d.id)
+                )
                 .map(d => ({ id: d.id, x: d.x, y: d.y, battery: d.battery, mode: d.mode }));
 
             const missions = allocateDrones(allocatable, scoredZones, searchMemoryRef.current);
@@ -1463,6 +1616,7 @@ const SimulationMapMCP: React.FC = () => {
             for (const mission of missions) {
                 const drone = drones.find(d => d.id === mission.droneId);
                 if (!drone) continue;
+                if (aiDisconnectedRef.current.has(drone.id)) continue;
 
                 // Skip if drone is currently returning to base (low battery)
                 const distToBase = Math.sqrt(Math.pow(BASE_STATION.x - drone.x, 2) + Math.pow(BASE_STATION.y - drone.y, 2));
@@ -1511,6 +1665,14 @@ const SimulationMapMCP: React.FC = () => {
             }
         }
 
+        if (missionComplete && !missionStopHandledRef.current) {
+            const allAtBase = drones.every(d => Math.sqrt(Math.pow(d.x - BASE_STATION.x, 2) + Math.pow(d.y - BASE_STATION.y, 2)) < 0.5);
+            if (allAtBase) {
+                missionStopHandledRef.current = true;
+                setRunning(false);
+            }
+        }
+
         // Evaporate pheromones slowly
         grid.forEach(row => row.forEach(sec => {
             if (sec.pheromone > 0) sec.pheromone *= 0.99;
@@ -1540,7 +1702,7 @@ const SimulationMapMCP: React.FC = () => {
 
         setTickFlip(f => f + 1);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [syncToMcp, processMcpCommands]);
+    }, [syncToMcp, processMcpCommands, finalizeDiscovery]);
 
     useEffect(() => {
         let interval: ReturnType<typeof setInterval>;
@@ -1806,6 +1968,21 @@ const SimulationMapMCP: React.FC = () => {
                         {/* Drones */}
                         {dronesRef.current.map(d => (
                             <g key={d.id} transform={`translate(${d.x * CELL_SIZE + CELL_SIZE / 2}, ${d.y * CELL_SIZE + CELL_SIZE / 2})`}>
+                                {(() => {
+                                    const isAiDisconnected = aiDisconnectedRef.current.has(d.id);
+                                    const isRecentlyReconnected = (aiReconnectedUntilTickRef.current.get(d.id) ?? -1) > timeRef.current;
+                                    const droneColor = isAiDisconnected
+                                        ? '#ff4444'
+                                        : d.mode === 'Relay'
+                                            ? '#0077ff'
+                                            : d.mode === 'Wide'
+                                                ? '#00ffcc'
+                                                : d.mode === 'Charging'
+                                                    ? '#ffa500'
+                                                    : '#ff4444';
+
+                                    return (
+                                        <>
                                 {/* Scan Radius Indicator */}
                                 {d.mode !== 'Relay' && d.mode !== 'Charging' && (
                                     <circle
@@ -1822,14 +1999,18 @@ const SimulationMapMCP: React.FC = () => {
                                     <circle r={CELL_SIZE * 3.5} fill="transparent" stroke="#0077ff" strokeWidth="1" strokeDasharray="8" style={{ opacity: 0.2, animation: 'spin 8s linear infinite reverse' }} />
                                 )}
                                 {/* Drone blip */}
-                                <circle r="4" fill={!d.isConnected ? '#555555' : d.mode === 'Relay' ? '#0077ff' : d.mode === 'Wide' ? '#00ffcc' : d.mode === 'Charging' ? '#ffa500' : '#ff4444'} />
-                                <polygon points="0,-6 6,4 -6,4" fill={!d.isConnected ? '#555555' : d.mode === 'Relay' ? '#0077ff' : d.mode === 'Wide' ? '#00ffcc' : d.mode === 'Charging' ? '#ffa500' : '#ff4444'} />
+                                <circle r="4" fill={droneColor} />
+                                <polygon points="0,-6 6,4 -6,4" fill={droneColor} />
+                                {isRecentlyReconnected && !isAiDisconnected && (
+                                    <circle r="9" fill="transparent" stroke="#33ffaa" strokeWidth="1.5" strokeDasharray="3" style={{ opacity: 0.9 }} />
+                                )}
                                 {/* Label */}
                                 <rect x="-18" y="-22" width="36" height="12" fill="rgba(0,0,0,0.7)" rx="2" />
                                 <text x="0" y="-14" textAnchor="middle" fill="#fff" fontSize="8" fontFamily="var(--font-mono)">
                                     {d.id.replace('DRN-', '').replace('RLY-', 'R:')}
                                 </text>
-                                {!d.isConnected && <text x="10" y="0" fill="#ff4444" fontSize="8" fontFamily="var(--font-mono)">OFFLINE</text>}
+                                {isAiDisconnected && <text x="10" y="0" fill="#ff4444" fontSize="8" fontFamily="var(--font-mono)">DISCONNECTED</text>}
+                                {isRecentlyReconnected && !isAiDisconnected && <text x="10" y="0" fill="#33ffaa" fontSize="8" fontFamily="var(--font-mono)">REJOIN</text>}
                                 {/* Haversine Line visually tracking target */}
                                 {d.mode === 'Micro' && (
                                     <line
@@ -1838,6 +2019,9 @@ const SimulationMapMCP: React.FC = () => {
                                         stroke="#ff4444" strokeWidth="1" strokeDasharray="2" style={{ opacity: 0.4 }}
                                     />
                                 )}
+                                        </>
+                                    );
+                                })()}
                             </g>
                         ))}
 
@@ -1865,7 +2049,7 @@ const SimulationMapMCP: React.FC = () => {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #ff4444' }}></div> Micro-Scan Mode</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #0077ff' }}></div> Relay Drone</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #ffa500' }}></div> Charging</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #555555' }}></div> Disconnected</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #ff4444' }}></div> Disconnected</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#00ffcc' }}><MapPin size={12} /> Confirmed Survivor</div>
                         </div>
                     </div>
@@ -1926,16 +2110,36 @@ const SimulationMapMCP: React.FC = () => {
                         <div style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             {dronesRef.current.map((d, i) => {
                                 const batColor = d.battery > 50 ? '#00ffcc' : d.battery > 20 ? '#ffff00' : '#ff4444';
+                                const isAiDisconnected = aiDisconnectedRef.current.has(d.id);
+                                const isRecentlyReconnected = (aiReconnectedUntilTickRef.current.get(d.id) ?? -1) > timeRef.current;
+                                const statusColor = isAiDisconnected
+                                    ? '#ff4444'
+                                    : d.mode === 'Wide'
+                                        ? '#00ffcc'
+                                        : d.mode === 'Relay'
+                                            ? '#0077ff'
+                                            : d.mode === 'Charging'
+                                                ? '#ffa500'
+                                                : '#ff4444';
                                 return (
                                     <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--panel-border)' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                            {d.mode === 'Wide' ? <Target size={14} color="#00ffcc" /> : d.mode === 'Relay' ? <Radio size={14} color="#0077ff" /> : d.mode === 'Charging' ? <Activity size={14} color="#ffa500" /> : <Crosshair size={14} color="#ff4444" />}
-                                            {d.id}
+                                            <button
+                                                onClick={() => {
+                                                    if (!isAiDisconnected) triggerFailureEvent(d.id);
+                                                }}
+                                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}
+                                            >
+                                                {isAiDisconnected ? <WifiOff size={14} color="#ff4444" /> : <Wifi size={14} color="#00ffcc" />}
+                                            </button>
+                                            <span style={{ color: isAiDisconnected ? '#ff4444' : '#00ffcc', fontWeight: 700 }}>
+                                                {d.id}
+                                            </span>
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                             <div style={{ color: batColor, fontSize: '0.7rem' }}>{Math.floor(d.battery)}%</div>
-                                            <div style={{ color: !d.isConnected ? '#555555' : d.mode === 'Wide' ? '#00ffcc' : d.mode === 'Relay' ? '#0077ff' : d.mode === 'Charging' ? '#ffa500' : '#ff4444', minWidth: '55px', textAlign: 'right' }}>
-                                                {!d.isConnected ? 'OFFLINE' : d.mode}
+                                            <div style={{ color: statusColor, minWidth: '85px', textAlign: 'right' }}>
+                                                {isAiDisconnected ? 'DISCONNECTED' : isRecentlyReconnected ? 'RECONNECTED' : d.mode}
                                             </div>
                                         </div>
                                     </div>
@@ -1943,12 +2147,64 @@ const SimulationMapMCP: React.FC = () => {
                             })}
                         </div>
                     </div>
+
+                    {/* Simulate Failure Panel */}
+                    <div className="hud-panel" style={{ padding: '16px', background: 'rgba(255, 136, 0, 0.05)', border: '1px solid var(--panel-border)' }}>
+                        <h4 className="hud-text" style={{ fontSize: '0.85rem', color: '#ff8800', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', letterSpacing: '1px' }}>
+                            <WifiOff size={16} /> SIMULATE FAILURE
+                        </h4>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                            {dronesRef.current.map((d) => {
+                                const droneColor = '#00ffcc';
+                                const isAiDisconnected = aiDisconnectedRef.current.has(d.id);
+                                const isRecentlyReconnected = (aiReconnectedUntilTickRef.current.get(d.id) ?? -1) > timeRef.current;
+                                return (
+                                    <button
+                                        key={d.id}
+                                        onClick={() => triggerFailureEvent(d.id)}
+                                        disabled={isAiDisconnected}
+                                        style={{
+                                            background: 'rgba(0,0,0,0.3)',
+                                            border: `1px solid ${isAiDisconnected ? '#ff4444' : isRecentlyReconnected ? '#33ffaa' : droneColor}`,
+                                            padding: '8px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '8px',
+                                            cursor: isAiDisconnected ? 'not-allowed' : 'pointer',
+                                            transition: 'all 0.2s',
+                                            borderRadius: '2px',
+                                            opacity: isAiDisconnected ? 0.7 : 1
+                                        }}
+                                    >
+                                        <WifiOff size={12} style={{ color: isAiDisconnected ? '#ff4444' : 'var(--text-secondary)', opacity: isAiDisconnected ? 1 : 0.3 }} />
+                                        <span style={{
+                                            color: isAiDisconnected ? '#ff4444' : isRecentlyReconnected ? '#33ffaa' : droneColor,
+                                            fontSize: '0.75rem',
+                                            fontWeight: 700,
+                                            fontFamily: 'var(--font-mono)'
+                                        }}>
+                                            {d.id}
+                                        </span>
+                                        <div style={{
+                                            width: '6px',
+                                            height: '6px',
+                                            borderRadius: '50%',
+                                            background: isAiDisconnected ? '#ff4444' : isRecentlyReconnected ? '#33ffaa' : droneColor,
+                                            boxShadow: isAiDisconnected ? '0 0 8px #ff4444' : `0 0 8px ${isRecentlyReconnected ? '#33ffaa' : droneColor}`
+                                        }} className={!isAiDisconnected ? 'animate-pulse' : ''} />
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
                     {/* Swarm Strategy Analytics Overhaul */}
                     <div className="hud-panel" style={{ padding: '16px', background: 'rgba(0, 255, 204, 0.05)', border: '1px solid var(--panel-border)' }}>
                         <h4 className="hud-text" style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', letterSpacing: '1px' }}>
                             SWARM STRATEGY ANALYTICS
                         </h4>
-                        
+
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                             {/* Metric: Zone Coverage */}
                             <div style={{ padding: '10px', border: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.4)', position: 'relative', overflow: 'hidden' }}>
