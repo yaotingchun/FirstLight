@@ -111,25 +111,53 @@ function buildStateSummary(): string {
         })
         .join(', ');
 
+    const isReturningToBase = (drone: typeof drones[number]): boolean => {
+        if (drone.mode === 'Charging') return false;
+
+        const targetIsBase =
+            Math.round(drone.target?.x ?? -1) === BASE_X &&
+            Math.round(drone.target?.y ?? -1) === BASE_Y;
+
+        if (!targetIsBase) return false;
+
+        const distToBase = Math.sqrt(
+            Math.pow(drone.position.x - BASE_X, 2) +
+            Math.pow(drone.position.y - BASE_Y, 2)
+        );
+
+        return distToBase > 0.35;
+    };
+
     const droneSummary = drones
         .map(d => {
-            const isReturning = d.position.x !== BASE_X && d.position.y !== BASE_Y && Math.round(d.target?.x ?? -1) === BASE_X && Math.round(d.target?.y ?? -1) === BASE_Y;
+            const isReturning = isReturningToBase(d);
             return `${d.id}: pos=(${d.position.x},${d.position.y}) mode=${d.mode} battery=${d.battery.toFixed(1)}% active=${d.isActive}${isReturning ? ' <RETURNING>' : ''}`;
         })
         .join('\n');
 
     // Relay and network state
-    const relayDrones = drones.filter(d => d.mode === 'Relay' && d.isActive);
+    const relayDrones = drones.filter(d => d.id.startsWith('RLY-') && d.isActive);
     const disconnectedDrones = drones.filter(d => d.isActive && !d.isConnected && d.mode !== 'Relay');
     const networkTopology = droneStore.getNetworkTopology();
     const swarmKnowledge = droneStore.getSwarmKnowledge();
 
+    const relayReturning = relayDrones.filter(r => isReturningToBase(r));
+    const relayField = relayDrones.find(r => r.mode === 'Relay' && !isReturningToBase(r));
+    const relayStandby = relayDrones.find(r => r.id !== relayField?.id && r.mode === 'Charging');
+
     const relaySummary = relayDrones.length > 0
         ? relayDrones.map(r => {
-            const isReturning = r.position.x !== BASE_X && r.position.y !== BASE_Y && Math.round(r.target?.x ?? -1) === BASE_X && Math.round(r.target?.y ?? -1) === BASE_Y;
-            return `${r.id}: pos=(${r.position.x.toFixed(1)},${r.position.y.toFixed(1)}) battery=${r.battery.toFixed(1)}%${isReturning ? ' <RETURNING>' : ''}`;
+            const isReturning = isReturningToBase(r);
+            return `${r.id}: pos=(${r.position.x.toFixed(1)},${r.position.y.toFixed(1)}) mode=${r.mode} battery=${r.battery.toFixed(1)}%${isReturning ? ' <RETURNING>' : ''}`;
         }).join('\n')
         : '(no relay drones)';
+
+    const relayRoleSummary = [
+        `fieldRelay=${relayField ? relayField.id : 'none'}`,
+        `standbyRelay=${relayStandby ? relayStandby.id : 'none'}`,
+        `returningRelays=${relayReturning.length > 0 ? relayReturning.map(r => r.id).join(',') : 'none'}`,
+        'handoff=autonomous',
+    ].join(' ');
 
     const networkHealth = networkTopology
         ? `chain=${networkTopology.relayChain.join('→')} connected=${networkTopology.connectedDrones.length} disconnected=${networkTopology.disconnectedDrones.length} buffered=${networkTopology.bufferedDataSize}B`
@@ -150,6 +178,7 @@ function buildStateSummary(): string {
         '',
         'RELAY NETWORK:',
         relaySummary,
+        `RelayRoles: ${relayRoleSummary}`,
         `Network: ${networkHealth}`,
         `Disconnected: ${disconnectedDrones.length > 0 ? disconnectedDrones.map(d => d.id).join(', ') : 'none'}`,
         '',
@@ -176,20 +205,26 @@ function parseDecision(raw: string): ParsedDecision | null {
             const actionLines = actionMatch[1].split('\n').filter(line => line.trim().length > 0);
 
             for (const line of actionLines) {
-                const text = line.trim();
+                const text = line.trim().replace(/^[-*]\s+/, '').replace(/^\d+\.\s+/, '');
 
                 // Extremely simple "function call" parser for the action list
                 // e.g., move_drone("DRN-Alpha", 5, 5) or set_drone_mode("DRN-Beta", "Wide")
 
                 if (text.startsWith('move_drone')) {
-                    const match = text.match(/move_drone\s*\(\s*(['"]?)([^'",]+)\1\s*,\s*(\d+)\s*,\s*(\d+)/i);
-                    if (match) actions.push({ type: 'move_drone', droneId: match[2], x: parseInt(match[3], 10), y: parseInt(match[4], 10) });
+                    const match = text.match(/move_drone\s*\(\s*(['"]?)([^'",]+)\1\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/i);
+                    if (match) actions.push({ type: 'move_drone', droneId: match[2], x: parseFloat(match[3]), y: parseFloat(match[4]) });
                 } else if (text.startsWith('set_drone_mode')) {
                     const match = text.match(/set_drone_mode\s*\(\s*(['"]?)([^'",]+)\1\s*,\s*(['"]?)([^'",]+)\3/i);
                     if (match) actions.push({ type: 'set_drone_mode', droneId: match[2], mode: match[4] as 'Wide' | 'Micro' | 'Relay' | 'Charging' });
                 } else if (text.startsWith('recall_drone')) {
                     const match = text.match(/recall_drone\s*\(\s*(['"]?)([^'",()]+)\1/i);
                     if (match) actions.push({ type: 'recall_drone', droneId: match[2] });
+                } else if (text.startsWith('move_relay')) {
+                    const match = text.match(/move_relay\s*\(\s*(['"]?)([^'",]+)\1\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/i);
+                    if (match) actions.push({ type: 'move_relay', relayId: match[2], x: parseFloat(match[3]), y: parseFloat(match[4]) });
+                } else if (text.startsWith('replace_relay')) {
+                    const match = text.match(/replace_relay\s*\(\s*(['"]?)([^'",)]+)\1/i);
+                    if (match) actions.push({ type: 'replace_relay', relayId: match[2] });
                 } else if (text.startsWith('deploy_team')) {
                     const match = text.match(/deploy_team\s*\(\s*(['"]?)([^'",]*)\1\s*,\s*(\d+)\s*,\s*(\d+)/i);
                     // Handle case where team string might be omitted
@@ -445,22 +480,28 @@ move_drone("DRN-ID", x, y)
 set_drone_mode("DRN-ID", "Wide" | "Micro" | "Relay" | "Charging")
 recall_drone("DRN-ID")
 deploy_team("TeamName", x, y)
+move_relay("RLY-ID", x, y)
+replace_relay("RLY-ID")
+broadcast_swarm("RECRUIT" | "MICRO_SCAN" | "REDISTRIBUTE" | "RTB_ALL")
 set_simulation_state(true|false)
 reset_simulation()
 no_action()
 </Action>
 
 Critical rules:
+- Reasoning voice must be autonomous. Never write phrases like "the user requested" or "user has requested". Base decisions on mission state and telemetry only.
 - Provide explicit percentages: When discussing scan progress, state the exact percentage (e.g., "Scan Progress: 9.5%") instead of using vague phrases like "very low" or "moderate".
 - Natural phrasing for findings: Never literally mention "img=" or "finding=" or quote image paths. Use natural language: "A survivor has been confirmed at C13(2,12)" or "A thermal signature was detected at B4".
 - Never invent drone IDs; use only synced drones from state.
+- Every action line must use full function syntax with required parameters (e.g., replace_relay("RLY-Prime"), not just replace_relay).
 - BATTERY CRITICAL (below 10% or negative): immediately emit recall_drone for that drone. This is the highest priority.
 - BATTERY LOW (below 20%): emit recall_drone unless the drone is already heading to base.
 - DISCONNECTED DRONES: if disconnected drones > 0, emit move_relay to bridge communication gap.
 - RELAY BATTERY LOW (below 25%): emit replace_relay immediately, UNLESS it is <RETURNING>.
+- Relay handoff is AUTONOMOUS. If RelayRoles shows a valid field relay and another relay is <RETURNING> or Charging at base, DO NOT issue replace_relay; describe it as autonomous handoff in progress and focus actions on search drones.
 - MODE LOCK (Strict Role Separation): 
     1. NEVER use set_drone_mode on 'RLY-' drones to change them to 'Wide' or 'Micro'. Relay drones stay in Relay/Charging.
-    2. NEVER use set_drone_mode on search drones ('D1'-'D8') to change them to 'Relay'. Search drones stay in Wide/Micro/Charging.
+    2. NEVER use set_drone_mode on search drones ('DRN-Alpha','DRN-Beta','DRN-Gamma','DRN-Delta') to change them to 'Relay'. Search drones stay in Wide/Micro/Charging.
 - MISSION COMPLETION RULES:
   1. If scanProgress < 100%, continue searching normally.
   2. If scanProgress >= 100% and ANY drone is still in "Micro" mode, wait and let them finish (no_action, or move them closer to signals). DO NOT recall them.

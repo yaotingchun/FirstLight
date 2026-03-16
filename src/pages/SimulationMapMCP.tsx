@@ -76,6 +76,10 @@ type SwarmMessage = {
 const COMM_RANGE_DRONE = 5;
 const COMM_RANGE_RELAY = 10;
 const COMM_RANGE_BASE = 12;
+const RELAY_LOW_BATTERY_THRESHOLD = 25;
+const RELAY_TAKEOVER_MIN_BATTERY = 95;
+const RELAY_BASE_DOCK_EPSILON = 0.4;
+const RELAY_DEFAULT_TARGET = { x: 9.8, y: 10.0 };
 
 const BASE_STATION = { id: 'BASE', x: 9.5, y: 19 };
 
@@ -357,6 +361,9 @@ const SimulationMapMCP: React.FC = () => {
     const aiDisconnectedRef = useRef<Set<string>>(new Set());
     const aiReconnectAttemptTickRef = useRef<Map<string, number>>(new Map());
     const aiReconnectedUntilTickRef = useRef<Map<string, number>>(new Map());
+    const relayTakeoverTargetRef = useRef<{ x: number; y: number }>({ ...RELAY_DEFAULT_TARGET });
+    const relaySwapCooldownUntilTickRef = useRef<number>(0);
+    const lastFieldRelayIdRef = useRef<string>('RLY-Prime');
 
     const missionReturnTriggeredRef = useRef(false);
     const missionStopHandledRef = useRef(false);
@@ -452,6 +459,10 @@ const SimulationMapMCP: React.FC = () => {
         const decision = result.decision;
         if (decision) {
             const actions = decision.actions ?? [];
+            const normalizedReasoning = decision.reasoning
+                .replace(/\b[Tt]he user has requested\b/g, 'Mission context indicates')
+                .replace(/\b[Tt]he user requested\b/g, 'Mission context indicates')
+                .replace(/\b[Ii] will\b/g, 'AI will');
             const actionSummary = actions
                 .map((a) => {
                     const type = String(a.type ?? 'unknown');
@@ -461,8 +472,26 @@ const SimulationMapMCP: React.FC = () => {
                     if (type === 'set_drone_mode') {
                         return `${type}(${String(a.droneId ?? '?')} -> ${String(a.mode ?? '?')})`;
                     }
+                    if (type === 'recall_drone') {
+                        return `${type}(${String(a.droneId ?? '?')})`;
+                    }
+                    if (type === 'move_relay') {
+                        return `${type}(${String(a.relayId ?? '?')} -> ${String(a.x ?? '?')},${String(a.y ?? '?')})`;
+                    }
+                    if (type === 'replace_relay') {
+                        return `${type}(${String(a.relayId ?? '?')})`;
+                    }
+                    if (type === 'broadcast_swarm') {
+                        return `${type}(${String(a.command ?? '?')})`;
+                    }
+                    if (type === 'deploy_team') {
+                        return `${type}(${String(a.x ?? '?')},${String(a.y ?? '?')})`;
+                    }
                     if (type === 'set_simulation_state') {
                         return `${type}(${String(a.running ?? '?')})`;
+                    }
+                    if (type === 'no_action') {
+                        return `${type}(${String(a.reason ?? 'none')})`;
                     }
                     return type;
                 })
@@ -474,7 +503,7 @@ const SimulationMapMCP: React.FC = () => {
                     ...cleaned,
                     {
                         role: 'ai',
-                        text: `[${(decision.priority ?? 'medium').toUpperCase()}]\n${decision.reasoning}\n\nActions:\n- ${actionSummary || 'None'}`
+                        text: `[${(decision.priority ?? 'medium').toUpperCase()}]\n${normalizedReasoning}\n\nActions:\n- ${actionSummary || 'None'}`
                     }
                 ];
             });
@@ -675,6 +704,10 @@ const SimulationMapMCP: React.FC = () => {
                     const newRelay = drones.find(d => d.id === newRelayId);
                     
                     if (oldRelay && newRelay) {
+                        relayTakeoverTargetRef.current = {
+                            x: targetX as number,
+                            y: targetY as number,
+                        };
                         // 1. Activate backup
                         newRelay.mode = 'Relay';
                         newRelay.tx = targetX as number;
@@ -725,9 +758,13 @@ const SimulationMapMCP: React.FC = () => {
                     const x = cmd.params.x as number;
                     const y = cmd.params.y as number;
                     const drone = drones.find(d => d.id === relayId);
-                    if (drone && drone.mode === 'Relay') {
+                    if (drone && drone.id.startsWith('RLY-')) {
+                        if (drone.mode === 'Charging') {
+                            drone.mode = 'Relay';
+                        }
                         drone.tx = x;
                         drone.ty = y;
+                        relayTakeoverTargetRef.current = { x, y };
                     }
                     break;
                 }
@@ -875,6 +912,9 @@ const SimulationMapMCP: React.FC = () => {
         aiDisconnectedRef.current.clear();
         aiReconnectAttemptTickRef.current.clear();
         aiReconnectedUntilTickRef.current.clear();
+        relayTakeoverTargetRef.current = { ...RELAY_DEFAULT_TARGET };
+        relaySwapCooldownUntilTickRef.current = 0;
+        lastFieldRelayIdRef.current = 'RLY-Prime';
         // Reset zone planning state
         zonesRef.current = [];
         searchMemoryRef.current = createSearchMemory();
@@ -1090,6 +1130,61 @@ const SimulationMapMCP: React.FC = () => {
         const BASE_X = BASE_STATION.x;
         const BASE_Y = BASE_STATION.y;
 
+        const relayDrones = drones.filter(d => d.id.startsWith('RLY-'));
+        const isNearBase = (drone: Drone) => Math.sqrt(Math.pow(drone.x - BASE_X, 2) + Math.pow(drone.y - BASE_Y, 2)) <= RELAY_BASE_DOCK_EPSILON;
+        const isReturningToBase = (drone: Drone) =>
+            drone.mode === 'Relay' &&
+            Math.sqrt(Math.pow(drone.tx - BASE_X, 2) + Math.pow(drone.ty - BASE_Y, 2)) <= 0.35;
+        const isFieldRelay = (drone: Drone) => drone.mode === 'Relay' && !isReturningToBase(drone);
+
+        const activeFieldRelay = relayDrones.find(isFieldRelay);
+        if (activeFieldRelay) {
+            relayTakeoverTargetRef.current = { x: activeFieldRelay.tx, y: activeFieldRelay.ty };
+            lastFieldRelayIdRef.current = activeFieldRelay.id;
+        }
+
+        if (timeRef.current >= relaySwapCooldownUntilTickRef.current) {
+            const outgoingRelay = relayDrones.find(d => isFieldRelay(d) && d.battery <= RELAY_LOW_BATTERY_THRESHOLD);
+
+            if (outgoingRelay) {
+                const standbyRelay = relayDrones.find(d =>
+                    d.id !== outgoingRelay.id &&
+                    d.mode === 'Charging' &&
+                    d.battery >= RELAY_TAKEOVER_MIN_BATTERY &&
+                    isNearBase(d)
+                );
+
+                if (standbyRelay && mcpConnected && !aiBusyRef.current) {
+                    const takeoverTarget = { x: outgoingRelay.tx, y: outgoingRelay.ty };
+                    relayTakeoverTargetRef.current = takeoverTarget;
+                    relaySwapCooldownUntilTickRef.current = timeRef.current + 20;
+
+                    void runOrchestratorPrompt(
+                        `Relay handoff decision required. ${outgoingRelay.id} battery is ${outgoingRelay.battery.toFixed(1)}% (<= ${RELAY_LOW_BATTERY_THRESHOLD}%) at target (${takeoverTarget.x.toFixed(1)}, ${takeoverTarget.y.toFixed(1)}). ${standbyRelay.id} is ready at base with ${standbyRelay.battery.toFixed(1)}% battery. Decide now: replace relay if needed, otherwise no_action with reason.`,
+                        'auto'
+                    );
+                }
+            }
+        }
+
+        if (!relayDrones.some(isFieldRelay) && timeRef.current >= relaySwapCooldownUntilTickRef.current) {
+            const readyRelays = relayDrones.filter(d =>
+                d.mode === 'Charging' &&
+                d.battery >= RELAY_TAKEOVER_MIN_BATTERY &&
+                isNearBase(d)
+            );
+
+            if (readyRelays.length > 0 && mcpConnected && !aiBusyRef.current) {
+                const preferred = readyRelays.find(r => r.id !== lastFieldRelayIdRef.current) ?? readyRelays[0];
+                relaySwapCooldownUntilTickRef.current = timeRef.current + 20;
+
+                void runOrchestratorPrompt(
+                    `Relay coverage decision required. No active field relay is currently deployed. ${preferred.id} is ready at base (${preferred.battery.toFixed(1)}% battery). Preferred relay target is (${relayTakeoverTargetRef.current.x.toFixed(1)}, ${relayTakeoverTargetRef.current.y.toFixed(1)}). Decide whether to deploy this relay to restore coverage or no_action with reason.`,
+                    'auto'
+                );
+            }
+        }
+
         drones.forEach(d => {
             // --- Staggered Departure Gate ---
             if (d.startTick !== undefined && timeRef.current < d.startTick) return;
@@ -1199,6 +1294,9 @@ const SimulationMapMCP: React.FC = () => {
                 const relayDistToTarget = Math.sqrt(Math.pow(d.tx - d.x, 2) + Math.pow(d.ty - d.y, 2));
                 
                 if (relayDistToTarget < 0.3 && d.tx === BASE_X && d.ty === BASE_Y) {
+                    // Snap to base coordinates on dock to avoid lingering near-base RETURNING state.
+                    d.x = BASE_X;
+                    d.y = BASE_Y;
                     d.mode = 'Charging';
                     return;
                 }
@@ -1702,7 +1800,7 @@ const SimulationMapMCP: React.FC = () => {
 
         setTickFlip(f => f + 1);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [syncToMcp, processMcpCommands, finalizeDiscovery]);
+    }, [syncToMcp, processMcpCommands, finalizeDiscovery, mcpConnected, runOrchestratorPrompt]);
 
     useEffect(() => {
         let interval: ReturnType<typeof setInterval>;
