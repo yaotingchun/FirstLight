@@ -1,12 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { MutableRefObject, Dispatch, SetStateAction } from 'react';
 import * as mcpClient from '../services/mcpClient';
-import type {
-    Drone, Sector, FoundPin, OrchestratorChatMessage
-} from '../types/simulation';
-import {
-    MCP_SYNC_INTERVAL, AI_DECISION_INTERVAL_MS, AI_DECISION_POLL_MS, GRID_W, GRID_H, BASE_STATION
-} from '../types/simulation';
+import type { Sector, Drone, FoundPin, OrchestratorChatMessage } from '../types/simulation';
+import { BASE_STATION } from '../types/simulation';
 
 export const useSimulationMCP = (
     timeRef: MutableRefObject<number>,
@@ -35,7 +31,6 @@ export const useSimulationMCP = (
     const chatResizeRef = useRef({ isResizing: false, startWidth: 0, startHeight: 0, startX: 0, startY: 0, startPosX: 0, startPosY: 0 });
     const [chatInput, setChatInput] = useState('');
     const [chatSending, setChatSending] = useState(false);
-    const aiLastRunRef = useRef(0);
     const chatScrollRef = useRef<HTMLDivElement | null>(null);
     const [chatMessages, setChatMessages] = useState<OrchestratorChatMessage[]>([
         { role: 'system', text: 'AI chat ready. Ask status or issue commands (e.g. "move DRN-Alpha to 5,8"). Use THINK NOW to force one AI decision cycle.' }
