@@ -1,0 +1,1027 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { gridDataService, INITIAL_SENSORS } from '../services/gridDataService';
+import { clusterZones, getZoneForCell } from '../utils/zoneClustering';
+import type { SearchZone, GridCell } from '../utils/zoneClustering';
+import { scoreZones } from '../utils/zoneScoring';
+import { allocateDrones } from '../utils/zoneAllocator';
+import type { DroneMission } from '../utils/zoneAllocator';
+import { createSearchMemory, recordCellScan } from '../utils/searchMemory';
+import type { SearchMemory } from '../utils/searchMemory';
+import {
+    createGrid, createDrones, createSurvivors
+} from '../utils/simulationSetup';
+import {
+    GRID_W, GRID_H, THRESHOLD_MICRO, THRESHOLD_FOUND, SIM_TICK_MS,
+    ZONE_PIPELINE_INTERVAL, COMM_RANGE_DRONE,
+    COMM_RANGE_RELAY, COMM_RANGE_BASE, RELAY_LOW_BATTERY_THRESHOLD,
+    RELAY_TAKEOVER_MIN_BATTERY, RELAY_BASE_DOCK_EPSILON, RELAY_DEFAULT_TARGET,
+    BASE_STATION
+} from '../types/simulation';
+import type { Sector, Drone, SwarmMessage, CommEdge, HiddenSurvivor, FoundPin, FailureEvent } from '../types/simulation';
+
+export const useSimulationEngine = (
+    onFailureEventTriggered: (eventPayload: { type: string; droneId: string }) => void,
+    onSimRunningToggle: (nextRunning: boolean, tick: number) => void
+) => {
+    const [running, setRunning] = useState(false);
+    const [speed, setSpeed] = useState(1);
+    const [, setTickFlip] = useState(0);
+    const [selectedPin, setSelectedPin] = useState<FoundPin | null>(null);
+    const [showSensors, setShowSensors] = useState(false);
+
+    const initialSurvivors = createSurvivors();
+    const gridRef = useRef<Sector[][]>(createGrid(initialSurvivors));
+    const dronesRef = useRef<Drone[]>(createDrones());
+    const survivorsRef = useRef<HiddenSurvivor[]>(initialSurvivors);
+    const pinsRef = useRef<FoundPin[]>([]);
+    const timeRef = useRef<number>(0);
+    const commLinksRef = useRef<CommEdge[]>([]);
+    const swarmMessagesRef = useRef<SwarmMessage[]>([]);
+    const sensorWeightsRef = useRef(gridDataService.getSensorWeights());
+    
+    const autoRecallThresholdsRef = useRef<Map<string, number>>(new Map());
+    const failureEventsRef = useRef<FailureEvent[]>([]);
+    const aiDisconnectedRef = useRef<Set<string>>(new Set());
+    const aiReconnectAttemptTickRef = useRef<Map<string, number>>(new Map());
+    const aiReconnectedUntilTickRef = useRef<Map<string, number>>(new Map());
+    const relayTakeoverTargetRef = useRef<{ x: number; y: number }>({ ...RELAY_DEFAULT_TARGET });
+    const relaySwapCooldownUntilTickRef = useRef<number>(0);
+    const lastFieldRelayIdRef = useRef<string>('RLY-Prime');
+
+    const missionReturnTriggeredRef = useRef(false);
+    const missionStopHandledRef = useRef(false);
+
+    const zonesRef = useRef<SearchZone[]>([]);
+    const searchMemoryRef = useRef<SearchMemory>(createSearchMemory());
+    const activeMissionsRef = useRef<DroneMission[]>([]);
+    const metricsRef = useRef({
+        repeatedScanRate: 0,
+        averageZoneCoverage: 0,
+        missionTimeSec: 0,
+        meanProbabilityScanned: 0,
+        totalScans: 0,
+        totalUniqueScans: 0,
+        totalRepeatScans: 0,
+        uniqueProbSum: 0,
+    });
+
+    const triggerFailureEvent = useCallback((droneId: string) => {
+        if (aiDisconnectedRef.current.has(droneId)) return;
+
+        const event: FailureEvent = {
+            type: 'DRONE_CONNECTION_LOST',
+            droneId,
+            tick: timeRef.current,
+        };
+
+        failureEventsRef.current.push(event);
+
+        const eventPayload = { type: 'DRONE_CONNECTION_LOST', droneId };
+        onFailureEventTriggered(eventPayload);
+        setTickFlip(f => f + 1);
+    }, [onFailureEventTriggered]);
+
+    const toggleRunning = useCallback(() => {
+        const nextRunning = !running;
+        setRunning(nextRunning);
+        onSimRunningToggle(nextRunning, timeRef.current);
+    }, [running, onSimRunningToggle]);
+
+    useEffect(() => {
+        if (gridDataService.isTerrainReady()) {
+            const newSurvivors = createSurvivors();
+            const newGrid = createGrid(newSurvivors);
+            gridRef.current = newGrid;
+            survivorsRef.current = newSurvivors;
+            setTickFlip(f => f + 1);
+        } else {
+            gridDataService.onTerrainReady(() => {
+                const newSurvivors = createSurvivors();
+                const newGrid = createGrid(newSurvivors);
+                gridRef.current = newGrid;
+                survivorsRef.current = newSurvivors;
+                setTickFlip(f => f + 1);
+            });
+        }
+    }, []);
+
+    const finalizeDiscovery = useCallback((survivorId: string, droneId: string, sx: number, sy: number) => {
+        const survivors = survivorsRef.current;
+        const grid = gridRef.current;
+        const survivor = survivors.find(s => s.id === survivorId && !s.found);
+        if (!survivor) return;
+
+        survivor.found = true;
+
+        for (let py = Math.max(0, sy - 3); py <= Math.min(GRID_H - 1, sy + 3); py++) {
+            for (let px = Math.max(0, sx - 3); px <= Math.min(GRID_W - 1, sx + 3); px++) {
+                grid[py][px].pheromone = 0;
+                grid[py][px].prob = 0;
+            }
+        }
+
+        const drone = dronesRef.current.find(d => d.id === droneId);
+        if (drone) {
+            drone.memory.push(survivor.id);
+
+            const weights = sensorWeightsRef.current;
+            (Object.keys(weights) as Array<keyof typeof INITIAL_SENSORS>).forEach(k => {
+                weights[k].conf = Math.min(1.0, weights[k].conf + 0.04);
+            });
+            gridDataService.setSensorWeights({ ...weights });
+
+            if (drone.isConnected) {
+                swarmMessagesRef.current.push({
+                    id: Math.random().toString(36).substring(2, 9),
+                    sender: drone.id,
+                    time: timeRef.current,
+                    type: 'HIGH_SIGNAL',
+                    payload: { survivorId: survivor.id }
+                });
+            }
+
+            drone.mode = 'Wide';
+            drone.tx = Math.floor(GRID_W / 2);
+            drone.ty = Math.floor(GRID_H / 2);
+        }
+
+        if (!pinsRef.current.find(p => p.id === survivor.id)) {
+            pinsRef.current.push({ id: survivor.id, x: sx, y: sy, info: survivor.info });
+        }
+    }, []);
+
+    const resetSim = () => {
+        setRunning(false);
+        gridDataService.releaseSource();
+        const newSurvivors = createSurvivors();
+        const newGrid = createGrid(newSurvivors);
+        gridRef.current = newGrid;
+        dronesRef.current = createDrones();
+        survivorsRef.current = newSurvivors;
+        pinsRef.current = [];
+        commLinksRef.current = [];
+        swarmMessagesRef.current = [];
+        sensorWeightsRef.current = JSON.parse(JSON.stringify(INITIAL_SENSORS));
+        gridDataService.setSensorWeights(sensorWeightsRef.current);
+        timeRef.current = 0;
+
+        missionReturnTriggeredRef.current = false;
+        missionStopHandledRef.current = false;
+        autoRecallThresholdsRef.current.clear();
+        failureEventsRef.current = [];
+        aiDisconnectedRef.current.clear();
+        aiReconnectAttemptTickRef.current.clear();
+        aiReconnectedUntilTickRef.current.clear();
+        relayTakeoverTargetRef.current = { ...RELAY_DEFAULT_TARGET };
+        relaySwapCooldownUntilTickRef.current = 0;
+        lastFieldRelayIdRef.current = 'RLY-Prime';
+        
+        zonesRef.current = [];
+        searchMemoryRef.current = createSearchMemory();
+        activeMissionsRef.current = [];
+        metricsRef.current = {
+            repeatedScanRate: 0, 
+            averageZoneCoverage: 0, 
+            missionTimeSec: 0,
+            meanProbabilityScanned: 0, 
+            totalScans: 0, 
+            totalUniqueScans: 0,
+            totalRepeatScans: 0, 
+            uniqueProbSum: 0,
+        };
+        setSelectedPin(null);
+        setTickFlip(f => f + 1);
+    };
+
+    const getEffectiveWeight = (key: keyof typeof INITIAL_SENSORS) => {
+        const w = sensorWeightsRef.current[key];
+        return w.base * w.conf;
+    };
+
+    const getSectorProbability = (x: number, y: number) => {
+        const sector = gridRef.current[y][x];
+        const signals = sector.signals;
+
+        const score = (getEffectiveWeight('mobile') * signals.mobile) +
+            (getEffectiveWeight('wifi') * signals.wifi) +
+            (getEffectiveWeight('thermal') * signals.thermal) +
+            (getEffectiveWeight('sound') * signals.sound);
+
+        const sumWeights = getEffectiveWeight('mobile') + getEffectiveWeight('wifi') + getEffectiveWeight('thermal') + getEffectiveWeight('sound');
+        return score / sumWeights;
+    };
+
+    const performTickCore = useCallback((onMcpSyncRequest: () => void, onMcpCommandProcessRequest: () => void, onRelaySwapDecisionMade: (preferredId: string, msg: string) => void) => {
+        timeRef.current++;
+        aiReconnectedUntilTickRef.current.forEach((untilTick, droneId) => {
+            if (untilTick <= timeRef.current) aiReconnectedUntilTickRef.current.delete(droneId);
+        });
+        const grid = gridRef.current;
+        const drones = dronesRef.current;
+        const survivors = survivorsRef.current;
+        const messages = swarmMessagesRef.current;
+
+        if (messages.length > 5) swarmMessagesRef.current = messages.slice(messages.length - 5);
+
+        const addMessage = (droneId: string, type: 'HIGH_SIGNAL' | 'REQUEST_ASSIST' | 'MAP_SHARE', payload: Record<string, unknown>) => {
+            swarmMessagesRef.current.push({
+                id: Math.random().toString(36).substring(2, 9),
+                sender: droneId,
+                time: timeRef.current,
+                type,
+                payload
+            });
+        };
+
+        const totalCells = GRID_W * GRID_H;
+        const scannedCells = grid.reduce((sum, row) => sum + row.filter(sec => sec.scanned).length, 0);
+        const scanProgress = totalCells > 0 ? (scannedCells / totalCells) * 100 : 0;
+        const allSurvivorsFound = survivors.length > 0 && survivors.every(s => s.found);
+        const missionComplete = allSurvivorsFound && scanProgress >= 100;
+
+        if (scanProgress >= 100 && !allSurvivorsFound) {
+            const unresolved = survivors.filter(s => !s.found);
+
+            unresolved.forEach(s => {
+                grid[s.y][s.x].prob = Math.max(grid[s.y][s.x].prob, THRESHOLD_MICRO + 0.25);
+                grid[s.y][s.x].pheromone = Math.max(grid[s.y][s.x].pheromone, 0.9);
+            });
+
+            const reserved = new Set<string>();
+            unresolved.forEach(s => {
+                const nearest = drones
+                    .filter(d =>
+                        d.mode !== 'Relay' &&
+                        d.mode !== 'Charging' &&
+                        !aiDisconnectedRef.current.has(d.id) &&
+                        !reserved.has(d.id)
+                    )
+                    .sort((a, b) => {
+                        const da = Math.sqrt(Math.pow(a.x - s.x, 2) + Math.pow(a.y - s.y, 2));
+                        const db = Math.sqrt(Math.pow(b.x - s.x, 2) + Math.pow(b.y - s.y, 2));
+                        return da - db;
+                    })[0];
+
+                if (nearest) {
+                    nearest.tx = s.x;
+                    nearest.ty = s.y;
+                    nearest.mode = 'Micro';
+                    reserved.add(nearest.id);
+                }
+            });
+        }
+
+        if (missionComplete && !missionReturnTriggeredRef.current) {
+            missionReturnTriggeredRef.current = true;
+            drones.forEach(d => {
+                d.tx = BASE_STATION.x;
+                d.ty = BASE_STATION.y;
+                if (d.mode !== 'Relay') d.mode = 'Wide';
+            });
+        }
+
+        const COMMS_RANGE = 8;
+        if (timeRef.current % 5 === 0) {
+            drones.forEach(broadcaster => {
+                drones.forEach(receiver => {
+                    if (broadcaster.id !== receiver.id) {
+                        const distToOther = Math.sqrt(Math.pow(broadcaster.x - receiver.x, 2) + Math.pow(broadcaster.y - receiver.y, 2));
+                        if (distToOther <= COMMS_RANGE || broadcaster.mode === 'Relay' || receiver.mode === 'Relay') {
+                            receiver.knownOtherDrones[broadcaster.id] = {
+                                x: broadcaster.x,
+                                y: broadcaster.y,
+                                lastUpdate: timeRef.current
+                            };
+                        }
+                    }
+                });
+            });
+        }
+
+        const nodes = [{ id: BASE_STATION.id, x: BASE_STATION.x, y: BASE_STATION.y, isConnected: true }, ...drones];
+        const adj = new Map<string, string[]>();
+        nodes.forEach(n => adj.set(n.id, []));
+
+        commLinksRef.current = [];
+
+        for (let i = 0; i < nodes.length; i++) {
+            for (let j = i + 1; j < nodes.length; j++) {
+                const n1 = nodes[i];
+                const n2 = nodes[j];
+                const dist = Math.sqrt(Math.pow(n1.x - n2.x, 2) + Math.pow(n1.y - n2.y, 2));
+
+                let range1 = COMM_RANGE_DRONE;
+                if (n1.id === BASE_STATION.id) range1 = COMM_RANGE_BASE;
+                else if ((n1 as Drone).mode === 'Relay') range1 = COMM_RANGE_RELAY;
+
+                let range2 = COMM_RANGE_DRONE;
+                if (n2.id === BASE_STATION.id) range2 = COMM_RANGE_BASE;
+                else if ((n2 as Drone).mode === 'Relay') range2 = COMM_RANGE_RELAY;
+
+                if (dist <= Math.max(range1, range2)) {
+                    adj.get(n1.id)!.push(n2.id);
+                    adj.get(n2.id)!.push(n1.id);
+                    commLinksRef.current.push({ source: n1.id, target: n2.id, active: false });
+                }
+            }
+        }
+
+        const visited = new Set<string>();
+        const queue = [BASE_STATION.id];
+        const parent = new Map<string, string>();
+        visited.add(BASE_STATION.id);
+
+        while (queue.length > 0) {
+            const curr = queue.shift()!;
+            const neighbors = adj.get(curr)!;
+            for (const nxt of neighbors) {
+                if (!visited.has(nxt)) {
+                    visited.add(nxt);
+                    queue.push(nxt);
+                    parent.set(nxt, curr);
+                }
+            }
+        }
+        let disconnectedCount = 0;
+        drones.forEach(d => {
+            d.isConnected = visited.has(d.id);
+            if (!d.isConnected && d.mode !== 'Relay') disconnectedCount++;
+        });
+
+        const activeRelay = drones.find(d => d.mode === 'Relay' && (d.tx !== BASE_STATION.x || d.ty !== BASE_STATION.y));
+        if (activeRelay && disconnectedCount > 0) {
+            const disconnected = drones.filter(d => !d.isConnected && d.mode !== 'Relay' && d.mode !== 'Charging');
+            if (disconnected.length > 0) {
+                let cx = 0, cy = 0;
+                disconnected.forEach(d => { cx += d.x; cy += d.y; });
+                cx /= disconnected.length;
+                cy /= disconnected.length;
+                activeRelay.tx = (cx + BASE_STATION.x) / 2;
+                activeRelay.ty = (cy + BASE_STATION.y) / 2;
+            }
+        } else if (activeRelay && disconnectedCount === 0) {
+            activeRelay.tx = GRID_W / 2;
+            activeRelay.ty = GRID_H / 2;
+        }
+
+        if (Math.random() < 0.2 && drones.length > 0) {
+            const connected = drones.filter(d => d.isConnected);
+            if (connected.length > 0) {
+                const sender = connected[Math.floor(Math.random() * connected.length)];
+                let curr = sender.id;
+                while (curr !== BASE_STATION.id && parent.has(curr)) {
+                    const p = parent.get(curr)!;
+                    const edge = commLinksRef.current.find(e => (e.source === curr && e.target === p) || (e.source === p && e.target === curr));
+                    if (edge) edge.active = true;
+                    curr = p;
+                }
+            }
+        }
+
+        const BASE_X = BASE_STATION.x;
+        const BASE_Y = BASE_STATION.y;
+
+        const relayDrones = drones.filter(d => d.id.startsWith('RLY-'));
+        const isNearBase = (drone: Drone) => Math.sqrt(Math.pow(drone.x - BASE_X, 2) + Math.pow(drone.y - BASE_Y, 2)) <= RELAY_BASE_DOCK_EPSILON;
+        const isReturningToBase = (drone: Drone) =>
+            drone.mode === 'Relay' &&
+            Math.sqrt(Math.pow(drone.tx - BASE_X, 2) + Math.pow(drone.ty - BASE_Y, 2)) <= 0.35;
+        const isFieldRelay = (drone: Drone) => drone.mode === 'Relay' && !isReturningToBase(drone);
+
+        const activeFieldRelay = relayDrones.find(isFieldRelay);
+        if (activeFieldRelay) {
+            relayTakeoverTargetRef.current = { x: activeFieldRelay.tx, y: activeFieldRelay.ty };
+            lastFieldRelayIdRef.current = activeFieldRelay.id;
+        }
+
+        if (timeRef.current >= relaySwapCooldownUntilTickRef.current) {
+            const outgoingRelay = relayDrones.find(d => isFieldRelay(d) && d.battery <= RELAY_LOW_BATTERY_THRESHOLD);
+
+            if (outgoingRelay) {
+                const standbyRelay = relayDrones.find(d =>
+                    d.id !== outgoingRelay.id &&
+                    d.mode === 'Charging' &&
+                    d.battery >= RELAY_TAKEOVER_MIN_BATTERY &&
+                    isNearBase(d)
+                );
+
+                if (standbyRelay) {
+                    const takeoverTarget = { x: outgoingRelay.tx, y: outgoingRelay.ty };
+                    relayTakeoverTargetRef.current = takeoverTarget;
+                    relaySwapCooldownUntilTickRef.current = timeRef.current + 20;
+
+                    onRelaySwapDecisionMade(
+                        '',
+                        `Relay handoff decision required. ${outgoingRelay.id} battery is ${outgoingRelay.battery.toFixed(1)}% (<= ${RELAY_LOW_BATTERY_THRESHOLD}%) at target (${takeoverTarget.x.toFixed(1)}, ${takeoverTarget.y.toFixed(1)}). ${standbyRelay.id} is ready at base with ${standbyRelay.battery.toFixed(1)}% battery. Decide now: replace relay if needed, otherwise no_action with reason.`
+                    );
+                }
+            }
+        }
+
+        if (!relayDrones.some(isFieldRelay) && timeRef.current >= relaySwapCooldownUntilTickRef.current) {
+            const readyRelays = relayDrones.filter(d =>
+                d.mode === 'Charging' &&
+                d.battery >= RELAY_TAKEOVER_MIN_BATTERY &&
+                isNearBase(d)
+            );
+
+            if (readyRelays.length > 0) {
+                const preferred = readyRelays.find(r => r.id !== lastFieldRelayIdRef.current) ?? readyRelays[0];
+                relaySwapCooldownUntilTickRef.current = timeRef.current + 20;
+
+                onRelaySwapDecisionMade(
+                    preferred.id,
+                    `Relay coverage decision required. No active field relay is currently deployed. ${preferred.id} is ready at base (${preferred.battery.toFixed(1)}% battery). Preferred relay target is (${relayTakeoverTargetRef.current.x.toFixed(1)}, ${relayTakeoverTargetRef.current.y.toFixed(1)}). Decide whether to deploy this relay to restore coverage or no_action with reason.`
+                );
+            }
+        }
+
+        drones.forEach(d => {
+            if (d.startTick !== undefined && timeRef.current < d.startTick) return;
+
+            const isAiDisconnected = aiDisconnectedRef.current.has(d.id);
+
+            if (isAiDisconnected) {
+                d.isConnected = false;
+                d.tx = d.x;
+                d.ty = d.y;
+                d.targetSector = null;
+                d.mode = d.mode === 'Charging' ? 'Charging' : 'Wide';
+                return;
+            }
+
+            if (missionComplete) {
+                d.savedTx = undefined;
+                d.savedTy = undefined;
+                d.tx = BASE_X;
+                d.ty = BASE_Y;
+            }
+
+            if (d.mode === 'Charging') {
+                d.battery = Math.min(100, d.battery + 0.5);
+                if (d.battery >= 100) {
+                    if (d.id.startsWith('RLY')) {
+                        return; 
+                    }
+
+                    d.battery = 100;
+                    d.mode = 'Wide';
+
+                    let newTarget: { x: number, y: number } | null = null;
+                    const highProbSectors: Sector[] = [];
+                    grid.forEach(row => row.forEach(sec => {
+                        if (sec.scanned && sec.prob > THRESHOLD_MICRO) highProbSectors.push(sec);
+                    }));
+
+                    for (const sec of highProbSectors) {
+                        const isOccupied = drones.some(other => other.id !== d.id && Math.round(other.tx) === sec.x && Math.round(other.ty) === sec.y);
+                        if (!isOccupied) {
+                            newTarget = { x: sec.x, y: sec.y };
+                            break;
+                        }
+                    }
+
+                    if (newTarget) {
+                        d.tx = newTarget.x;
+                        d.ty = newTarget.y;
+                        const distToT = Math.sqrt(Math.pow(d.tx - d.x, 2) + Math.pow(d.ty - d.y, 2));
+                        d.mode = distToT < 1.5 ? 'Micro' : 'Wide';
+                    } else if (d.savedTx !== undefined && d.savedTy !== undefined) {
+                        d.tx = d.savedTx;
+                        d.ty = d.savedTy;
+                    } else {
+                        let assigned = false;
+                        if (zonesRef.current.length > 0) {
+                            const availZone = zonesRef.current.find(z =>
+                                z.unscannedCount > 0 && z.assignedDroneIds.length < 2
+                            );
+                            if (availZone) {
+                                d.tx = availZone.centroid.x;
+                                d.ty = availZone.centroid.y;
+                                assigned = true;
+                            }
+                        }
+
+                        if (!assigned) {
+                            let bestSector: Sector | null = null;
+                            let maxProb = -1;
+                            grid.forEach(row => row.forEach(sec => {
+                                const isSurvivor = pinsRef.current.some(p => p.x === sec.x && p.y === sec.y);
+                                if (!sec.scanned && sec.prob > maxProb && !isSurvivor) {
+                                    const isOccupied = drones.some(other => other.id !== d.id && Math.round(other.tx) === sec.x && Math.round(other.ty) === sec.y);
+                                    if (!isOccupied) {
+                                        maxProb = sec.prob;
+                                        bestSector = sec;
+                                    }
+                                }
+                            }));
+
+                            if (bestSector !== null) {
+                                d.tx = (bestSector as Sector).x;
+                                d.ty = (bestSector as Sector).y;
+                            } else {
+                                d.tx = BASE_X;
+                                d.ty = BASE_Y;
+                            }
+                        }
+                    }
+
+                    d.savedTx = undefined;
+                    d.savedTy = undefined;
+                }
+                return;
+            }
+
+            if (d.mode === 'Relay') {
+                d.battery = Math.max(0, d.battery - 0.035); 
+                const relayDistToTarget = Math.sqrt(Math.pow(d.tx - d.x, 2) + Math.pow(d.ty - d.y, 2));
+                
+                if (relayDistToTarget < 0.3 && d.tx === BASE_X && d.ty === BASE_Y) {
+                    d.x = BASE_X;
+                    d.y = BASE_Y;
+                    d.mode = 'Charging';
+                    return;
+                }
+                
+                if (relayDistToTarget >= 0.3) {
+                    const relaySpeed = 0.3;
+                    const relayAngle = Math.atan2(d.ty - d.y, d.tx - d.x);
+                    d.x += Math.cos(relayAngle) * Math.min(relaySpeed, relayDistToTarget);
+                    d.y += Math.sin(relayAngle) * Math.min(relaySpeed, relayDistToTarget);
+                    d.x = Math.max(0, Math.min(GRID_W - 1, d.x));
+                    d.y = Math.max(0, Math.min(GRID_H - 1, d.y));
+                }
+                return;
+            }
+
+            const mcpRecallThreshold = autoRecallThresholdsRef.current.get(d.id);
+            if (mcpRecallThreshold !== undefined && d.battery <= mcpRecallThreshold) {
+                if (d.tx !== BASE_STATION.x || d.ty !== BASE_STATION.y) {
+                    if (d.savedTx === undefined) {
+                        d.savedTx = d.tx;
+                        d.savedTy = d.ty;
+                    }
+                    d.tx = BASE_STATION.x;
+                    d.ty = BASE_STATION.y;
+                }
+            }
+            
+            const distToBase = Math.sqrt(Math.pow(BASE_X - d.x, 2) + Math.pow(BASE_Y - d.y, 2));
+            const batteryReqForReturn = distToBase * 0.3;
+            const criticalBattery = Math.max(5, batteryReqForReturn + 2); 
+            const lowBattery = Math.max(20, criticalBattery + 15);        
+            const distTargetToBase = Math.sqrt(Math.pow(BASE_X - d.tx, 2) + Math.pow(BASE_Y - d.ty, 2));
+
+            if (d.battery < lowBattery && d.tx !== BASE_X && d.ty !== BASE_Y) {
+                const mySectorX = Math.max(0, Math.min(GRID_W - 1, Math.round(d.tx)));
+                const mySectorY = Math.max(0, Math.min(GRID_H - 1, Math.round(d.ty)));
+                const myProb = grid[mySectorY][mySectorX].prob;
+
+                if ((d.mode === 'Micro' || myProb > THRESHOLD_MICRO) && d.savedTx === undefined) {
+                    let swapDrone: Drone | null = null;
+                    let minDist = Infinity;
+                    for (const other of drones) {
+                        const otherDistToBase = Math.sqrt(Math.pow(BASE_X - other.x, 2) + Math.pow(BASE_Y - other.y, 2));
+                        const otherLowBatteryThreshold = Math.max(20, Math.max(5, otherDistToBase * 0.3 + 2) + 15);
+
+                        if (other.id !== d.id && other.mode === 'Wide' && other.battery > otherLowBatteryThreshold) {
+                            const otherSectorX = Math.max(0, Math.min(GRID_W - 1, Math.round(other.tx)));
+                            const otherSectorY = Math.max(0, Math.min(GRID_H - 1, Math.round(other.ty)));
+                            const otherProb = grid[otherSectorY][otherSectorX].prob;
+                            if (myProb > otherProb) {
+                                const dist = Math.sqrt(Math.pow(other.x - d.x, 2) + Math.pow(other.y - d.y, 2));
+                                if (dist < minDist) {
+                                    minDist = dist;
+                                    swapDrone = other;
+                                }
+                            }
+                        }
+                    }
+
+                    if (swapDrone) {
+                        d.savedTx = (swapDrone as Drone).tx;
+                        d.savedTy = (swapDrone as Drone).ty;
+                        if (d.isConnected) addMessage(d.id, 'REQUEST_ASSIST', { handoverTo: (swapDrone as Drone).id });
+
+                        (swapDrone as Drone).tx = d.tx;
+                        (swapDrone as Drone).ty = d.ty;
+                        (swapDrone as Drone).mode = d.mode;
+
+                        d.mode = 'Wide';
+                    }
+                }
+            }
+
+            if (d.battery < criticalBattery && d.tx !== BASE_X && d.ty !== BASE_Y) {
+                if (d.savedTx === undefined) {
+                    d.savedTx = d.tx;
+                    d.savedTy = d.ty;
+                }
+                d.tx = BASE_X;
+                d.ty = BASE_Y;
+            }
+            else if (d.battery < lowBattery && d.battery >= criticalBattery && distTargetToBase > 4 && d.mode === 'Wide') {
+                let bestX = BASE_X; let bestY = BASE_Y;
+                let found = false;
+                for (let r = 1; r <= 4; r++) {
+                    for (let i = 0; i < 20; i++) {
+                        const testX = Math.max(0, Math.min(GRID_W - 1, Math.round(BASE_X + (Math.random() - 0.5) * r * 2)));
+                        const testY = Math.max(0, Math.min(GRID_H - 1, Math.round(BASE_Y + (Math.random() - 0.5) * r * 2)));
+                        const distToNewTarget = Math.sqrt(Math.pow(BASE_X - testX, 2) + Math.pow(BASE_Y - testY, 2));
+                        if (distToNewTarget <= 4 && !grid[testY][testX].scanned) {
+                            bestX = testX; bestY = testY; found = true; break;
+                        }
+                    }
+                    if (found) break;
+                }
+                if (!found) {
+                    bestX = BASE_X;
+                    bestY = BASE_Y;
+                }
+                if (d.savedTx === undefined) {
+                    d.savedTx = d.tx;
+                    d.savedTy = d.ty;
+                }
+                d.tx = bestX;
+                d.ty = bestY;
+            }
+
+            const distToTarget = Math.sqrt(Math.pow(d.tx - d.x, 2) + Math.pow(d.ty - d.y, 2));
+
+            if (distToTarget < 0.5) {
+                if (d.tx === BASE_X && d.ty === BASE_Y) {
+                    if (d.battery <= 50 || metricsRef.current.averageZoneCoverage >= 99.9 || missionComplete) {
+                        d.mode = 'Charging';
+                        return;
+                    }
+                }
+
+                const sx = Math.round(d.tx);
+                const sy = Math.round(d.ty);
+                const sector = grid[sy][sx];
+                const isFirstScan = !sector.scanned;
+                sector.scanned = true;
+                sector.lastScanned = timeRef.current;
+                const jitter = (Math.random() * 0.04) - 0.02;
+                const rawProb = Math.max(0, Math.min(1.0, getSectorProbability(sx, sy) + jitter));
+                let newProb = rawProb;
+                const survivorAtSector = survivors.find(s => s.x === sx && s.y === sy && !s.found);
+                let holdPositionForVerification = false;
+
+                const isPinned = pinsRef.current.some(p => Math.round(p.x) === sx && Math.round(p.y) === sy);
+                if (isPinned) {
+                    newProb = 0;
+                } else if (survivorAtSector && rawProb >= THRESHOLD_FOUND) {
+                    newProb = 0.79 + (Math.floor(Math.random() * 8) / 100);
+                    holdPositionForVerification = newProb < THRESHOLD_FOUND;
+                }
+
+                const zone = getZoneForCell(zonesRef.current, sx, sy);
+                if (zone && (isFirstScan || d.mode === 'Wide')) {
+                    recordCellScan(
+                        searchMemoryRef.current, zone.zoneId,
+                        sx, sy, timeRef.current, newProb > THRESHOLD_MICRO
+                    );
+                }
+                
+                metricsRef.current.totalScans = searchMemoryRef.current.totalScans;
+                metricsRef.current.totalRepeatScans = searchMemoryRef.current.repeatScans;
+
+                if (isFirstScan) {
+                    metricsRef.current.totalUniqueScans++;
+                    metricsRef.current.uniqueProbSum += newProb;
+                }
+                sector.scanned = true;
+                sector.lastScanned = timeRef.current;
+                
+                metricsRef.current.meanProbabilityScanned = metricsRef.current.totalUniqueScans > 0
+                    ? metricsRef.current.uniqueProbSum / metricsRef.current.totalUniqueScans : 0;
+                
+                metricsRef.current.repeatedScanRate = (metricsRef.current.totalScans > 0 && metricsRef.current.totalUniqueScans > 0)
+                    ? (1 - (metricsRef.current.totalUniqueScans / metricsRef.current.totalScans)) * 100 : 0;
+
+                const oldProb = sector.prob;
+                sector.prob = newProb;
+                if (newProb > oldProb) {
+                    sector.pheromone += newProb;
+                }
+
+                if (d.mode === 'Wide') {
+                    if (newProb > THRESHOLD_MICRO && d.battery >= lowBattery && !d.id.startsWith('RLY-')) {
+                        d.mode = 'Micro';
+                        if (holdPositionForVerification) {
+                            d.tx = sx;
+                            d.ty = sy;
+                        }
+                        if (d.isConnected) addMessage(d.id, 'REQUEST_ASSIST', { sector: `[${sx},${sy}]` });
+                    } else {
+                        const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, -1], [-1, 1], [1, -1]];
+                        let options = dirs
+                            .map(dir => ({ x: sx + dir[0], y: sy + dir[1] }))
+                            .filter(pos => pos.x >= 0 && pos.x < GRID_W && pos.y >= 0 && pos.y < GRID_H)
+                            .filter(pos => !grid[pos.y][pos.x].scanned)
+                            .filter(pos => !pinsRef.current.some(p => Math.abs(p.x - pos.x) <= 1 && Math.abs(p.y - pos.y) <= 1));
+
+                        const filtered = options.filter(opt => {
+                            return !drones.some(other => other.id !== d.id && Math.round(other.tx) === opt.x && Math.round(other.ty) === opt.y);
+                        });
+                        if (filtered.length > 0) options = filtered;
+
+                        if (options.length > 0) {
+                            options.sort((a, b) => {
+                                const cellA = grid[a.y][a.x];
+                                const cellB = grid[b.y][b.x];
+                                const unscannedBonusA = cellA.scanned ? 0 : 0.5;
+                                const unscannedBonusB = cellB.scanned ? 0 : 0.5;
+                                const scoreA = cellA.prob + unscannedBonusA + (cellA.pheromone * 0.1);
+                                const scoreB = cellB.prob + unscannedBonusB + (cellB.pheromone * 0.1);
+                                return scoreB - scoreA;
+                            });
+                            d.tx = options[0].x;
+                            d.ty = options[0].y;
+                        } else if (zonesRef.current.length > 0) {
+                            const availZone = zonesRef.current.find(z =>
+                                z.unscannedCount > 0 && z.assignedDroneIds.length < 2
+                            );
+                            if (availZone) {
+                                d.tx = availZone.centroid.x;
+                                d.ty = availZone.centroid.y;
+                            }
+                        }
+                    }
+                }
+
+                if (newProb >= THRESHOLD_FOUND && survivorAtSector) {
+                    finalizeDiscovery(survivorAtSector.id, d.id, sx, sy);
+                }
+
+                if (d.mode === 'Micro') {
+
+                    if (d.mode === 'Micro' && (newProb < THRESHOLD_MICRO || d.battery < lowBattery)) {
+                        d.mode = 'Wide';
+                    }
+
+                    if (d.mode === 'Micro') {
+                        if (holdPositionForVerification) {
+                            d.tx = sx;
+                            d.ty = sy;
+                            return;
+                        }
+
+                        const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, -1], [-1, 1], [1, -1]];
+
+                        let validDirs = dirs.filter(dir => {
+                            const nx = sx + dir[0]; const ny = sy + dir[1];
+                            return nx >= 0 && nx < GRID_W && ny >= 0 && ny < GRID_H;
+                        });
+
+                        const nonPendingDirs = validDirs;
+                        if (nonPendingDirs.length > 0) validDirs = nonPendingDirs;
+
+                        const filteredDirs = validDirs.filter(dir => {
+                            const nx = sx + dir[0]; const ny = sy + dir[1];
+                            return !drones.some(other => other.id !== d.id && other.mode === 'Micro' && Math.round(other.tx) === nx && Math.round(other.ty) === ny);
+                        });
+                        if (filteredDirs.length > 0) validDirs = filteredDirs;
+
+                        validDirs.sort((a, b) => {
+                            const probA = grid[sy + a[1]][sx + a[0]].prob;
+                            const probB = grid[sy + b[1]][sx + b[0]].prob;
+                            return probB - probA;
+                        });
+
+                        if (validDirs.length > 0) {
+                            const move = validDirs[0];
+                            d.tx = sx + move[0];
+                            d.ty = sy + move[1];
+                        }
+                    }
+                }
+            } else {
+                const moveSpeed = d.mode === 'Wide' ? 0.4 : 0.1;
+                let totalMove = Math.min(moveSpeed, distToTarget);
+                let angle = Math.atan2(d.ty - d.y, d.tx - d.x);
+
+                const SEPARATION_DIST = d.mode === 'Wide' ? 3.0 : 2.0;
+                let sepX = 0;
+                let sepY = 0;
+                let neighborCount = 0;
+
+                Object.entries(d.knownOtherDrones).forEach(([id, knownPos]) => {
+                    if (id !== d.id && (timeRef.current - knownPos.lastUpdate) < 20) {
+                        const distToOther = Math.sqrt(Math.pow(knownPos.x - d.x, 2) + Math.pow(knownPos.y - d.y, 2));
+                        if (distToOther < SEPARATION_DIST && distToOther > 0.01) {
+                            let pushStrength = (SEPARATION_DIST - distToOther);
+                            if (distToOther < 1.0) pushStrength *= 4.0;
+                            else pushStrength *= 2.0;
+
+                            sepX += (d.x - knownPos.x) / distToOther * pushStrength;
+                            sepY += (d.y - knownPos.y) / distToOther * pushStrength;
+                            neighborCount++;
+                        }
+                    }
+                });
+
+                if (neighborCount > 0) {
+                    sepX /= neighborCount;
+                    sepY /= neighborCount;
+
+                    const targetDx = Math.cos(angle) * moveSpeed;
+                    const targetDy = Math.sin(angle) * moveSpeed;
+
+                    const sepMag = Math.sqrt(sepX * sepX + sepY * sepY);
+                    if (sepMag > 0) {
+                        const damp = Math.min(1, Math.max(0, (distToTarget - 0.3) / 1.2));
+                        const maxSep = moveSpeed * damp * 0.9;
+                        sepX = (sepX / sepMag) * maxSep;
+                        sepY = (sepY / sepMag) * maxSep;
+                    }
+
+                    const finalDx = targetDx + sepX;
+                    const finalDy = targetDy + sepY;
+                    angle = Math.atan2(finalDy, finalDx);
+                    totalMove = Math.min(totalMove, Math.sqrt(finalDx * finalDx + finalDy * finalDy));
+                }
+
+                d.x += Math.cos(angle) * totalMove;
+                d.y += Math.sin(angle) * totalMove;
+
+                d.x = Math.max(0, Math.min(GRID_W - 1, d.x));
+                d.y = Math.max(0, Math.min(GRID_H - 1, d.y));
+
+                const sensorDrain = d.mode === 'Wide' ? 0.015 : 0.005;
+                const movementDrain = totalMove * 0.075;
+                d.battery -= (sensorDrain + movementDrain);
+            }
+        });
+
+        drones.forEach(d => {
+            if (d.isConnected && d.memory.length > 0) {
+                d.memory.forEach(sId => {
+                    if (!pinsRef.current.find(p => p.id === sId)) {
+                        const s = survivors.find(sup => sup.id === sId);
+                        if (s) {
+                            pinsRef.current.push({ id: s.id, x: s.x, y: s.y, info: s.info });
+                            let curr = d.id;
+                            while (curr && curr !== BASE_STATION.id && parent.has(curr)) {
+                                const p = parent.get(curr)!;
+                                const edge = commLinksRef.current.find(e => (e.source === curr && e.target === p) || (e.source === p && e.target === curr));
+                                if (edge) edge.active = true;
+                                curr = p;
+                            }
+                        }
+                    }
+                });
+                d.memory = [];
+            }
+        });
+
+        if (timeRef.current > 0 && timeRef.current % 100 === 0) {
+            const connected = drones.filter(d => d.isConnected && d.mode !== 'Relay');
+            if (connected.length > 0) {
+                addMessage(connected[Math.floor(Math.random() * connected.length)].id, 'MAP_SHARE', { bytes: 1420 });
+            }
+        }
+
+        if (!missionComplete && timeRef.current % ZONE_PIPELINE_INTERVAL === 0 && timeRef.current > 0) {
+            const gridCells: GridCell[][] = grid.map(row =>
+                row.map(sec => ({
+                    x: sec.x,
+                    y: sec.y,
+                    prob: sec.prob,
+                    scanned: sec.scanned,
+                    lastScanned: sec.lastScanned,
+                    signals: sec.signals,
+                }))
+            );
+
+            const zones = clusterZones(gridCells, GRID_W, GRID_H, 4);
+            const scoredZones = scoreZones(zones, searchMemoryRef.current, timeRef.current);
+            zonesRef.current = scoredZones;
+
+            const allocatable = drones
+                .filter(d =>
+                    d.mode !== 'Relay' &&
+                    d.mode !== 'Charging' &&
+                    !aiDisconnectedRef.current.has(d.id)
+                )
+                .map(d => ({ id: d.id, x: d.x, y: d.y, battery: d.battery, mode: d.mode }));
+
+            const missions = allocateDrones(allocatable, scoredZones, searchMemoryRef.current);
+            activeMissionsRef.current = missions;
+
+            for (const mission of missions) {
+                const drone = drones.find(d => d.id === mission.droneId);
+                if (!drone) continue;
+                if (aiDisconnectedRef.current.has(drone.id)) continue;
+
+                const distToBase = Math.sqrt(Math.pow(BASE_STATION.x - drone.x, 2) + Math.pow(BASE_STATION.y - drone.y, 2));
+                const criticalBattery = Math.max(5, distToBase * 0.3 + 2);
+                const lowBattery = Math.max(20, criticalBattery + 15);
+                if (drone.battery < lowBattery) continue;
+
+                const distToTarget = Math.sqrt(Math.pow(drone.tx - drone.x, 2) + Math.pow(drone.ty - drone.y, 2));
+                
+                const isDivertable = distToTarget < 0.5 || drone.mode === 'Wide' || distToTarget > 3.0;
+
+                if (isDivertable) {
+                    drone.tx = mission.targetX;
+                    drone.ty = mission.targetY;
+
+                    const distToNewTarget = Math.sqrt(Math.pow(drone.tx - drone.x, 2) + Math.pow(drone.ty - drone.y, 2));
+                    
+                    if (mission.action === 'micro_scan') {
+                        if (distToNewTarget < 1.5) {
+                            drone.mode = 'Micro';
+                        } else {
+                            drone.mode = 'Wide';
+                        }
+                    } else {
+                        drone.mode = 'Wide';
+                    }
+                }
+            }
+
+            const weightedCoverage = scoredZones.reduce((acc, z) => {
+                const scannedInZone = z.totalCells - z.unscannedCount;
+                return acc + (scannedInZone / z.totalCells);
+            }, 0);
+            metricsRef.current.averageZoneCoverage = scoredZones.length > 0
+                ? (weightedCoverage / scoredZones.length) * 100 : 0;
+
+            if (metricsRef.current.totalUniqueScans < 400) {
+                metricsRef.current.missionTimeSec = timeRef.current * (SIM_TICK_MS / 1000);
+            }
+        }
+
+        if (missionComplete && !missionStopHandledRef.current) {
+            const allAtBase = drones.every(d => Math.sqrt(Math.pow(d.x - BASE_STATION.x, 2) + Math.pow(d.y - BASE_STATION.y, 2)) < 0.5);
+            if (allAtBase) {
+                missionStopHandledRef.current = true;
+                setRunning(false);
+            }
+        }
+
+        grid.forEach(row => row.forEach(sec => {
+            if (sec.pheromone > 0) sec.pheromone *= 0.99;
+        }));
+
+        if (timeRef.current % 5 === 0) {
+            const existing = gridDataService.getWeights();
+            const weightGrid: number[][] = Array.from({ length: GRID_H }, (_, y) =>
+                Array.from({ length: GRID_W }, (_, x) =>
+                    grid[y][x].scanned ? grid[y][x].prob : (existing[y]?.[x] ?? 0.05)
+                )
+            );
+            gridDataService.setWeights(weightGrid, 'scan');
+        }
+
+        // Call the MCP Sync/Process callbacks passed from useSimulationMCP via the main component loop
+        if (timeRef.current % 10 === 0) {
+            onMcpSyncRequest();
+        }
+
+        if (timeRef.current % 5 === 0) {
+            onMcpCommandProcessRequest();
+        }
+
+        setTickFlip(f => f + 1);
+    }, [finalizeDiscovery]);
+
+    return {
+        // State
+        running, setRunning,
+        speed, setSpeed,
+        selectedPin, setSelectedPin,
+        showSensors, setShowSensors,
+
+        // Refs
+        gridRef,
+        dronesRef,
+        survivorsRef,
+        pinsRef,
+        timeRef,
+        commLinksRef,
+        swarmMessagesRef,
+        sensorWeightsRef,
+        autoRecallThresholdsRef,
+        failureEventsRef,
+        aiDisconnectedRef,
+        aiReconnectAttemptTickRef,
+        aiReconnectedUntilTickRef,
+        relayTakeoverTargetRef,
+        relaySwapCooldownUntilTickRef,
+        lastFieldRelayIdRef,
+        zonesRef,
+        searchMemoryRef,
+        activeMissionsRef,
+        metricsRef,
+
+        // Handlers
+        toggleRunning,
+        resetSim,
+        triggerFailureEvent,
+        getSectorProbability,
+        performTickCore
+    };
+};
