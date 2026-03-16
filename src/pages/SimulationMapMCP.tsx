@@ -394,6 +394,10 @@ const SimulationMapMCP: React.FC = () => {
     const [mcpSelectedTool, setMcpSelectedTool] = useState<string>('getSwarmStatus');
     const [mcpToolParams, setMcpToolParams] = useState<string>('{}');
     const [chatOpen, setChatOpen] = useState(false);
+    const [chatPos, setChatPos] = useState({ x: 0, y: 0 });
+    const chatDragRef = useRef({ isDragging: false, startX: 0, startY: 0, startPosX: 0, startPosY: 0 });
+    const [chatSize, setChatSize] = useState({ width: 420, height: 420 });
+    const chatResizeRef = useRef({ isResizing: false, startWidth: 0, startHeight: 0, startX: 0, startY: 0, startPosX: 0, startPosY: 0 });
     const [chatInput, setChatInput] = useState('');
     const [chatSending, setChatSending] = useState(false);
     const aiBusyRef = useRef(false);
@@ -2584,8 +2588,9 @@ const SimulationMapMCP: React.FC = () => {
                     position: 'fixed',
                     bottom: 20,
                     right: 20,
-                    width: 420,
-                    height: 420,
+                    transform: `translate(${chatPos.x}px, ${chatPos.y}px)`,
+                    width: chatSize.width,
+                    height: chatSize.height,
                     background: 'rgba(5, 10, 16, 0.98)',
                     border: '1px solid #00ffcc',
                     borderRadius: 8,
@@ -2596,7 +2601,23 @@ const SimulationMapMCP: React.FC = () => {
                     boxShadow: '0 0 30px rgba(0, 255, 204, 0.2)'
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <h3 style={{ margin: 0, color: '#00ffcc', display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
+                        <h3 
+                            style={{ margin: 0, color: '#00ffcc', display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'grab', userSelect: 'none' }}
+                            onPointerDown={(e) => {
+                                chatDragRef.current = { isDragging: true, startX: e.clientX, startY: e.clientY, startPosX: chatPos.x, startPosY: chatPos.y };
+                                e.currentTarget.setPointerCapture(e.pointerId);
+                            }}
+                            onPointerMove={(e) => {
+                                if (!chatDragRef.current.isDragging) return;
+                                const dx = e.clientX - chatDragRef.current.startX;
+                                const dy = e.clientY - chatDragRef.current.startY;
+                                setChatPos({ x: chatDragRef.current.startPosX + dx, y: chatDragRef.current.startPosY + dy });
+                            }}
+                            onPointerUp={(e) => {
+                                chatDragRef.current.isDragging = false;
+                                e.currentTarget.releasePointerCapture(e.pointerId);
+                            }}
+                        >
                             <MessageSquare size={16} /> Orchestrator Chat
                         </h3>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2698,6 +2719,62 @@ const SimulationMapMCP: React.FC = () => {
                         >
                             <Send size={14} />
                         </button>
+                    </div>
+
+                    {/* Resize Handle */}
+                    <div 
+                        style={{
+                            position: 'absolute',
+                            right: 0,
+                            bottom: 0,
+                            width: 16,
+                            height: 16,
+                            cursor: 'nwse-resize',
+                            zIndex: 10,
+                            borderBottomRightRadius: 8
+                        }}
+                        onPointerDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            chatResizeRef.current = {
+                                isResizing: true,
+                                startX: e.clientX,
+                                startY: e.clientY,
+                                startWidth: chatSize.width,
+                                startHeight: chatSize.height,
+                                startPosX: chatPos.x,
+                                startPosY: chatPos.y
+                            };
+                            e.currentTarget.setPointerCapture(e.pointerId);
+                        }}
+                        onPointerMove={(e) => {
+                            if (!chatResizeRef.current.isResizing) return;
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const dx = e.clientX - chatResizeRef.current.startX;
+                            const dy = e.clientY - chatResizeRef.current.startY;
+                            
+                            const newWidth = Math.max(300, chatResizeRef.current.startWidth + dx);
+                            const newHeight = Math.max(200, chatResizeRef.current.startHeight + dy);
+                            
+                            const actualDx = newWidth - chatResizeRef.current.startWidth;
+                            const actualDy = newHeight - chatResizeRef.current.startHeight;
+
+                            setChatSize({ width: newWidth, height: newHeight });
+                            setChatPos({ 
+                                x: chatResizeRef.current.startPosX + actualDx, 
+                                y: chatResizeRef.current.startPosY + actualDy 
+                            });
+                        }}
+                        onPointerUp={(e) => {
+                            chatResizeRef.current.isResizing = false;
+                            e.currentTarget.releasePointerCapture(e.pointerId);
+                        }}
+                    >
+                        {/* Little triangle for handle */}
+                        <svg width="10" height="10" viewBox="0 0 10 10" style={{ position: 'absolute', bottom: 3, right: 3 }}>
+                            <path d="M 10 0 L 10 10 L 0 10 Z" fill="rgba(0, 255, 204, 0.4)" />
+                        </svg>
                     </div>
                 </div>
             )}
