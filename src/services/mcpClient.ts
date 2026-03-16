@@ -96,6 +96,12 @@ export interface OrchestratorChatResponse {
     timestamp: number;
 }
 
+export interface OrchestratorRecord {
+    timestamp: number;
+    source: 'system' | 'ai' | 'action' | 'error';
+    message: string;
+}
+
 /**
  * Send a message to the orchestrator AI through the MCP server.
  */
@@ -113,6 +119,44 @@ export async function orchestratorChat(message: string): Promise<OrchestratorCha
             error: `Failed to reach orchestrator endpoint: ${error instanceof Error ? error.message : String(error)}`,
             timestamp: Date.now()
         };
+    }
+}
+
+/**
+ * Read orchestrator activity records for dashboard timeline display.
+ */
+export async function getOrchestratorRecords(limit?: number): Promise<{
+    success: boolean;
+    records?: OrchestratorRecord[];
+    count?: number;
+    error?: string;
+    timestamp: number;
+}> {
+    try {
+        const query = typeof limit === 'number' ? `?limit=${limit}` : '';
+        const response = await fetch(`${MCP_SERVER_URL}/api/orchestrator/records${query}`);
+        return await response.json();
+    } catch (error) {
+        return {
+            success: false,
+            error: `Failed to fetch orchestrator records: ${error instanceof Error ? error.message : String(error)}`,
+            timestamp: Date.now(),
+        };
+    }
+}
+
+/**
+ * Clear orchestrator activity records.
+ */
+export async function clearOrchestratorRecords(): Promise<boolean> {
+    try {
+        const response = await fetch(`${MCP_SERVER_URL}/api/orchestrator/records`, {
+            method: 'DELETE',
+        });
+        const result = await response.json();
+        return !!result.success;
+    } catch {
+        return false;
     }
 }
 

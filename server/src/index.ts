@@ -18,7 +18,7 @@ import express from 'express';
 import cors from 'cors';
 import { executeTool, listTools, getToolSchema } from './tools/index.js';
 import { droneStore } from './droneStore.js';
-import { processOrchestratorChat } from './orchestratorChat.js';
+import { processOrchestratorChat, getOrchestratorRecords, clearOrchestratorRecords } from './orchestratorChat.js';
 import type { DroneStatus, SectorScanResult, CommLink, SurvivorInfo } from './types.js';
 
 const app = express();
@@ -108,6 +108,31 @@ app.post('/api/orchestrator/chat', async (req, res) => {
 
     const result = await processOrchestratorChat(message.trim());
     res.json(result);
+});
+
+// Get orchestrator record feed for dashboard timeline
+app.get('/api/orchestrator/records', (req, res) => {
+    const rawLimit = req.query.limit;
+    const limitParam = rawLimit === undefined ? undefined : Number.parseInt(String(rawLimit), 10);
+    const records = getOrchestratorRecords(limitParam);
+
+    res.json({
+        success: true,
+        records,
+        count: records.length,
+        timestamp: Date.now(),
+    });
+});
+
+// Clear orchestrator record feed (used to reset timeline after page refresh)
+app.delete('/api/orchestrator/records', (req, res) => {
+    clearOrchestratorRecords();
+
+    res.json({
+        success: true,
+        message: 'Orchestrator records cleared',
+        timestamp: Date.now(),
+    });
 });
 
 // Get pending commands (for frontend polling)

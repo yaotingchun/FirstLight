@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
@@ -9,6 +9,7 @@ import SimulationMapMCP from './pages/SimulationMapMCP';
 import RoutingSandbox from './pages/RoutingSandbox';
 import DroneCam from './pages/DroneCam';
 import LoadingScreen from './components/LoadingScreen';
+import { clearOrchestratorRecords } from './services/mcpClient';
 
 const pages = [
   { path: '/dashboard', element: <Dashboard /> },
@@ -53,6 +54,13 @@ function PersistentPages() {
 
 function App() {
   const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+    if (navEntry?.type === 'reload') {
+      void clearOrchestratorRecords();
+    }
+  }, []);
 
   return (
     <Router>

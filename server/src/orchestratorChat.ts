@@ -1,4 +1,6 @@
 import path from 'path';
+import { existsSync, mkdirSync, readFileSync } from 'fs';
+import { writeFile } from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { VertexAI, type GenerativeModel, type Content } from '@google-cloud/vertexai';
 import dotenv from 'dotenv';
@@ -7,6 +9,7 @@ import { executeTool } from './tools/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const ORCHESTRATOR_RECORDS_PATH = path.resolve(__dirname, '../../.local/orchestrator/orchestrator-records.json');
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
@@ -45,6 +48,88 @@ interface RegionPlan {
 
 let model: GenerativeModel | null = null;
 let regionBootstrapDone = false;
+
+export interface OrchestratorRecord {
+    timestamp: number;
+    source: 'system' | 'ai' | 'action' | 'error';
+    message: string;
+}
+
+let orchestratorRecords: OrchestratorRecord[] = [];
+let persistRecordsPromise: Promise<void> = Promise.resolve();
+
+function loadPersistedOrchestratorRecords(): OrchestratorRecord[] {
+    try {
+        if (!existsSync(ORCHESTRATOR_RECORDS_PATH)) {
+            return [];
+        }
+
+        const raw = readFileSync(ORCHESTRATOR_RECORDS_PATH, 'utf8');
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) {
+            return [];
+        }
+
+        return parsed.filter((item): item is OrchestratorRecord => {
+            return (
+                !!item &&
+                typeof item === 'object' &&
+                typeof item.timestamp === 'number' &&
+                typeof item.message === 'string' &&
+                (item.source === 'system' || item.source === 'ai' || item.source === 'action' || item.source === 'error')
+            );
+        });
+    } catch (error) {
+        console.error('Failed to load persisted orchestrator records', error);
+        return [];
+    }
+}
+
+function persistOrchestratorRecords(): void {
+    persistRecordsPromise = persistRecordsPromise
+        .catch(() => undefined)
+        .then(async () => {
+            await writeFile(
+                ORCHESTRATOR_RECORDS_PATH,
+                JSON.stringify(orchestratorRecords, null, 2),
+                'utf8'
+            );
+        })
+        .catch((error) => {
+            console.error('Failed to persist orchestrator records', error);
+        });
+}
+
+function pushOrchestratorRecord(record: OrchestratorRecord): void {
+    orchestratorRecords.push(record);
+    persistOrchestratorRecords();
+}
+
+function normalizeReasoning(reasoning: string): string {
+    return reasoning
+        .replace(/\r\n/g, '\n')
+        .split('\n')
+        .map((line) => line.replace(/[ \t]+$/g, ''))
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+
+export function getOrchestratorRecords(limit?: number): OrchestratorRecord[] {
+    if (typeof limit === 'number' && Number.isFinite(limit) && limit > 0) {
+        return orchestratorRecords.slice(-Math.floor(limit));
+    }
+
+    return [...orchestratorRecords];
+}
+
+export function clearOrchestratorRecords(): void {
+    orchestratorRecords = [];
+    persistOrchestratorRecords();
+}
+
+mkdirSync(path.dirname(ORCHESTRATOR_RECORDS_PATH), { recursive: true });
+orchestratorRecords = loadPersistedOrchestratorRecords();
 
 // Conversation history for stateful multi-turn chat (role: 'user' | 'model')
 const MAX_HISTORY_TURNS = 20; // 10 user + 10 model messages
@@ -437,6 +522,54 @@ async function executeActions(actions: ChatAction[]): Promise<string[]> {
     return logs;
 }
 
+function isHeadingToBase(drone: { mode: string; target?: { x: number; y: number } | null; position: { x: number; y: number } }): boolean {
+    if (drone.mode === 'Charging') return false;
+
+    const targetIsBase =
+        Math.round(drone.target?.x ?? -1) === BASE_X &&
+        Math.round(drone.target?.y ?? -1) === BASE_Y;
+
+    if (!targetIsBase) return false;
+
+    const distToBase = Math.sqrt(
+        Math.pow(drone.position.x - BASE_X, 2) +
+        Math.pow(drone.position.y - BASE_Y, 2)
+    );
+
+    return distToBase > 0.35;
+}
+
+function applyRelaySafetyFallback(actions: ChatAction[]): ChatAction[] {
+    const hydratedActions = [...actions];
+    const drones = droneStore.getAllDrones().filter(d => d.isActive && d.id.startsWith('RLY-'));
+
+    for (const relay of drones) {
+        if (relay.mode === 'Charging') continue;
+        if (relay.battery >= 25) continue;
+
+        const alreadyRecalled = hydratedActions.some(
+            (a) => a.type === 'recall_drone' && a.droneId === relay.id
+        );
+        if (alreadyRecalled) continue;
+
+        const relayAtBase =
+            Math.sqrt(
+                Math.pow(relay.position.x - BASE_X, 2) +
+                Math.pow(relay.position.y - BASE_Y, 2)
+            ) <= 0.35;
+
+        if (relayAtBase || isHeadingToBase(relay)) continue;
+
+        hydratedActions.push({
+            type: 'recall_drone',
+            droneId: relay.id,
+            reason: `Safety override: ${relay.id} battery ${relay.battery.toFixed(1)}% is below relay threshold`,
+        });
+    }
+
+    return hydratedActions;
+}
+
 export async function processOrchestratorChat(message: string): Promise<{
     success: boolean;
     reply?: string;
@@ -454,6 +587,23 @@ export async function processOrchestratorChat(message: string): Promise<{
 
         if (!regionBootstrapDone && shouldBootstrapRegions(message)) {
             const { decision, executionLog } = await executeRegionBootstrap();
+            pushOrchestratorRecord({
+                timestamp: Date.now(),
+                source: 'system',
+                message: 'Autonomous region bootstrap engaged.',
+            });
+            pushOrchestratorRecord({
+                timestamp: Date.now(),
+                source: 'ai',
+                message: normalizeReasoning(decision.reasoning),
+            });
+            executionLog.forEach((entry) => {
+                pushOrchestratorRecord({
+                    timestamp: Date.now(),
+                    source: 'action',
+                    message: entry,
+                });
+            });
             return {
                 success: true,
                 reply: JSON.stringify(decision),
@@ -526,6 +676,11 @@ Critical rules:
         const decision = parseDecision(reply);
 
         if (!decision) {
+            pushOrchestratorRecord({
+                timestamp: Date.now(),
+                source: 'ai',
+                message: normalizeReasoning(reply) || '(no response)',
+            });
             return {
                 success: true,
                 reply,
@@ -533,21 +688,50 @@ Critical rules:
             };
         }
 
-        const executionLog = await executeActions(decision.actions);
+        const safeActions = applyRelaySafetyFallback(decision.actions);
+        const safeDecision: ParsedDecision = {
+            ...decision,
+            actions: safeActions,
+        };
 
-        if (decision.actions.some(a => a.type === 'reset_simulation')) {
+        const executionLog = await executeActions(safeActions);
+
+        pushOrchestratorRecord({
+            timestamp: Date.now(),
+            source: 'ai',
+            message: normalizeReasoning(decision.reasoning),
+        });
+        executionLog.forEach((entry) => {
+            pushOrchestratorRecord({
+                timestamp: Date.now(),
+                source: 'action',
+                message: entry,
+            });
+        });
+
+        if (safeActions.some(a => a.type === 'reset_simulation')) {
             regionBootstrapDone = false;
             clearChatHistory();
+            pushOrchestratorRecord({
+                timestamp: Date.now(),
+                source: 'system',
+                message: 'Mission reset detected. Conversation context cleared.',
+            });
         }
 
         return {
             success: true,
             reply,
-            decision,
+            decision: safeDecision,
             executionLog,
             timestamp: Date.now(),
         };
     } catch (error) {
+        pushOrchestratorRecord({
+            timestamp: Date.now(),
+            source: 'error',
+            message: error instanceof Error ? error.message : String(error),
+        });
         return {
             success: false,
             error: error instanceof Error ? error.message : String(error),

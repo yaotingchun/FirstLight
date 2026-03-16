@@ -1464,7 +1464,7 @@ const SimulationMapMCP: React.FC = () => {
                 metricsRef.current.totalScans = searchMemoryRef.current.totalScans;
                 metricsRef.current.totalRepeatScans = searchMemoryRef.current.repeatScans;
 
-                if (!sector.scanned) {
+                if (isFirstScan) {
                     metricsRef.current.totalUniqueScans++;
                     metricsRef.current.uniqueProbSum += newProb;
                 }
@@ -2094,7 +2094,14 @@ const SimulationMapMCP: React.FC = () => {
                                     />
                                 )}
                                 {d.mode === 'Relay' && (
-                                    <circle r={CELL_SIZE * 3.5} fill="transparent" stroke="#0077ff" strokeWidth="1" strokeDasharray="8" style={{ opacity: 0.2, animation: 'spin 8s linear infinite reverse' }} />
+                                    <circle
+                                        r={COMM_RANGE_RELAY * CELL_SIZE}
+                                        fill="transparent"
+                                        stroke="#0077ff"
+                                        strokeWidth="1"
+                                        strokeDasharray="8"
+                                        style={{ opacity: 0.2, animation: 'spin 8s linear infinite reverse' }}
+                                    />
                                 )}
                                 {/* Drone blip */}
                                 <circle r="4" fill={droneColor} />
@@ -2654,10 +2661,6 @@ const SimulationMapMCP: React.FC = () => {
                         ))}
                     </div>
 
-                    <div style={{ fontSize: 10, color: '#7fa3b8', marginBottom: 8 }}>
-                        AI auto-evaluates every ~3s while simulation is running. Click THINK NOW to force immediate decision.
-                    </div>
-
                     <div style={{ display: 'flex', gap: 8 }}>
                         <input
                             value={chatInput}
@@ -2668,7 +2671,7 @@ const SimulationMapMCP: React.FC = () => {
                                     sendChatMessage();
                                 }
                             }}
-                            placeholder={mcpConnected ? 'Ask AI...' : 'Connect MCP server first'}
+                            placeholder={mcpConnected ? 'Asking AI Orchestrator...' : 'Connect MCP server first'}
                             disabled={!mcpConnected || chatSending}
                             style={{
                                 flex: 1,
