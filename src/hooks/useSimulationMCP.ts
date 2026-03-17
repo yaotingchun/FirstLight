@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { MutableRefObject, Dispatch, SetStateAction } from 'react';
 import * as mcpClient from '../services/mcpClient';
-import type { Sector, Drone, FoundPin, OrchestratorChatMessage } from '../types/simulation';
+import type { Sector, Drone, FoundPin, AgentChatMessage, MultiAgentState } from '../types/simulation';
 import { BASE_STATION } from '../types/simulation';
 
 export const useSimulationMCP = (
@@ -23,7 +23,7 @@ export const useSimulationMCP = (
     const [mcpSelectedTool, setMcpSelectedTool] = useState<string>('getSwarmStatus');
     const [mcpToolParams, setMcpToolParams] = useState<string>('{}');
     const [chatOpen, setChatOpen] = useState(false);
-    
+
     // Chat UI state
     const [chatPos, setChatPos] = useState({ x: 0, y: 0 });
     const chatDragRef = useRef({ isDragging: false, startX: 0, startY: 0, startPosX: 0, startPosY: 0 });
@@ -32,8 +32,9 @@ export const useSimulationMCP = (
     const [chatInput, setChatInput] = useState('');
     const [chatSending, setChatSending] = useState(false);
     const chatScrollRef = useRef<HTMLDivElement | null>(null);
-    const [chatMessages, setChatMessages] = useState<OrchestratorChatMessage[]>([
-        { role: 'system', text: 'AI chat ready. Ask status or issue commands (e.g. "move DRN-Alpha to 5,8"). Use THINK NOW to force one AI decision cycle.' }
+    const [multiAgentState, setMultiAgentState] = useState<MultiAgentState | null>(null);
+    const [chatMessages, setChatMessages] = useState<AgentChatMessage[]>([
+        { id: 'start', role: 'system', text: 'AI chat ready. Ask status or issue commands (e.g. "move DRN-Alpha to 5,8"). Use THINK NOW to force one AI decision cycle.', timestamp: Date.now(), source: 'system' }
     ]);
 
     useEffect(() => {
@@ -72,85 +73,14 @@ export const useSimulationMCP = (
         aiBusyRef.current = true;
         setChatSending(true);
 
-        if (source === 'user') {
-            setChatMessages(prev => [...prev, { role: 'user', text: trimmed }]);
-        } else {
-            setChatMessages(prev => [...prev, { role: 'system', text: 'Auto-think: AI is evaluating current swarm state...' }]);
+        if (source === 'auto') {
+            setChatMessages(prev => [...prev, { id: `auto-${Date.now()}`, role: 'system', text: 'Auto-think: AI is evaluating current swarm state...', timestamp: Date.now(), source: 'system' }]);
         }
 
         const result = await mcpClient.orchestratorChat(trimmed);
 
         if (!result.success) {
-            setChatMessages(prev => [...prev, { role: 'system', text: `Error: ${result.error ?? 'Unknown error'}` }]);
-            setChatSending(false);
-            aiBusyRef.current = false;
-            return;
-        }
-
-        const decision = result.decision;
-        if (decision) {
-            const actions = decision.actions ?? [];
-            const normalizedReasoning = decision.reasoning
-                .replace(/\b[Tt]he user has requested\b/g, 'Mission context indicates')
-                .replace(/\b[Tt]he user requested\b/g, 'Mission context indicates')
-                .replace(/\b[Ii] will\b/g, 'AI will');
-            const actionSummary = actions
-                .map((a) => {
-                    const type = String(a.type ?? 'unknown');
-                    if (type === 'move_drone') {
-                        return `${type}(${String(a.droneId ?? '?')} -> ${String(a.x ?? '?')},${String(a.y ?? '?')})`;
-                    }
-                    if (type === 'set_drone_mode') {
-                        return `${type}(${String(a.droneId ?? '?')} -> ${String(a.mode ?? '?')})`;
-                    }
-                    if (type === 'recall_drone') {
-                        return `${type}(${String(a.droneId ?? '?')})`;
-                    }
-                    if (type === 'move_relay') {
-                        return `${type}(${String(a.relayId ?? '?')} -> ${String(a.x ?? '?')},${String(a.y ?? '?')})`;
-                    }
-                    if (type === 'replace_relay') {
-                        return `${type}(${String(a.relayId ?? '?')})`;
-                    }
-                    if (type === 'broadcast_swarm') {
-                        return `${type}(${String(a.command ?? '?')})`;
-                    }
-                    if (type === 'deploy_team') {
-                        return `${type}(${String(a.x ?? '?')},${String(a.y ?? '?')})`;
-                    }
-                    if (type === 'set_simulation_state') {
-                        return `${type}(${String(a.running ?? '?')})`;
-                    }
-                    if (type === 'no_action') {
-                        return `${type}(${String(a.reason ?? 'none')})`;
-                    }
-                    return type;
-                })
-                .join('\n- ');
-
-            setChatMessages(prev => {
-                const cleaned = prev.filter(m => !m.text.startsWith('Auto-think:'));
-                return [
-                    ...cleaned,
-                    {
-                        role: 'ai',
-                        text: `[${(decision.priority ?? 'medium').toUpperCase()}]\n${normalizedReasoning}\n\nActions:\n- ${actionSummary || 'None'}`
-                    }
-                ];
-            });
-        } else {
-            const replyText = result.reply;
-            if (replyText) {
-                setChatMessages(prev => {
-                    const cleaned = prev.filter(m => !m.text.startsWith('Auto-think:'));
-                    return [...cleaned, { role: 'ai', text: replyText }];
-                });
-            }
-        }
-
-        const executionLog = result.executionLog;
-        if (executionLog && executionLog.length > 0) {
-            setChatMessages(prev => [...prev, { role: 'system', text: `Executed: ${executionLog.join(' | ')}` }]);
+            setChatMessages(prev => [...prev, { id: `err-${Date.now()}`, role: 'system', text: `Error: ${result.error ?? 'Unknown error'}`, timestamp: Date.now(), source: 'system' }]);
         }
 
         setChatSending(false);
@@ -222,8 +152,31 @@ export const useSimulationMCP = (
                 meanProbabilityScanned: metricsRef.current.meanProbabilityScanned,
                 repeatedScanRate: metricsRef.current.repeatedScanRate
             });
+
+            const agentState = await mcpClient.getMultiAgentState();
+            if (agentState) {
+                setMultiAgentState(agentState);
+                if (!aiBusyRef.current) {
+                    setChatMessages(agentState.chatLog);
+                }
+            }
         }
-    }, [mcpConnected, running, dronesRef, gridRef, metricsRef, timeRef]);
+    }, [mcpConnected, running, dronesRef, gridRef, metricsRef, timeRef, aiBusyRef]);
+
+    const triggerMultiagentTick = useCallback(async () => {
+        if (!mcpConnected) return;
+        const drones = dronesRef.current.map(d => ({
+            id: d.id,
+            position: { x: d.x, y: d.y, gridCell: '' },
+            target: d.tx !== undefined ? { x: d.tx, y: d.ty, gridCell: '' } : null,
+            mode: d.mode,
+            battery: d.battery,
+            isConnected: d.isConnected,
+            isActive: d.mode !== 'Charging' || d.battery > 0,
+            assignedRegion: null
+        }));
+        await mcpClient.multiagentTick(timeRef.current, drones);
+    }, [mcpConnected, dronesRef, timeRef]);
 
     const processMcpCommands = useCallback(async () => {
         if (!mcpConnected) return;
@@ -266,7 +219,7 @@ export const useSimulationMCP = (
                                 break;
                             }
                         }
-                        
+
                         drone.mode = newMode;
                     }
                     break;
@@ -299,7 +252,7 @@ export const useSimulationMCP = (
                     const { oldRelayId, newRelayId, targetX, targetY } = cmd.params;
                     const oldRelay = drones.find(d => d.id === oldRelayId);
                     const newRelay = drones.find(d => d.id === newRelayId);
-                    
+
                     if (oldRelay && newRelay) {
                         relayTakeoverTargetRef.current = {
                             x: targetX as number,
@@ -308,7 +261,7 @@ export const useSimulationMCP = (
                         newRelay.mode = 'Relay';
                         newRelay.tx = targetX as number;
                         newRelay.ty = targetY as number;
-                        
+
                         oldRelay.tx = BASE_STATION.x;
                         oldRelay.ty = BASE_STATION.y;
                     }
@@ -362,7 +315,7 @@ export const useSimulationMCP = (
                 case 'BROADCAST_SWARM': {
                     const command = cmd.params.command as string;
                     const reachableDrones = cmd.params.reachableDrones as string[] || [];
-                    
+
                     if (command === 'RTB_ALL') {
                         reachableDrones.forEach(id => {
                             const d = drones.find(dr => dr.id === id);
@@ -385,8 +338,8 @@ export const useSimulationMCP = (
                             }
                         });
                     } else if (command === 'RECRUIT' && cmd.params.targetArea) {
-                         const { x, y } = cmd.params.targetArea as any;
-                         reachableDrones.forEach(id => {
+                        const { x, y } = cmd.params.targetArea as any;
+                        reachableDrones.forEach(id => {
                             const d = drones.find(dr => dr.id === id);
                             if (d && d.mode !== 'Charging' && d.mode !== 'Relay') {
                                 d.tx = x;
@@ -404,7 +357,7 @@ export const useSimulationMCP = (
 
     useEffect(() => {
         if (mcpConnected) {
-            syncToMcp(true); 
+            syncToMcp(true);
         }
     }, [mcpConnected, syncToMcp]);
 
@@ -425,7 +378,7 @@ export const useSimulationMCP = (
 
         const pollInterval = setInterval(() => {
             processMcpCommands();
-        }, 500); 
+        }, 500);
 
         return () => clearInterval(pollInterval);
     }, [mcpConnected, processMcpCommands]);
@@ -447,10 +400,12 @@ export const useSimulationMCP = (
         chatInput, setChatInput,
         chatSending,
         chatMessages, setChatMessages,
+        multiAgentState,
         chatScrollRef,
         sendChatMessage,
         runThinkNow,
         runOrchestratorPrompt,
+        triggerMultiagentTick,
 
         syncToMcp,
         processMcpCommands

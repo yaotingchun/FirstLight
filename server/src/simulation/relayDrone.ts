@@ -14,6 +14,7 @@ import type {
     SwarmKnowledge,
     SectorScanResult,
     RelayDroneStatus,
+    OrchestratorState,
 } from '../types.js';
 import { gridToLabel, GRID_W, GRID_H, BASE_X, BASE_Y } from '../droneStore.js';
 
@@ -361,7 +362,9 @@ export function buildRelayStatus(
     drone: DroneStatus,
     allDrones: DroneStatus[],
     knowledge: SwarmKnowledge,
-    isBackup: boolean = false
+    isBackup: boolean = false,
+    orchestratorRelayId: string | null = null,
+    orchestratorState?: OrchestratorState
 ): RelayDroneStatus {
     // Find search drones within relay communication range
     const connectedSearchDrones = allDrones
@@ -381,6 +384,8 @@ export function buildRelayStatus(
     );
     const movementMode: 'centroid' | 'coverage' = disconnected.length > 0 ? 'coverage' : 'centroid';
 
+    const isOrchestrator = drone.id === orchestratorRelayId;
+
     return {
         id: drone.id,
         position: drone.position,
@@ -391,5 +396,7 @@ export function buildRelayStatus(
         swarmKnowledge: knowledge,
         isBackup,
         movementMode,
+        isOrchestrator,
+        ...(isOrchestrator && orchestratorState ? { orchestratorState } : {}),
     };
 }

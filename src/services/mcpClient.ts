@@ -249,6 +249,38 @@ export async function syncTick(tick: number, running: boolean): Promise<boolean>
     }
 }
 
+/**
+ * Trigger multi-agent orchestration tick
+ */
+export async function multiagentTick(tick: number, drones: DroneStateForSync[]): Promise<any> {
+    try {
+        const response = await fetch(`${MCP_SERVER_URL}/api/multiagent/tick`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tick, drones })
+        });
+        return await response.json();
+    } catch {
+        return { success: false, error: 'Network error' };
+    }
+}
+
+/**
+ * Get multi-agent state from MCP server
+ */
+export async function getMultiAgentState(): Promise<import('../types/simulation').MultiAgentState | null> {
+    try {
+        const response = await fetch(`${MCP_SERVER_URL}/api/multiagent/state`);
+        const result = await response.json();
+        if (result.success && result.state) {
+            return result.state;
+        }
+        return null;
+    } catch {
+        return null;
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // COMMAND POLLING (Server -> Frontend)
 // ═══════════════════════════════════════════════════════════════════════════

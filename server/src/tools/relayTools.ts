@@ -16,6 +16,7 @@
  */
 
 import { droneStore, gridToLabel, BASE_X, BASE_Y, GRID_W, GRID_H } from '../droneStore.js';
+import { orchestratorEngine } from '../simulation/orchestratorEngine.js';
 import { networkManager } from '../simulation/networkManager.js';
 import {
     computeCoveragePosition,
@@ -165,6 +166,9 @@ export async function replaceRelayDrone(
         targetY: oldRelay.position.y
     });
 
+    // Freeze orchestrator and set swap tracking target
+    droneStore.initiateRelaySwap(newRelayId, oldRelay.position.x, oldRelay.position.y);
+
     return {
         success: true,
         data: {
@@ -216,7 +220,22 @@ export async function getRelayStatus(
 
     const allDrones = droneStore.getAllDrones();
     const knowledge = droneStore.getSwarmKnowledge();
-    const relayStatus = buildRelayStatus(drone, allDrones, knowledge);
+    const isBackup = drone.id.includes('Backup');
+    const orchestratorRelayId = droneStore.getOrchestratorRelayId();
+    
+    // Generate snapshot of state if this drone is the orchestrator
+    const orchestratorState = drone.id === orchestratorRelayId 
+        ? orchestratorEngine.exportState() 
+        : undefined;
+
+    const relayStatus = buildRelayStatus(
+        drone, 
+        allDrones, 
+        knowledge, 
+        isBackup, 
+        orchestratorRelayId,
+        orchestratorState
+    );
 
     // Also persist to relay states
     droneStore.updateRelayState(relayStatus);

@@ -359,6 +359,8 @@ export interface RelayDroneStatus {
     swarmKnowledge: SwarmKnowledge;
     isBackup: boolean;
     movementMode: 'centroid' | 'coverage';
+    isOrchestrator: boolean;
+    orchestratorState?: OrchestratorState;
 }
 
 export interface SwarmKnowledge {
@@ -444,3 +446,104 @@ export interface OptimalRelayPositionResult {
     wouldConnect: string[];
     currentDisconnected: string[];
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MULTI-AGENT ARCHITECTURE TYPES
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Task lifecycle status */
+export type TaskStatus = 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'EXPIRED';
+
+/** Task type — what kind of action is needed */
+export type TaskType = 'HOTSPOT' | 'SCAN' | 'CONFIRM';
+
+/** Role of a drone in the multi-agent system */
+export type DroneRole = 'SEARCH' | 'RELAY';
+
+/**
+ * A task published by the LLM via MCP tools.
+ * Tasks are ONLY created by the LLM — the execution engine never generates them.
+ */
+export interface Task {
+    id: string;
+    type: TaskType;
+    position: { x: number; y: number };
+    priority: number;          // 1–10, higher = more urgent
+    createdAt: number;         // tick when created
+    expiresAt: number;         // tick when task expires (-1 = never)
+    status: TaskStatus;
+    assignedDroneId?: string;
+    completedAt?: number;
+}
+
+/** A drone's bid on a task — lower cost wins */
+export interface Bid {
+    droneId: string;
+    taskId: string;
+    cost: number;
+}
+
+/** Final drone-task assignment after a bidding round resolves */
+export interface Assignment {
+    droneId: string;
+    taskId: string;
+    assignedAt: number; // tick
+}
+
+/** Chat message from any agent (LLM orchestrator, search drone, relay drone) */
+export interface AgentChatMessage {
+    id: string;
+    /** 'ORCHESTRATOR' for the LLM/engine. droneId (e.g. 'DRN-Alpha') for drones. */
+    role: string;
+    text: string;
+    timestamp: number;
+    source: 'user' | 'system' | 'llm' | 'engine' | 'drone';
+}
+
+/** Orchestrator state held by the active relay drone */
+export interface OrchestratorState {
+    activeTasks: Task[];
+    assignments: Assignment[];
+    lastBiddingTick: number;
+    chatLog: AgentChatMessage[];
+}
+
+/** Full multi-agent state snapshot synced to frontend */
+export interface MultiAgentState {
+    activeTasks: Task[];
+    assignments: Assignment[];
+    orchestratorDroneId: string | null; // which relay hosts the orchestrator
+    chatLog: AgentChatMessage[];
+    isBiddingPaused: boolean;           // true during relay swap freeze
+    isSystemFrozen: boolean;            // relay swap in progress
+    lastUpdatedTick: number;
+}
+
+// ─── MCP tool param/result types for multi-agent tools ───────────────────────
+
+export interface CreateTaskParams {
+    type: TaskType;
+    x: number;
+    y: number;
+    priority: number;
+    expiresInTicks?: number; // default 200
+}
+
+export interface CancelTaskParams {
+    taskId: string;
+}
+
+export interface GetActiveTasksResult {
+    tasks: Task[];
+    totalActive: number;
+    pending: number;
+    assigned: number;
+    inProgress: number;
+}
+
+export interface CreateTaskResult {
+    task?: Task;
+    deduplicated: boolean;  // true if rejected as too close to existing task
+    reason?: string;
+}
+

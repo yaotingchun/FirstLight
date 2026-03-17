@@ -38,7 +38,7 @@ export const useSimulationEngine = (
     const commLinksRef = useRef<CommEdge[]>([]);
     const swarmMessagesRef = useRef<SwarmMessage[]>([]);
     const sensorWeightsRef = useRef(gridDataService.getSensorWeights());
-    
+
     const autoRecallThresholdsRef = useRef<Map<string, number>>(new Map());
     const failureEventsRef = useRef<FailureEvent[]>([]);
     const aiDisconnectedRef = useRef<Set<string>>(new Set());
@@ -175,18 +175,18 @@ export const useSimulationEngine = (
         relayTakeoverTargetRef.current = { ...RELAY_DEFAULT_TARGET };
         relaySwapCooldownUntilTickRef.current = 0;
         lastFieldRelayIdRef.current = 'RLY-Prime';
-        
+
         zonesRef.current = [];
         searchMemoryRef.current = createSearchMemory();
         activeMissionsRef.current = [];
         metricsRef.current = {
-            repeatedScanRate: 0, 
-            averageZoneCoverage: 0, 
+            repeatedScanRate: 0,
+            averageZoneCoverage: 0,
             missionTimeSec: 0,
-            meanProbabilityScanned: 0, 
-            totalScans: 0, 
+            meanProbabilityScanned: 0,
+            totalScans: 0,
             totalUniqueScans: 0,
-            totalRepeatScans: 0, 
+            totalRepeatScans: 0,
             uniqueProbSum: 0,
         };
         setSelectedPin(null);
@@ -211,7 +211,7 @@ export const useSimulationEngine = (
         return score / sumWeights;
     };
 
-    const performTickCore = useCallback((onMcpSyncRequest: () => void, onMcpCommandProcessRequest: () => void, onRelaySwapDecisionMade: (preferredId: string, msg: string) => void) => {
+    const performTickCore = useCallback((onMcpSyncRequest: () => void, onMcpCommandProcessRequest: () => void, onMultiagentTickRequest: () => void, onRelaySwapDecisionMade: (preferredId: string, msg: string) => void) => {
         timeRef.current++;
         aiReconnectedUntilTickRef.current.forEach((untilTick, droneId) => {
             if (untilTick <= timeRef.current) aiReconnectedUntilTickRef.current.delete(droneId);
@@ -461,7 +461,7 @@ export const useSimulationEngine = (
                 d.battery = Math.min(100, d.battery + 0.5);
                 if (d.battery >= 100) {
                     if (d.id.startsWith('RLY')) {
-                        return; 
+                        return;
                     }
 
                     d.battery = 100;
@@ -533,16 +533,16 @@ export const useSimulationEngine = (
             }
 
             if (d.mode === 'Relay') {
-                d.battery = Math.max(0, d.battery - 0.035); 
+                d.battery = Math.max(0, d.battery - 0.035);
                 const relayDistToTarget = Math.sqrt(Math.pow(d.tx - d.x, 2) + Math.pow(d.ty - d.y, 2));
-                
+
                 if (relayDistToTarget < 0.3 && d.tx === BASE_X && d.ty === BASE_Y) {
                     d.x = BASE_X;
                     d.y = BASE_Y;
                     d.mode = 'Charging';
                     return;
                 }
-                
+
                 if (relayDistToTarget >= 0.3) {
                     const relaySpeed = 0.3;
                     const relayAngle = Math.atan2(d.ty - d.y, d.tx - d.x);
@@ -565,11 +565,11 @@ export const useSimulationEngine = (
                     d.ty = BASE_STATION.y;
                 }
             }
-            
+
             const distToBase = Math.sqrt(Math.pow(BASE_X - d.x, 2) + Math.pow(BASE_Y - d.y, 2));
             const batteryReqForReturn = distToBase * 0.3;
-            const criticalBattery = Math.max(5, batteryReqForReturn + 2); 
-            const lowBattery = Math.max(20, criticalBattery + 15);        
+            const criticalBattery = Math.max(5, batteryReqForReturn + 2);
+            const lowBattery = Math.max(20, criticalBattery + 15);
             const distTargetToBase = Math.sqrt(Math.pow(BASE_X - d.tx, 2) + Math.pow(BASE_Y - d.ty, 2));
 
             if (d.battery < lowBattery && d.tx !== BASE_X && d.ty !== BASE_Y) {
@@ -683,7 +683,7 @@ export const useSimulationEngine = (
                         sx, sy, timeRef.current, newProb > THRESHOLD_MICRO
                     );
                 }
-                
+
                 metricsRef.current.totalScans = searchMemoryRef.current.totalScans;
                 metricsRef.current.totalRepeatScans = searchMemoryRef.current.repeatScans;
 
@@ -693,10 +693,10 @@ export const useSimulationEngine = (
                 }
                 sector.scanned = true;
                 sector.lastScanned = timeRef.current;
-                
+
                 metricsRef.current.meanProbabilityScanned = metricsRef.current.totalUniqueScans > 0
                     ? metricsRef.current.uniqueProbSum / metricsRef.current.totalUniqueScans : 0;
-                
+
                 metricsRef.current.repeatedScanRate = (metricsRef.current.totalScans > 0 && metricsRef.current.totalUniqueScans > 0)
                     ? (1 - (metricsRef.current.totalUniqueScans / metricsRef.current.totalScans)) * 100 : 0;
 
@@ -921,7 +921,7 @@ export const useSimulationEngine = (
                 if (drone.battery < lowBattery) continue;
 
                 const distToTarget = Math.sqrt(Math.pow(drone.tx - drone.x, 2) + Math.pow(drone.ty - drone.y, 2));
-                
+
                 const isDivertable = distToTarget < 0.5 || drone.mode === 'Wide' || distToTarget > 3.0;
 
                 if (isDivertable) {
@@ -929,7 +929,7 @@ export const useSimulationEngine = (
                     drone.ty = mission.targetY;
 
                     const distToNewTarget = Math.sqrt(Math.pow(drone.tx - drone.x, 2) + Math.pow(drone.ty - drone.y, 2));
-                    
+
                     if (mission.action === 'micro_scan') {
                         if (distToNewTarget < 1.5) {
                             drone.mode = 'Micro';
@@ -983,6 +983,7 @@ export const useSimulationEngine = (
 
         if (timeRef.current % 5 === 0) {
             onMcpCommandProcessRequest();
+            onMultiagentTickRequest();
         }
 
         setTickFlip(f => f + 1);

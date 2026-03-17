@@ -83,9 +83,44 @@ export type FoundPin = {
     info: { message: string, battery: string, img?: string };
 };
 
-export type OrchestratorChatMessage = {
-    role: 'user' | 'ai' | 'system';
+export type AgentRole = 'user' | 'system' | 'ORCHESTRATOR' | string;
+
+export type AgentChatMessage = {
+    id: string;
+    role: AgentRole;
     text: string;
+    timestamp: number;
+    source: 'user' | 'system' | 'llm' | 'engine' | 'drone';
+};
+
+export type TaskStatus = 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'EXPIRED';
+
+export type Task = {
+    id: string;
+    type: string;
+    position: { x: number; y: number; gridCell: string };
+    priority: 'low' | 'medium' | 'high' | 'critical';
+    createdAt: number;
+    expiresAt: number | null;
+    status: TaskStatus;
+    assignedTo: string | null;
+};
+
+export type Assignment = {
+    taskId: string;
+    droneId: string;
+    assignedAt: number;
+    status: 'en_route' | 'executing' | 'completed' | 'failed';
+};
+
+export type MultiAgentState = {
+    activeTasks: Task[];
+    assignments: Assignment[];
+    orchestratorDroneId: string | null;
+    chatLog: AgentChatMessage[];
+    isBiddingPaused: boolean;
+    isSystemFrozen: boolean;
+    lastUpdatedTick: number;
 };
 
 export type FailureEvent = {

@@ -12,6 +12,7 @@ import { missionTools } from './missionTools.js';
 import { swarmIntelTools } from './swarmIntelTools.js';
 import { orchestrationTools } from './orchestrationTools.js';
 import { relayTools } from './relayTools.js';
+import * as multiAgentTools from './multiAgentTools.js';
 
 type ToolSchema = {
     name: string;
@@ -66,7 +67,14 @@ const TOOL_DOCSTRINGS: Record<string, string> = {
     getRelayStatus: 'Observe one relay. Returns battery, position, connected search drones, edge intelligence data, and movement mode.',
     getNetworkTopology: 'Observe full mesh network. Returns relay chain, links with quality, hop counts, connected/disconnected drones, and offline buffer size.',
     broadcastSwarmCommand: 'Action. Broadcast RECRUIT/MICRO_SCAN/REDISTRIBUTE/RTB_ALL to all reachable search drones via relay network.',
-    calculateOptimalRelayPosition: 'Observe. Compute optimal relay position to maximize swarm coverage. Returns position, coverage score, and which disconnected drones would be reconnected.'
+    calculateOptimalRelayPosition: 'Observe. Compute optimal relay position to maximize swarm coverage. Returns position, coverage score, and which disconnected drones would be reconnected.',
+
+    // Multi-agent tools (LLM strategic layer)
+    createTask: 'Action. Create a mission task (HOTSPOT/SCAN/CONFIRM) at position (x,y) with priority 1-10. Tasks are the ONLY way to direct drones — do NOT use setDroneTarget. Engine deduplicates tasks within 2 cells. Prefer cancel_task over creating duplicates.',
+    cancelTask: 'Action. Cancel/expire a task by ID. Use when a task is no longer relevant or a drone task is complete. Prefer this over letting tasks expire naturally.',
+    getActiveTasks: 'Observe. Get all active tasks with status (PENDING/ASSIGNED/IN_PROGRESS/COMPLETED/EXPIRED). Check this before creating new tasks to avoid duplicates.',
+    getTaskAssignments: 'Observe. Get current drone-task assignments (which drone is working on which task). Use to understand swarm workload.',
+    getMultiAgentState: 'Observe. Get full multi-agent snapshot: tasks, assignments, orchestrator relay ID, bidding status, and recent chat log. Use as primary situational awareness tool.'
 };
 
 function withDocstring(schema: ToolSchema): ToolSchema {
@@ -612,6 +620,51 @@ export const toolSchemas = {
             type: 'object',
             properties: {}
         }
+    },
+
+    // ─────────────────────────────────────────────────────────────────────
+    // MULTI-AGENT MODULE
+    // ─────────────────────────────────────────────────────────────────────
+    createTask: {
+        name: 'createTask',
+        description: 'Create a mission task for the drone swarm. Drones will automatically bid and the best candidate will be assigned.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                type: { type: 'string', enum: ['HOTSPOT', 'SCAN', 'CONFIRM'], description: 'Task type: HOTSPOT=investigate high-probability cell, SCAN=cover unexplored area, CONFIRM=verify a detected signal' },
+                x: { type: 'number', description: 'Target X coordinate (0-19)' },
+                y: { type: 'number', description: 'Target Y coordinate (0-19)' },
+                priority: { type: 'number', description: 'Priority 1-10 (10=most urgent)' },
+                expiresInTicks: { type: 'number', description: 'TTL ticks before auto-expiry (default 200, -1=never)' }
+            },
+            required: ['type', 'x', 'y', 'priority']
+        }
+    },
+    cancelTask: {
+        name: 'cancelTask',
+        description: 'Cancel/expire a task by ID. Frees any assigned drone.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                taskId: { type: 'string', description: 'ID of the task to cancel' }
+            },
+            required: ['taskId']
+        }
+    },
+    getActiveTasks: {
+        name: 'getActiveTasks',
+        description: 'Get all active tasks with status breakdown. Call this before creating tasks to avoid duplicates.',
+        inputSchema: { type: 'object', properties: {} }
+    },
+    getTaskAssignments: {
+        name: 'getTaskAssignments',
+        description: 'Get current drone-task assignments with task type and position.',
+        inputSchema: { type: 'object', properties: {} }
+    },
+    getMultiAgentState: {
+        name: 'getMultiAgentState',
+        description: 'Get full multi-agent snapshot: tasks, assignments, orchestrator relay, bidding status, chat log.',
+        inputSchema: { type: 'object', properties: {} }
     }
 };
 
@@ -670,7 +723,14 @@ export const toolHandlers: Record<string, Function> = {
     getRelayStatus: relayTools.getRelayStatus,
     getNetworkTopology: relayTools.getNetworkTopology,
     broadcastSwarmCommand: relayTools.broadcastSwarmCommand,
-    calculateOptimalRelayPosition: relayTools.calculateOptimalRelayPosition
+    calculateOptimalRelayPosition: relayTools.calculateOptimalRelayPosition,
+
+    // Multi-agent tools
+    createTask: multiAgentTools.createTask,
+    cancelTask: multiAgentTools.cancelTask,
+    getActiveTasks: multiAgentTools.getActiveTasks,
+    getTaskAssignments: multiAgentTools.getTaskAssignments,
+    getMultiAgentState: multiAgentTools.getMultiAgentState,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -727,3 +787,4 @@ export { missionTools } from './missionTools.js';
 export { swarmIntelTools } from './swarmIntelTools.js';
 export { orchestrationTools } from './orchestrationTools.js';
 export { relayTools } from './relayTools.js';
+export * as multiAgentTools from './multiAgentTools.js';

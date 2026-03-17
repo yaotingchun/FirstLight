@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useCallback } from 'react';
 import { Hexagon, Play, Pause, FastForward, RotateCcw, Activity, Wifi, WifiOff, MessageSquare } from 'lucide-react';
 
 import { useSimulationEngine } from '../hooks/useSimulationEngine';
@@ -9,11 +9,6 @@ import { MCPChatPanel } from '../components/SimulationMap/MCPChatPanel';
 
 const SimulationMapMCP: React.FC = () => {
     const aiBusyRef = useRef(false);
-
-    const onRelaySwapDecisionMade = useCallback((preferredId: string, msg: string) => {
-        // We need to trigger a chat decision for relay swap. We'll get runOrchestratorPrompt via ref or just let it trigger via event later.
-        console.log("Relay Swap Decision Made", preferredId, msg);
-    }, []);
 
     const {
         running, setRunning,
@@ -32,7 +27,7 @@ const SimulationMapMCP: React.FC = () => {
             // handle failure event triggered
             console.log("Failure triggered for", eventPayload.droneId);
         },
-        (nextRunning: boolean, tick: number) => {
+        () => {
             // handle play pause
         }
     );
@@ -52,14 +47,16 @@ const SimulationMapMCP: React.FC = () => {
         chatResizeRef,
         chatInput, setChatInput,
         chatSending,
-        chatMessages, setChatMessages,
+        chatMessages,
+        multiAgentState,
         chatScrollRef,
         sendChatMessage,
         runThinkNow,
 
         syncToMcp,
         processMcpCommands,
-        runOrchestratorPrompt
+        runOrchestratorPrompt,
+        triggerMultiagentTick
     } = useSimulationMCP(
         timeRef, running, setRunning, dronesRef, gridRef, pinsRef,
         autoRecallThresholdsRef, relayTakeoverTargetRef, metricsRef,
@@ -74,10 +71,10 @@ const SimulationMapMCP: React.FC = () => {
 
     // The core tick loop wrapped to pass the MCP sync functions
     const performTick = useCallback(() => {
-        performTickCore(syncToMcp, processMcpCommands, (preferredId: string, msg: string) => {
+        performTickCore(syncToMcp, processMcpCommands, triggerMultiagentTick, (_: string, msg: string) => {
             runOrchestratorPrompt(msg, 'auto');
         });
-    }, [performTickCore, syncToMcp, processMcpCommands, runOrchestratorPrompt]);
+    }, [performTickCore, syncToMcp, processMcpCommands, triggerMultiagentTick, runOrchestratorPrompt]);
 
     // Rebind interval to use performTick 
     React.useEffect(() => {
@@ -189,6 +186,7 @@ const SimulationMapMCP: React.FC = () => {
                 chatDragRef={chatDragRef}
                 chatResizeRef={chatResizeRef}
                 chatScrollRef={chatScrollRef}
+                multiAgentState={multiAgentState}
                 chatMessages={chatMessages}
                 chatInput={chatInput}
                 setChatInput={setChatInput}

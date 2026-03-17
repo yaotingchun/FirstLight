@@ -6,6 +6,7 @@ import { VertexAI, type GenerativeModel, type Content } from '@google-cloud/vert
 import dotenv from 'dotenv';
 import { droneStore, BASE_X, BASE_Y } from './droneStore.js';
 import { executeTool } from './tools/index.js';
+import { orchestratorEngine } from './simulation/orchestratorEngine.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,16 +20,22 @@ if (process.env.GOOGLE_APPLICATION_CREDENTIALS && !path.isAbsolute(process.env.G
 }
 
 type ChatAction =
-    | { type: 'move_drone'; droneId: string; x: number; y: number; reason?: string }
-    | { type: 'set_drone_mode'; droneId: string; mode: 'Wide' | 'Micro' | 'Relay' | 'Charging'; reason?: string }
-    | { type: 'recall_drone'; droneId: string; reason?: string }
-    | { type: 'deploy_team'; x: number; y: number; droneId?: string; reason?: string }
+    // ── Task-level actions (PRIMARY — LLM uses these to direct the swarm) ──
+    | { type: 'create_task'; taskType: 'HOTSPOT' | 'SCAN' | 'CONFIRM'; x: number; y: number; priority: number; expiresInTicks?: number; reason?: string }
+    | { type: 'cancel_task'; taskId: string; reason?: string }
+    // ── System control actions (allowed for LLM) ──
     | { type: 'set_simulation_state'; running: boolean; reason?: string }
     | { type: 'reset_simulation'; reason?: string }
     | { type: 'no_action'; reason: string }
+    // ── Relay management (allowed) ──
     | { type: 'move_relay'; relayId: string; x: number; y: number; reason?: string }
     | { type: 'replace_relay'; relayId: string; reason?: string }
-    | { type: 'broadcast_swarm'; command: 'RECRUIT' | 'MICRO_SCAN' | 'REDISTRIBUTE' | 'RTB_ALL'; targetArea?: { x: number; y: number; radius: number }; reason?: string };
+    | { type: 'broadcast_swarm'; command: 'RECRUIT' | 'MICRO_SCAN' | 'REDISTRIBUTE' | 'RTB_ALL'; targetArea?: { x: number; y: number; radius: number }; reason?: string }
+    // ── Legacy direct-control (DEPRECATED — kept for bootstrap only, not in LLM prompt) ──
+    | { type: 'move_drone'; droneId: string; x: number; y: number; reason?: string }
+    | { type: 'set_drone_mode'; droneId: string; mode: 'Wide' | 'Micro' | 'Relay' | 'Charging'; reason?: string }
+    | { type: 'recall_drone'; droneId: string; reason?: string }
+    | { type: 'deploy_team'; x: number; y: number; droneId?: string; reason?: string };
 
 interface ParsedDecision {
     reasoning: string;
@@ -100,7 +107,7 @@ function persistOrchestratorRecords(): void {
         });
 }
 
-function pushOrchestratorRecord(record: OrchestratorRecord): void {
+export function pushOrchestratorRecord(record: OrchestratorRecord): void {
     orchestratorRecords.push(record);
     persistOrchestratorRecords();
 }
@@ -248,6 +255,23 @@ function buildStateSummary(): string {
         ? `chain=${networkTopology.relayChain.join('→')} connected=${networkTopology.connectedDrones.length} disconnected=${networkTopology.disconnectedDrones.length} buffered=${networkTopology.bufferedDataSize}B`
         : '(no topology data)';
 
+    // Multi-agent state
+    const maState = droneStore.getMultiAgentState();
+    const activeTasks = maState.activeTasks;
+    const assignments = maState.assignments;
+
+    const taskSummaryLines = activeTasks.length > 0
+        ? activeTasks.map(t =>
+            `  [${t.id}] ${t.type} @ (${t.position.x},${t.position.y}) priority=${t.priority} status=${t.status}${
+                t.assignedDroneId ? ` assignedTo=${t.assignedDroneId}` : ''
+            } expires=${t.expiresAt === -1 ? 'never' : t.expiresAt}`
+        )
+        : ['  (no active tasks — create tasks to direct the swarm)'];
+
+    const assignmentSummaryLines = assignments.length > 0
+        ? assignments.map(a => `  ${a.droneId} → ${a.taskId} (since tick ${a.assignedAt})`)
+        : ['  (no current assignments)'];
+
     return [
         `tick=${stats.currentTick}`,
         `running=${stats.simulationRunning}`,
@@ -258,7 +282,7 @@ function buildStateSummary(): string {
         `meanProbabilityScanned=${stats.meanProbabilityScanned?.toFixed(3) || 0}`,
         `imageScannedCells=${grid.flat().filter(c => c.scanned && !!c.disasterImage).length}`,
         '',
-        'DRONES:',
+        'DRONES (ALL):',
         droneSummary || '(none synced yet)',
         '',
         'RELAY NETWORK:',
@@ -266,12 +290,19 @@ function buildStateSummary(): string {
         `RelayRoles: ${relayRoleSummary}`,
         `Network: ${networkHealth}`,
         `Disconnected: ${disconnectedDrones.length > 0 ? disconnectedDrones.map(d => d.id).join(', ') : 'none'}`,
+        `orchestratorHosted=${maState.orchestratorDroneId ?? 'none'} frozen=${maState.isSystemFrozen}`,
         '',
-        `TOP HOTSPOTS: ${hotspots || '(none)'}`,
+        `TOP UNSCANNED HOTSPOTS: ${hotspots || '(none)'}`,
         `IMAGE SCAN CELLS: ${imageScanSummary || '(none)'}`,
         '',
         'SWARM KNOWLEDGE:',
         `exploredCells=${swarmKnowledge.exploredCells.length} hazards=${swarmKnowledge.detectedHazards.length} hotSignals=${swarmKnowledge.sensorDetections.filter(s => s.strength > 0.5).length}`,
+        '',
+        'ACTIVE TASKS (multi-agent system):',
+        ...taskSummaryLines,
+        '',
+        'CURRENT ASSIGNMENTS:',
+        ...assignmentSummaryLines,
     ].join('\n');
 }
 
@@ -286,38 +317,28 @@ function parseDecision(raw: string): ParsedDecision | null {
         const actions: ChatAction[] = [];
 
         if (actionMatch && actionMatch[1]) {
-            // Process each line in the action block
             const actionLines = actionMatch[1].split('\n').filter(line => line.trim().length > 0);
 
             for (const line of actionLines) {
                 const text = line.trim().replace(/^[-*]\s+/, '').replace(/^\d+\.\s+/, '');
 
-                // Extremely simple "function call" parser for the action list
-                // e.g., move_drone("DRN-Alpha", 5, 5) or set_drone_mode("DRN-Beta", "Wide")
-
-                if (text.startsWith('move_drone')) {
-                    const match = text.match(/move_drone\s*\(\s*(['"]?)([^'",]+)\1\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/i);
-                    if (match) actions.push({ type: 'move_drone', droneId: match[2], x: parseFloat(match[3]), y: parseFloat(match[4]) });
-                } else if (text.startsWith('set_drone_mode')) {
-                    const match = text.match(/set_drone_mode\s*\(\s*(['"]?)([^'",]+)\1\s*,\s*(['"]?)([^'",]+)\3/i);
-                    if (match) actions.push({ type: 'set_drone_mode', droneId: match[2], mode: match[4] as 'Wide' | 'Micro' | 'Relay' | 'Charging' });
-                } else if (text.startsWith('recall_drone')) {
-                    const match = text.match(/recall_drone\s*\(\s*(['"]?)([^'",()]+)\1/i);
-                    if (match) actions.push({ type: 'recall_drone', droneId: match[2] });
-                } else if (text.startsWith('move_relay')) {
-                    const match = text.match(/move_relay\s*\(\s*(['"]?)([^'",]+)\1\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/i);
-                    if (match) actions.push({ type: 'move_relay', relayId: match[2], x: parseFloat(match[3]), y: parseFloat(match[4]) });
-                } else if (text.startsWith('replace_relay')) {
-                    const match = text.match(/replace_relay\s*\(\s*(['"]?)([^'",)]+)\1/i);
-                    if (match) actions.push({ type: 'replace_relay', relayId: match[2] });
-                } else if (text.startsWith('deploy_team')) {
-                    const match = text.match(/deploy_team\s*\(\s*(['"]?)([^'",]*)\1\s*,\s*(\d+)\s*,\s*(\d+)/i);
-                    // Handle case where team string might be omitted
-                    if (match) actions.push({ type: 'deploy_team', x: parseInt(match[3] || '0', 10), y: parseInt(match[4] || '0', 10) });
-                    else {
-                        const simpleMatch = text.match(/deploy_team\s*\(\s*(\d+)\s*,\s*(\d+)/i);
-                        if (simpleMatch) actions.push({ type: 'deploy_team', x: parseInt(simpleMatch[1], 10), y: parseInt(simpleMatch[2], 10) });
+                // ── Task-level actions (primary LLM interface) ──
+                if (text.startsWith('create_task')) {
+                    // create_task("HOTSPOT", 5, 3, priority=8) or create_task("HOTSPOT", 5, 3, 8)
+                    const match = text.match(/create_task\s*\(\s*(['"]?)([A-Z]+)\1\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*(?:priority=)?(\d+))?/i);
+                    if (match) {
+                        actions.push({
+                            type: 'create_task',
+                            taskType: match[2].toUpperCase() as 'HOTSPOT' | 'SCAN' | 'CONFIRM',
+                            x: parseInt(match[3], 10),
+                            y: parseInt(match[4], 10),
+                            priority: match[5] ? parseInt(match[5], 10) : 5,
+                        });
                     }
+                } else if (text.startsWith('cancel_task')) {
+                    const match = text.match(/cancel_task\s*\(\s*(['"]?)([^'"\)]+)\1/i);
+                    if (match) actions.push({ type: 'cancel_task', taskId: match[2].trim() });
+                // ── System control ──
                 } else if (text.startsWith('set_simulation_state')) {
                     const match = text.match(/set_simulation_state\s*\(\s*(true|false)/i);
                     if (match) actions.push({ type: 'set_simulation_state', running: match[1].toLowerCase() === 'true' });
@@ -325,6 +346,23 @@ function parseDecision(raw: string): ParsedDecision | null {
                     actions.push({ type: 'reset_simulation' });
                 } else if (text.startsWith('no_action')) {
                     actions.push({ type: 'no_action', reason: 'No action needed' });
+                // ── Relay management ──
+                } else if (text.startsWith('move_relay')) {
+                    const match = text.match(/move_relay\s*\(\s*(['"]?)([^'"\,]+)\1\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/i);
+                    if (match) actions.push({ type: 'move_relay', relayId: match[2], x: parseFloat(match[3]), y: parseFloat(match[4]) });
+                } else if (text.startsWith('replace_relay')) {
+                    const match = text.match(/replace_relay\s*\(\s*(['"]?)([^'"\)]+)\1/i);
+                    if (match) actions.push({ type: 'replace_relay', relayId: match[2] });
+                // ── Legacy bootstrap commands (not in LLM prompt, kept for bootstrap path) ──
+                } else if (text.startsWith('move_drone')) {
+                    const match = text.match(/move_drone\s*\(\s*(['"]?)([^'"\,]+)\1\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/i);
+                    if (match) actions.push({ type: 'move_drone', droneId: match[2], x: parseFloat(match[3]), y: parseFloat(match[4]) });
+                } else if (text.startsWith('set_drone_mode')) {
+                    const match = text.match(/set_drone_mode\s*\(\s*(['"]?)([^'"\,]+)\1\s*,\s*(['"]?)([^'"\,]+)\3/i);
+                    if (match) actions.push({ type: 'set_drone_mode', droneId: match[2], mode: match[4] as 'Wide' | 'Micro' | 'Relay' | 'Charging' });
+                } else if (text.startsWith('recall_drone')) {
+                    const match = text.match(/recall_drone\s*\(\s*(['"]?)([^'"\(\)]+)\1/i);
+                    if (match) actions.push({ type: 'recall_drone', droneId: match[2] });
                 }
             }
         }
@@ -438,38 +476,28 @@ async function executeActions(actions: ChatAction[]): Promise<string[]> {
     for (const action of actions) {
         try {
             switch (action.type) {
-                case 'move_drone': {
-                    await executeTool('setDroneTarget', {
-                        droneId: action.droneId,
-                        targetX: action.x,
-                        targetY: action.y,
-                    });
-                    logs.push(`setDroneTarget(${action.droneId} -> ${action.x},${action.y})`);
-                    break;
-                }
-                case 'set_drone_mode': {
-                    await executeTool('setDroneMode', {
-                        droneId: action.droneId,
-                        mode: action.mode,
-                    });
-                    logs.push(`setDroneMode(${action.droneId} -> ${action.mode})`);
-                    break;
-                }
-                case 'recall_drone': {
-                    await executeTool('recallDroneToBase', { droneId: action.droneId });
-                    logs.push(`recallDroneToBase(${action.droneId})`);
-                    break;
-                }
-                case 'deploy_team': {
-                    await executeTool('setSurvivorPin', {
+                // ── Task-level actions (PRIMARY LLM interface) ──
+                case 'create_task': {
+                    const result = await executeTool('createTask', {
+                        type: action.taskType,
                         x: action.x,
                         y: action.y,
-                        droneId: action.droneId ?? 'AI_AGENT',
-                        message: action.reason ?? 'Potential survivor confirmation',
-                    });
-                    logs.push(`setSurvivorPin(${action.x},${action.y})`);
+                        priority: action.priority,
+                        expiresInTicks: action.expiresInTicks,
+                    }) as { success: boolean; data?: { task?: { id: string }; deduplicated?: boolean; reason?: string } };
+                    if (result.data?.deduplicated) {
+                        logs.push(`create_task(${action.taskType} @ ${action.x},${action.y}) → DEDUPLICATED: ${result.data.reason}`);
+                    } else {
+                        logs.push(`create_task(${action.taskType} @ ${action.x},${action.y} priority=${action.priority}) → id=${result.data?.task?.id ?? 'unknown'}`);
+                    }
                     break;
                 }
+                case 'cancel_task': {
+                    const result = await executeTool('cancelTask', { taskId: action.taskId }) as { success: boolean; data?: { cancelled: boolean } };
+                    logs.push(`cancel_task(${action.taskId}) → ${result.data?.cancelled ? 'cancelled' : 'not found'}`);
+                    break;
+                }
+                // ── System control ──
                 case 'set_simulation_state': {
                     await executeTool('setSimulationRunning', { running: action.running });
                     logs.push(`setSimulationRunning(${action.running})`);
@@ -484,31 +512,41 @@ async function executeActions(actions: ChatAction[]): Promise<string[]> {
                     logs.push(`no_action: ${action.reason}`);
                     break;
                 }
+                // ── Relay management ──
                 case 'move_relay': {
-                    const result = await executeTool('moveRelayDrone', {
-                        relayId: action.relayId,
-                        x: action.x,
-                        y: action.y,
-                    });
-                    const res = result as { success: boolean };
-                    logs.push(`[AI ORCHESTRATOR] moveRelayDrone({relayId:${action.relayId},x:${action.x},y:${action.y}}) → ${res.success ? 'Repositioned' : 'FAILED'}${action.reason ? ` | reason: ${action.reason}` : ''}`);
+                    const result = await executeTool('moveRelayDrone', { relayId: action.relayId, x: action.x, y: action.y }) as { success: boolean };
+                    logs.push(`moveRelayDrone(${action.relayId} → ${action.x},${action.y}) → ${result.success ? 'OK' : 'FAILED'}`);
                     break;
                 }
                 case 'replace_relay': {
-                    const result = await executeTool('replaceRelayDrone', {
-                        relayId: action.relayId,
-                    });
-                    const res = result as { success: boolean; data?: { newRelayId: string } };
-                    logs.push(`[AI ORCHESTRATOR] replaceRelayDrone({relayId:${action.relayId}}) → ${res.success ? `Replaced with ${res.data?.newRelayId}` : 'FAILED'}${action.reason ? ` | reason: ${action.reason}` : ''}`);
+                    const result = await executeTool('replaceRelayDrone', { relayId: action.relayId }) as { success: boolean; data?: { newRelayId: string } };
+                    logs.push(`replaceRelayDrone(${action.relayId}) → ${result.success ? `replaced with ${result.data?.newRelayId}` : 'FAILED'}`);
                     break;
                 }
                 case 'broadcast_swarm': {
-                    const result = await executeTool('broadcastSwarmCommand', {
-                        command: action.command,
-                        targetArea: action.targetArea,
-                    });
-                    const res = result as { success: boolean; data?: { reachableDrones: string[] } };
-                    logs.push(`[AI ORCHESTRATOR] broadcastSwarmCommand({command:${action.command}}) → ${res.success ? `Broadcast to ${res.data?.reachableDrones?.length ?? 0} drones` : 'FAILED'}${action.reason ? ` | reason: ${action.reason}` : ''}`);
+                    const result = await executeTool('broadcastSwarmCommand', { command: action.command, targetArea: action.targetArea }) as { success: boolean; data?: { reachableDrones: string[] } };
+                    logs.push(`broadcastSwarmCommand(${action.command}) → ${result.success ? `${result.data?.reachableDrones?.length ?? 0} drones` : 'FAILED'}`);
+                    break;
+                }
+                // ── Legacy bootstrap commands ──
+                case 'move_drone': {
+                    await executeTool('setDroneTarget', { droneId: action.droneId, targetX: action.x, targetY: action.y });
+                    logs.push(`setDroneTarget(${action.droneId} → ${action.x},${action.y})`);
+                    break;
+                }
+                case 'set_drone_mode': {
+                    await executeTool('setDroneMode', { droneId: action.droneId, mode: action.mode });
+                    logs.push(`setDroneMode(${action.droneId} → ${action.mode})`);
+                    break;
+                }
+                case 'recall_drone': {
+                    await executeTool('recallDroneToBase', { droneId: action.droneId });
+                    logs.push(`recallDroneToBase(${action.droneId})`);
+                    break;
+                }
+                case 'deploy_team': {
+                    await executeTool('setSurvivorPin', { x: action.x, y: action.y, droneId: action.droneId ?? 'AI_AGENT', message: action.reason ?? 'Potential survivor' });
+                    logs.push(`setSurvivorPin(${action.x},${action.y})`);
                     break;
                 }
                 default:
@@ -616,48 +654,55 @@ export async function processOrchestratorChat(message: string): Promise<{
         const m = getModel();
         const stateSummary = buildStateSummary();
 
-        const systemPrompt = `You are FirstLight rescue orchestrator AI.
+        const systemPrompt = `You are FirstLight, the AI strategic commander of a drone search-and-rescue swarm.
 
-You MUST respond using the following strict format consisting of a <Thinking> block followed by an <Action> block.
+ARCHITECTURE:
+- You are the STRATEGIC BRAIN. Drones are AUTONOMOUS AGENTS.
+- You create tasks. Drones bid on tasks and execute them automatically.
+- You do NOT directly move individual drones (except for relay management).
+- The deterministic engine handles task assignment, bidding rounds, and drone movement.
+
+You MUST respond using this strict format:
 
 <Thinking>
-- Output your internal analysis here. Evaluate zones, coverage, drone states, and explicit visual analysis of captured images.
+- Analyze the mission state: coverage, hotspots, battery levels, active tasks, assignments.
+- Identify gaps: unscanned high-probability areas, stale tasks, unassigned zones.
+- Decide what tasks to create or cancel.
 </Thinking>
 
 <Action>
 - List your chosen actions exactly using these function names, ONE PER LINE:
-move_drone("DRN-ID", x, y)
-set_drone_mode("DRN-ID", "Wide" | "Micro" | "Relay" | "Charging")
-recall_drone("DRN-ID")
-deploy_team("TeamName", x, y)
+create_task("HOTSPOT"|"SCAN"|"CONFIRM", x, y, priority=1-10)
+cancel_task("task_id")
 move_relay("RLY-ID", x, y)
 replace_relay("RLY-ID")
-broadcast_swarm("RECRUIT" | "MICRO_SCAN" | "REDISTRIBUTE" | "RTB_ALL")
+broadcast_swarm("RECRUIT"|"MICRO_SCAN"|"REDISTRIBUTE"|"RTB_ALL")
 set_simulation_state(true|false)
 reset_simulation()
 no_action()
 </Action>
 
-Critical rules:
-- Reasoning voice must be autonomous. Never write phrases like "the user requested" or "user has requested". Base decisions on mission state and telemetry only.
-- Provide explicit percentages: When discussing scan progress, state the exact percentage (e.g., "Scan Progress: 9.5%") instead of using vague phrases like "very low" or "moderate".
-- Natural phrasing for findings: Never literally mention "img=" or "finding=" or quote image paths. Use natural language: "A survivor has been confirmed at C13(2,12)" or "A thermal signature was detected at B4".
-- Never invent drone IDs; use only synced drones from state.
-- Every action line must use full function syntax with required parameters (e.g., replace_relay("RLY-Prime"), not just replace_relay).
-- BATTERY CRITICAL (below 10% or negative): immediately emit recall_drone for that drone. This is the highest priority.
-- BATTERY LOW (below 20%): emit recall_drone unless the drone is already heading to base.
-- DISCONNECTED DRONES: if disconnected drones > 0, emit move_relay to bridge communication gap.
-- RELAY BATTERY LOW (below 25%): emit replace_relay immediately, UNLESS it is <RETURNING>.
-- Relay handoff is AUTONOMOUS. If RelayRoles shows a valid field relay and another relay is <RETURNING> or Charging at base, DO NOT issue replace_relay; describe it as autonomous handoff in progress and focus actions on search drones.
-- MODE LOCK (Strict Role Separation): 
-    1. NEVER use set_drone_mode on 'RLY-' drones to change them to 'Wide' or 'Micro'. Relay drones stay in Relay/Charging.
-    2. NEVER use set_drone_mode on search drones ('DRN-Alpha','DRN-Beta','DRN-Gamma','DRN-Delta') to change them to 'Relay'. Search drones stay in Wide/Micro/Charging.
-- MISSION COMPLETION RULES:
-  1. If scanProgress < 100%, continue searching normally.
-  2. If scanProgress >= 100% and ANY drone is still in "Micro" mode, wait and let them finish (no_action, or move them closer to signals). DO NOT recall them.
-  3. If scanProgress >= 100% and NO drones are in "Micro" mode, check positions. If any drone is NOT at base (dist > 1 from 10,19), issue \`recall_drone\` ONLY for those drones.
-  4. If scanProgress >= 100% and ALL drones are safe at base (near 10,19 or battery=100 or mode=Charging), issue \`set_simulation_state\` with \`"running": false\` to successfully end the mission.
-- Use no_action only when the simulation is paused and there is nothing to do, or all drones are already optimally placed.`;
+TASK RULES (CRITICAL):
+- create_task is the PRIMARY way to direct drones. Use it for hotspots, unscanned areas, and confirmed signals.
+- NEVER call move_drone() or set_drone_mode() — drones handle their own movement via the bidding system.
+- DUPLICATE PREVENTION: NEVER create a task if one already exists within 2 cells of the same type. Check ACTIVE TASKS in state first. Cancel old tasks before creating new ones.
+- Tasks types: HOTSPOT=investigate high-probability cell, SCAN=cover unexplored region, CONFIRM=verify a detected signal.
+- Priorities: 10=critical survivor, 8-9=strong signal, 5-7=moderate probability, 1-4=low priority scan.
+- Tasks auto-expire (default 200 ticks). Use cancel_task for tasks that are no longer relevant.
+
+STRATEGIC RULES:
+- Check ACTIVE TASKS section before creating any new task.
+- If tasks are PENDING with no assignment, the bidding system is working. Be patient.
+- If no tasks exist at all, create SCAN tasks to cover unscanned high-probability areas.
+- BATTERY CRITICAL drones (below 10%): they auto-RTB. No action needed.
+- RELAY BATTERY LOW (below 25%): emit replace_relay immediately, UNLESS <RETURNING>.
+- RELAY HANDOFF: If RelayRoles shows a valid field relay and another relay is <RETURNING>, DO NOT replace_relay — handoff is autonomous.
+- DISCONNECTED DRONES: if disconnected > 0, emit move_relay to bridge communication gap.
+- MODE LOCK: NEVER use relay tools on search drones (DRN-*). NEVER set relay drones (RLY-*) to Wide/Micro.
+- Reasoning voice: autonomous analysis only. Never say "the user requested".
+- Use exact percentages when discussing scan progress.
+- Use no_action only when simulation is paused or all zones are covered with active tasks.`;
+
 
         const userPrompt = `STATE:\n${stateSummary}\n\nUSER:\n${message}`;
 
@@ -669,6 +714,10 @@ Critical rules:
         const result = await chat.sendMessage(userPrompt);
         const reply = result.response.candidates?.[0]?.content?.parts?.[0]?.text ?? '(no response)';
 
+        if (!message.includes('Evaluate current swarm state. Recall any drone')) {
+            orchestratorEngine.appendUserMessage(message);
+        }
+
         // Persist this turn into history
         chatHistory.push({ role: 'user', parts: [{ text: userPrompt }] });
         chatHistory.push({ role: 'model', parts: [{ text: reply }] });
@@ -676,6 +725,7 @@ Critical rules:
         const decision = parseDecision(reply);
 
         if (!decision) {
+            orchestratorEngine.appendLLMMessage(reply);
             pushOrchestratorRecord({
                 timestamp: Date.now(),
                 source: 'ai',
@@ -695,6 +745,30 @@ Critical rules:
         };
 
         const executionLog = await executeActions(safeActions);
+
+        // Format for UI chat log
+        const normalizedReasoning = normalizeReasoning(decision.reasoning);
+        const actionSummary = safeActions
+            .map((a) => {
+                const action = a as any;
+                const type = String(action.type ?? 'unknown');
+                if (type === 'create_task') return `${type}(${action.taskType ?? '?'}) at (${action.x ?? '?'},${action.y ?? '?'})`;
+                if (type === 'cancel_task') return `${type}(${action.taskId ?? '?'})`;
+                if (type === 'move_drone') return `${type}(${String(action.droneId ?? '?')} -> ${String(action.x ?? '?')},${String(action.y ?? '?')})`;
+                if (type === 'set_drone_mode') return `${type}(${String(action.droneId ?? '?')} -> ${String(action.mode ?? '?')})`;
+                if (type === 'recall_drone') return `${type}(${String(action.droneId ?? '?')})`;
+                if (type === 'move_relay') return `${type}(${String(action.relayId ?? '?')} -> ${String(action.x ?? '?')},${String(action.y ?? '?')})`;
+                if (type === 'replace_relay') return `${type}(${String(action.relayId ?? '?')})`;
+                if (type === 'broadcast_swarm') return `${type}(${String(action.command ?? '?')})`;
+                if (type === 'deploy_team') return `${type}(${String(action.x ?? '?')},${String(action.y ?? '?')})`;
+                if (type === 'set_simulation_state') return `${type}(${String(action.running ?? '?')})`;
+                if (type === 'no_action') return `${type}(${String(action.reason ?? 'none')})`;
+                return type;
+            })
+            .join('\n- ');
+            
+        const formattedLLMMessage = `[${(decision.priority ?? 'medium').toUpperCase()}]\n${normalizedReasoning}\n\nActions:\n- ${actionSummary || 'None'}`;
+        orchestratorEngine.appendLLMMessage(formattedLLMMessage);
 
         pushOrchestratorRecord({
             timestamp: Date.now(),

@@ -18,8 +18,11 @@ import type {
     DronePosition,
     RelayDroneStatus,
     SwarmKnowledge,
-    NetworkTopology
+    NetworkTopology,
+    MultiAgentState,
+    AgentChatMessage,
 } from './types.js';
+import { orchestratorEngine } from './simulation/orchestratorEngine.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GRID CONFIGURATION (mirrors swarmRouting.ts constants)
@@ -88,6 +91,9 @@ interface DroneStateStore {
 
     // Aggregated swarm knowledge (updated by relays even when offline)
     swarmKnowledge: SwarmKnowledge;
+
+    // Multi-agent state (orchestrator relay ID)
+    orchestratorRelayId: string | null;
 }
 
 export type CommandType = 
@@ -137,7 +143,12 @@ class DroneStore {
             sensorDetections: [],
             lastUpdated: 0,
         },
+        orchestratorRelayId: 'RLY-Prime',
     };
+    
+    // Relay Swap Tracking
+    private swapTargetRelayId: string | null = null;
+    private swapTargetPosition: { x: number; y: number } | null = null;
     
     private listeners: Set<(state: DroneStateStore) => void> = new Set();
 
@@ -241,7 +252,14 @@ class DroneStore {
                 sensorDetections: [],
                 lastUpdated: 0,
             },
+            orchestratorRelayId: 'RLY-Prime',
         };
+        orchestratorEngine.reset();
+        
+        // Reset Relay Swap Tracking
+        this.swapTargetRelayId = null;
+        this.swapTargetPosition = null;
+        
         this.notify();
     }
 
@@ -403,6 +421,72 @@ class DroneStore {
 
     getSwarmKnowledge(): SwarmKnowledge {
         return this.state.swarmKnowledge;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // MULTI-AGENT STATE ACCESS
+    // ─────────────────────────────────────────────────────────────────────
+
+    getMultiAgentState(): MultiAgentState {
+        return {
+            activeTasks: orchestratorEngine.getActiveTasks(),
+            assignments: orchestratorEngine.getAssignments(),
+            orchestratorDroneId: this.state.orchestratorRelayId,
+            chatLog: orchestratorEngine.getChatLog(50),
+            isBiddingPaused: orchestratorEngine.getIsBiddingPaused(),
+            isSystemFrozen: orchestratorEngine.getIsSystemFrozen(),
+            lastUpdatedTick: this.state.currentTick,
+        };
+    }
+
+    setOrchestratorRelayId(id: string | null): void {
+        this.state.orchestratorRelayId = id;
+        this.notify();
+    }
+
+    getOrchestratorRelayId(): string | null {
+        return this.state.orchestratorRelayId;
+    }
+
+    appendAgentChat(msg: AgentChatMessage): void {
+        orchestratorEngine.appendDroneMessage(msg.role, msg.text);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // RELAY SWAP HANDOFF LOGIC
+    // ─────────────────────────────────────────────────────────────────────
+
+    initiateRelaySwap(newRelayId: string, targetX: number, targetY: number): void {
+        orchestratorEngine.freezeSystem();
+        this.swapTargetRelayId = newRelayId;
+        this.swapTargetPosition = { x: targetX, y: targetY };
+    }
+
+    checkRelaySwapStatus(drones: DroneStatus[]): void {
+        if (!this.swapTargetRelayId || !this.swapTargetPosition || !orchestratorEngine.getIsSystemFrozen()) return;
+
+        const targetRelay = drones.find(d => d.id === this.swapTargetRelayId);
+        if (targetRelay) {
+            const dist = Math.sqrt(
+                Math.pow(targetRelay.position.x - this.swapTargetPosition.x, 2) + 
+                Math.pow(targetRelay.position.y - this.swapTargetPosition.y, 2)
+            );
+            
+            if (dist < 0.5) {
+                // Swap complete! Promote backup.
+                
+                // Simulate state transfer for architectural purity
+                const stateSnapshot = orchestratorEngine.exportState();
+                orchestratorEngine.importState(stateSnapshot);
+                
+                this.setOrchestratorRelayId(this.swapTargetRelayId);
+                orchestratorEngine.unfreezeSystem();
+                
+                // Clear wait
+                this.swapTargetRelayId = null;
+                this.swapTargetPosition = null;
+            }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────

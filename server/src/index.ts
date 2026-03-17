@@ -18,6 +18,7 @@ import express from 'express';
 import cors from 'cors';
 import { executeTool, listTools, getToolSchema } from './tools/index.js';
 import { droneStore } from './droneStore.js';
+import { orchestratorEngine } from './simulation/orchestratorEngine.js';
 import { processOrchestratorChat, getOrchestratorRecords, clearOrchestratorRecords } from './orchestratorChat.js';
 import type { DroneStatus, SectorScanResult, CommLink, SurvivorInfo } from './types.js';
 
@@ -165,6 +166,37 @@ app.delete('/api/commands/processed', (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// MULTI-AGENT ENDPOINTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Get multi-agent state (tasks, assignments, chat log)
+app.get('/api/multiagent/state', (req, res) => {
+    const state = droneStore.getMultiAgentState();
+    res.json({
+        success: true,
+        state
+    });
+});
+
+// Trigger multi-agent tick from frontend
+app.post('/api/multiagent/tick', (req, res) => {
+    const { tick, drones } = req.body as { tick: number; drones: DroneStatus[] };
+    
+    if (typeof tick !== 'number' || !Array.isArray(drones)) {
+        res.status(400).json({ success: false, error: 'tick and drones array required' });
+        return;
+    }
+
+    droneStore.checkRelaySwapStatus(drones);
+    const newAssignments = orchestratorEngine.tick(tick, drones);
+
+    res.json({
+        success: true,
+        assignments: newAssignments
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // STATE SYNC ENDPOINTS (Frontend -> Server)
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -286,6 +318,10 @@ app.listen(PORT, () => {
 ║    POST /api/state/drones        - Sync drone states                       ║
 ║    POST /api/state/grid          - Sync grid state                         ║
 ║    POST /api/state/tick          - Sync simulation tick                    ║
+║                                                                            ║
+║  Multi-Agent API:                                                          ║
+║    GET  /api/multiagent/state    - Get multi-agent state                   ║
+║    POST /api/multiagent/tick     - Trigger bidding round                   ║
 ║                                                                            ║
 ║  Available Tool Modules:                                                   ║
 ║    • Drone (6 tools): Status, targeting, mode control                      ║

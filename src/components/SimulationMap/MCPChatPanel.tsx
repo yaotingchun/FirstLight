@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Terminal, X, MessageSquare, Send } from 'lucide-react';
-import type { OrchestratorChatMessage } from '../../types/simulation';
+import type { AgentChatMessage, MultiAgentState } from '../../types/simulation';
 
 interface MCPChatPanelProps {
     mcpConnected: boolean;
@@ -23,7 +23,8 @@ interface MCPChatPanelProps {
     chatDragRef: React.MutableRefObject<{ isDragging: boolean, startX: number, startY: number, startPosX: number, startPosY: number }>;
     chatResizeRef: React.MutableRefObject<{ isResizing: boolean, startWidth: number, startHeight: number, startX: number, startY: number, startPosX: number, startPosY: number }>;
     chatScrollRef: React.MutableRefObject<HTMLDivElement | null>;
-    chatMessages: OrchestratorChatMessage[];
+    multiAgentState: MultiAgentState | null;
+    chatMessages: AgentChatMessage[];
     chatInput: string;
     setChatInput: (input: string) => void;
     chatSending: boolean;
@@ -37,8 +38,22 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
     executeMcpTool, mcpToolOutput,
     chatOpen, setChatOpen, chatPos, setChatPos, chatSize, setChatSize,
     chatDragRef, chatResizeRef, chatScrollRef,
-    chatMessages, chatInput, setChatInput, chatSending, sendChatMessage, runThinkNow
+    multiAgentState, chatMessages, chatInput, setChatInput, chatSending, sendChatMessage, runThinkNow
 }) => {
+
+    const getRoleColor = (role: string) => {
+        if (role === 'ORCHESTRATOR') return '#00ffcc';
+        if (role.includes('Alpha')) return '#4CAF50';
+        if (role.includes('Beta')) return '#9C27B0';
+        if (role.includes('Gamma')) return '#FF9800';
+        if (role.includes('Delta')) return '#2196F3';
+        if (role === 'RLY-Prime') return '#FFFFFF';
+        if (role === 'RLY-Backup') return '#B0BEC5';
+        if (role === 'USER') return '#00ffcc'; // For borders/text
+        if (role === 'system') return '#888888';
+        return '#888888';
+    };
+
     return (
         <>
             {/* MCP Tools Panel */}
@@ -243,7 +258,7 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                     boxShadow: '0 0 30px rgba(0, 255, 204, 0.2)'
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <h3 
+                        <h3
                             style={{ margin: 0, color: '#00ffcc', display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'grab', userSelect: 'none' }}
                             onPointerDown={(e) => {
                                 chatDragRef.current = { isDragging: true, startX: e.clientX, startY: e.clientY, startPosX: chatPos.x, startPosY: chatPos.y };
@@ -260,7 +275,7 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                                 e.currentTarget.releasePointerCapture(e.pointerId);
                             }}
                         >
-                            <MessageSquare size={16} /> Orchestrator Chat
+                            <MessageSquare size={16} /> {multiAgentState?.orchestratorDroneId ? `Orchestrator: ${multiAgentState.orchestratorDroneId}` : 'Orchestrator Chat'}
                         </h3>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <button
@@ -297,31 +312,46 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                         flexDirection: 'column',
                         gap: 8
                     }} ref={chatScrollRef}>
-                        {chatMessages.map((m, i) => (
-                            <div key={i} style={{
-                                alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-                                maxWidth: '90%',
-                                background: m.role === 'user' ? 'rgba(0,255,204,0.15)' : m.role === 'ai' ? 'rgba(77, 163, 255, 0.15)' : 'rgba(255,255,255,0.06)',
-                                border: '1px solid rgba(255,255,255,0.12)',
-                                borderRadius: 6,
-                                padding: '6px 8px',
-                                fontSize: 13,
-                                lineHeight: '1.4',
-                                overflowWrap: 'break-word',
-                            }}>
-                                <ReactMarkdown
-                                    components={{
-                                        p: ({ node, ...props }) => <p style={{ margin: '0 0 8px 0' }} {...props} />,
-                                        ul: ({ node, ...props }) => <ul style={{ margin: '0 0 8px 0', paddingLeft: '22px', listStyleType: 'disc' }} {...props} />,
-                                        ol: ({ node, ...props }) => <ol style={{ margin: '0 0 8px 0', paddingLeft: '22px', listStyleType: 'decimal' }} {...props} />,
-                                        li: ({ node, ...props }) => <li style={{ marginBottom: '4px' }} {...props} />,
-                                        strong: ({ node, ...props }) => <strong style={{ color: '#fff' }} {...props} />
-                                    }}
-                                >
-                                    {m.text}
-                                </ReactMarkdown>
-                            </div>
-                        ))}
+                        {chatMessages.map((m, i) => {
+                            const isUser = m.role === 'USER' || m.role === 'user';
+                            const isSystem = m.role === 'system';
+                            const roleColor = getRoleColor(m.role);
+
+                            return (
+                                <div key={m.id || i} style={{
+                                    alignSelf: isUser ? 'flex-end' : 'flex-start',
+                                    maxWidth: '95%',
+                                    background: isUser ? 'rgba(0,255,204,0.1)' : isSystem ? 'rgba(255,255,255,0.05)' : 'rgba(5, 15, 25, 0.6)',
+                                    border: `1px solid ${isUser ? 'rgba(0,255,204,0.3)' : isSystem ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.05)'}`,
+                                    borderLeft: !isUser && !isSystem ? `3px solid ${roleColor}` : undefined,
+                                    borderRadius: 6,
+                                    padding: '6px 10px',
+                                    fontSize: 13,
+                                    lineHeight: '1.4',
+                                    overflowWrap: 'break-word',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 4
+                                }}>
+                                    {!isUser && !isSystem && (
+                                        <div style={{ fontSize: 10, fontWeight: 700, color: roleColor, letterSpacing: '0.5px' }}>
+                                            {m.role}
+                                        </div>
+                                    )}
+                                    <ReactMarkdown
+                                        components={{
+                                            p: ({ node, ...props }) => <p style={{ margin: '0 0 4px 0', color: isSystem ? '#aaa' : '#e0e0e0' }} {...props} />,
+                                            ul: ({ node, ...props }) => <ul style={{ margin: '0 0 6px 0', paddingLeft: '20px', listStyleType: 'disc', color: '#ccc' }} {...props} />,
+                                            ol: ({ node, ...props }) => <ol style={{ margin: '0 0 6px 0', paddingLeft: '20px', listStyleType: 'decimal', color: '#ccc' }} {...props} />,
+                                            li: ({ node, ...props }) => <li style={{ marginBottom: '2px' }} {...props} />,
+                                            strong: ({ node, ...props }) => <strong style={{ color: roleColor }} {...props} />
+                                        }}
+                                    >
+                                        {m.text}
+                                    </ReactMarkdown>
+                                </div>
+                            );
+                        })}
                     </div>
 
                     <div style={{ display: 'flex', gap: 8 }}>
@@ -364,7 +394,7 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                     </div>
 
                     {/* Resize Handle */}
-                    <div 
+                    <div
                         style={{
                             position: 'absolute',
                             right: 0,
@@ -395,17 +425,17 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                             e.stopPropagation();
                             const dx = e.clientX - chatResizeRef.current.startX;
                             const dy = e.clientY - chatResizeRef.current.startY;
-                            
+
                             const newWidth = Math.max(300, chatResizeRef.current.startWidth + dx);
                             const newHeight = Math.max(200, chatResizeRef.current.startHeight + dy);
-                            
+
                             const actualDx = newWidth - chatResizeRef.current.startWidth;
                             const actualDy = newHeight - chatResizeRef.current.startHeight;
 
                             setChatSize({ width: newWidth, height: newHeight });
-                            setChatPos({ 
-                                x: chatResizeRef.current.startPosX + actualDx, 
-                                y: chatResizeRef.current.startPosY + actualDy 
+                            setChatPos({
+                                x: chatResizeRef.current.startPosX + actualDx,
+                                y: chatResizeRef.current.startPosY + actualDy
                             });
                         }}
                         onPointerUp={(e) => {
