@@ -105,6 +105,14 @@ function pushOrchestratorRecord(record: OrchestratorRecord): void {
     persistOrchestratorRecords();
 }
 
+export function appendOrchestratorRecord(source: OrchestratorRecord['source'], message: string): void {
+    pushOrchestratorRecord({
+        timestamp: Date.now(),
+        source,
+        message,
+    });
+}
+
 function normalizeReasoning(reasoning: string): string {
     return reasoning
         .replace(/\r\n/g, '\n')

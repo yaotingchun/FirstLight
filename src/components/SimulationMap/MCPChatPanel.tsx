@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Terminal, X, MessageSquare, Send } from 'lucide-react';
+import { getOrchestratorRecords, type OrchestratorRecord } from '../../services/mcpClient';
 import type { OrchestratorChatMessage } from '../../types/simulation';
 
 interface MCPChatPanelProps {
@@ -39,6 +40,37 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
     chatDragRef, chatResizeRef, chatScrollRef,
     chatMessages, chatInput, setChatInput, chatSending, sendChatMessage, runThinkNow
 }) => {
+    const [activityRecords, setActivityRecords] = useState<OrchestratorRecord[]>([]);
+
+    const loadActivityRecords = useCallback(async () => {
+        const result = await getOrchestratorRecords(30);
+        if (result.success && result.records) {
+            setActivityRecords(result.records);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!chatOpen || !mcpConnected) return;
+
+        void loadActivityRecords();
+        const pollId = window.setInterval(() => {
+            void loadActivityRecords();
+        }, 1500);
+
+        return () => {
+            window.clearInterval(pollId);
+        };
+    }, [chatOpen, mcpConnected, loadActivityRecords]);
+
+    useEffect(() => {
+        if (!chatOpen) return;
+        const el = chatScrollRef.current;
+        if (!el) return;
+        requestAnimationFrame(() => {
+            el.scrollTop = el.scrollHeight;
+        });
+    }, [activityRecords, chatMessages, chatOpen, chatScrollRef]);
+
     return (
         <>
             {/* MCP Tools Panel */}
@@ -297,6 +329,90 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                         flexDirection: 'column',
                         gap: 8
                     }} ref={chatScrollRef}>
+                        <div style={{
+                            border: '1px solid #243444',
+                            borderRadius: 6,
+                            padding: 8,
+                            background: 'rgba(255,255,255,0.03)'
+                        }}>
+                            <div style={{
+                                fontSize: 11,
+                                fontWeight: 700,
+                                letterSpacing: '0.08em',
+                                color: '#00ffcc',
+                                textTransform: 'uppercase',
+                                marginBottom: 8
+                            }}>
+                                Activity Feed
+                            </div>
+                            {activityRecords.length === 0 ? (
+                                <div style={{ fontSize: 12, color: '#8aa0b3' }}>
+                                    Awaiting orchestrator activity...
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    {activityRecords.map((record, index) => {
+                                        const stamp = new Date(record.timestamp).toLocaleTimeString('en-US', {
+                                            hour12: false,
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                            second: '2-digit',
+                                        });
+
+                                        const sourceColor =
+                                            record.source === 'error'
+                                                ? '#ff6b6b'
+                                                : record.source === 'ai'
+                                                    ? '#4da3ff'
+                                                    : record.source === 'action'
+                                                        ? '#00ffcc'
+                                                        : '#9db1c1';
+
+                                        return (
+                                            <div
+                                                key={`${record.timestamp}-${index}`}
+                                                style={{
+                                                    border: '1px solid rgba(255,255,255,0.08)',
+                                                    borderRadius: 6,
+                                                    padding: '6px 8px',
+                                                    background: 'rgba(0,0,0,0.2)',
+                                                    fontSize: 12,
+                                                    lineHeight: 1.45,
+                                                }}
+                                            >
+                                                <div style={{ display: 'flex', gap: 8, marginBottom: 4, fontSize: 11 }}>
+                                                    <span style={{ color: '#8aa0b3' }}>[{stamp}]</span>
+                                                    <span style={{ color: sourceColor }}>[{record.source.toUpperCase()}]</span>
+                                                </div>
+                                                <ReactMarkdown
+                                                    components={{
+                                                        p: ({ node, ...props }) => <p style={{ margin: 0 }} {...props} />,
+                                                        ul: ({ node, ...props }) => <ul style={{ margin: '4px 0 0 18px', padding: 0 }} {...props} />,
+                                                        ol: ({ node, ...props }) => <ol style={{ margin: '4px 0 0 18px', padding: 0 }} {...props} />,
+                                                        li: ({ node, ...props }) => <li style={{ marginBottom: '2px' }} {...props} />,
+                                                        strong: ({ node, ...props }) => <strong style={{ color: '#fff' }} {...props} />
+                                                    }}
+                                                >
+                                                    {record.message}
+                                                </ReactMarkdown>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+
+                        <div style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            letterSpacing: '0.08em',
+                            color: '#9db1c1',
+                            textTransform: 'uppercase',
+                            marginTop: 2
+                        }}>
+                            Chat
+                        </div>
+
                         {chatMessages.map((m, i) => (
                             <div key={i} style={{
                                 alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',

@@ -18,11 +18,45 @@ import express from 'express';
 import cors from 'cors';
 import { executeTool, listTools, getToolSchema } from './tools/index.js';
 import { droneStore } from './droneStore.js';
-import { processOrchestratorChat, getOrchestratorRecords, clearOrchestratorRecords } from './orchestratorChat.js';
+import { processOrchestratorChat, getOrchestratorRecords, clearOrchestratorRecords, appendOrchestratorRecord } from './orchestratorChat.js';
+import { localAutonomy } from './simulation/localAutonomy.js';
 import type { DroneStatus, SectorScanResult, CommLink, SurvivorInfo } from './types.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const ORCHESTRATOR_THINK_INTERVAL_TICKS = parseInt(process.env.ORCHESTRATOR_THINK_INTERVAL_TICKS ?? '30', 10);
+
+let orchestratorThinkInFlight = false;
+let lastOrchestratorThinkTick = -1;
+
+async function runPeriodicOrchestratorThink(tick: number): Promise<void> {
+    if (orchestratorThinkInFlight || lastOrchestratorThinkTick === tick) {
+        return;
+    }
+
+    orchestratorThinkInFlight = true;
+    lastOrchestratorThinkTick = tick;
+
+    appendOrchestratorRecord(
+        'system',
+        `[ORCHESTRATOR_THINK] tick=${tick} periodic strategic review started`
+    );
+
+    try {
+        const result = await processOrchestratorChat(
+            'Periodic strategic review: evaluate global mission progress, battery posture, relay network health, hotspot coverage, and survivor search efficiency. Issue actions only if meaningful intervention is required; otherwise use no_action with a short reason.'
+        );
+
+        if (!result.success) {
+            appendOrchestratorRecord(
+                'error',
+                `[ORCHESTRATOR_THINK] tick=${tick} failed: ${result.error ?? 'unknown error'}`
+            );
+        }
+    } finally {
+        orchestratorThinkInFlight = false;
+    }
+}
 
 // Middleware
 app.use(cors());
@@ -40,7 +74,36 @@ app.get('/api/status', (req, res) => {
         timestamp: Date.now(),
         simulationRunning: droneStore.isSimulationRunning(),
         currentTick: droneStore.getCurrentTick(),
-        dronesOnline: droneStore.getAllDrones().filter(d => d.isActive).length
+        dronesOnline: droneStore.getAllDrones().filter(d => d.isActive).length,
+        localAutonomyEnabled: localAutonomy.isEnabled(),
+        orchestratorThinkInFlight,
+    });
+});
+
+app.get('/api/autonomy/status', (req, res) => {
+    res.json({
+        success: true,
+        enabled: localAutonomy.isEnabled(),
+        timestamp: Date.now(),
+    });
+});
+
+app.post('/api/autonomy/enabled', (req, res) => {
+    const { enabled } = req.body as { enabled?: boolean };
+    if (typeof enabled !== 'boolean') {
+        res.status(400).json({
+            success: false,
+            error: 'enabled (boolean) is required',
+            timestamp: Date.now(),
+        });
+        return;
+    }
+
+    localAutonomy.setEnabled(enabled);
+    res.json({
+        success: true,
+        enabled,
+        timestamp: Date.now(),
     });
 });
 
@@ -246,11 +309,35 @@ app.post('/api/state/tick', (req, res) => {
     
     droneStore.setTick(tick);
     droneStore.setRunning(running);
+
+    const autonomy = localAutonomy.onTick(tick);
+    if (autonomy.actions.length > 0) {
+        appendOrchestratorRecord(
+            'system',
+            `[LOCAL_AUTONOMY] tick=${tick} generated ${autonomy.actions.length} action(s)`
+        );
+        autonomy.actions.forEach((action) => {
+            appendOrchestratorRecord(
+                'action',
+                `[LOCAL_AUTONOMY] ${action.type} ${action.droneId} - ${action.reason}`
+            );
+        });
+    } else if (running && tick % 10 === 0) {
+        appendOrchestratorRecord(
+            'system',
+            `[LOCAL_AUTONOMY] tick=${tick} no_action (state stable)`
+        );
+    }
+
+    if (running && tick > 0 && tick % ORCHESTRATOR_THINK_INTERVAL_TICKS === 0) {
+        void runPeriodicOrchestratorThink(tick);
+    }
     
     res.json({
         success: true,
         tick,
-        running
+        running,
+        autonomy,
     });
 });
 

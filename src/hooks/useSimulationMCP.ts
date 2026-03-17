@@ -32,6 +32,7 @@ export const useSimulationMCP = (
     const [chatInput, setChatInput] = useState('');
     const [chatSending, setChatSending] = useState(false);
     const chatScrollRef = useRef<HTMLDivElement | null>(null);
+    const processMcpCommandsRef = useRef<() => Promise<void>>(async () => {});
     const [chatMessages, setChatMessages] = useState<OrchestratorChatMessage[]>([
         { role: 'system', text: 'AI chat ready. Ask status or issue commands (e.g. "move DRN-Alpha to 5,8"). Use THINK NOW to force one AI decision cycle.' }
     ]);
@@ -153,6 +154,10 @@ export const useSimulationMCP = (
             setChatMessages(prev => [...prev, { role: 'system', text: `Executed: ${executionLog.join(' | ')}` }]);
         }
 
+        // Apply queued MCP commands immediately after AI response.
+        // This avoids waiting for connection polling to flip mcpConnected.
+        await processMcpCommandsRef.current();
+
         setChatSending(false);
         aiBusyRef.current = false;
     }, [aiBusyRef]);
@@ -226,8 +231,6 @@ export const useSimulationMCP = (
     }, [mcpConnected, running, dronesRef, gridRef, metricsRef, timeRef]);
 
     const processMcpCommands = useCallback(async () => {
-        if (!mcpConnected) return;
-
         const commands = await mcpClient.getPendingCommands();
         for (const cmd of commands) {
             if (cmd.processed) continue;
@@ -400,7 +403,21 @@ export const useSimulationMCP = (
 
             await mcpClient.acknowledgeCommand(cmd.id);
         }
-    }, [mcpConnected, dronesRef, gridRef, pinsRef, resetSim, setRunning, autoRecallThresholdsRef, relayTakeoverTargetRef, timeRef]);
+    }, [dronesRef, gridRef, pinsRef, resetSim, setRunning, autoRecallThresholdsRef, relayTakeoverTargetRef, timeRef]);
+
+    useEffect(() => {
+        processMcpCommandsRef.current = processMcpCommands;
+    }, [processMcpCommands]);
+
+    // Keep consuming queued MCP commands even when the simulation is paused.
+    // This allows AI-issued set_simulation_state(true) to take effect immediately.
+    useEffect(() => {
+        const commandPoll = setInterval(() => {
+            processMcpCommands();
+        }, 250);
+
+        return () => clearInterval(commandPoll);
+    }, [processMcpCommands]);
 
     useEffect(() => {
         if (mcpConnected) {
