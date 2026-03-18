@@ -10,7 +10,6 @@ interface SimulationDashboardProps {
     time: number;
     aiDisconnectedRef: React.MutableRefObject<Set<string>>;
     aiReconnectedUntilTickRef: React.MutableRefObject<Map<string, number>>;
-    triggerFailureEvent: (droneId: string) => void;
     metrics: {
         totalUniqueScans: number;
         missionTimeSec: number;
@@ -24,7 +23,7 @@ interface SimulationDashboardProps {
 
 export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
     drones, time, aiDisconnectedRef, aiReconnectedUntilTickRef,
-    triggerFailureEvent, metrics, sensorWeights
+    metrics, sensorWeights
 }) => {
     const TOTAL_CELLS = GRID_W * GRID_H;
 
@@ -35,17 +34,6 @@ export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
                 <h4 className="hud-text" style={{ fontSize: '0.9rem', color: 'var(--accent-primary)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Activity size={18} /> LIVE SWARM STATUS
                 </h4>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
-                    <div style={{ background: 'var(--panel-bg)', padding: '12px', border: '1px solid var(--panel-border)', textAlign: 'center' }}>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>ACTIVE DRONES</div>
-                        <div style={{ fontSize: '1.5rem', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{drones.length}</div>
-                    </div>
-                    <div style={{ background: 'var(--panel-bg)', padding: '12px', border: '1px solid var(--panel-border)', textAlign: 'center' }}>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>TIME CYCLES</div>
-                        <div style={{ fontSize: '1.5rem', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{time}</div>
-                    </div>
-                </div>
 
                 <div style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {drones.map((d, i) => {
@@ -64,14 +52,9 @@ export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
                         return (
                             <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--panel-border)' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <button
-                                        onClick={() => {
-                                            if (!isAiDisconnected) triggerFailureEvent(d.id);
-                                        }}
-                                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}
-                                    >
+                                    <span style={{ display: 'flex', alignItems: 'center', padding: 2 }}>
                                         {isAiDisconnected ? <WifiOff size={14} color="#ff4444" /> : <Wifi size={14} color="#00ffcc" />}
-                                    </button>
+                                    </span>
                                     <span style={{ color: isAiDisconnected ? '#ff4444' : '#00ffcc', fontWeight: 700 }}>
                                         {d.id}
                                     </span>
@@ -83,57 +66,6 @@ export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
                                     </div>
                                 </div>
                             </div>
-                        );
-                    })}
-                </div>
-            </div>
-
-            {/* Simulate Failure Panel */}
-            <div className="hud-panel" style={{ padding: '16px', background: 'rgba(255, 136, 0, 0.05)', border: '1px solid var(--panel-border)' }}>
-                <h4 className="hud-text" style={{ fontSize: '0.85rem', color: '#ff8800', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', letterSpacing: '1px' }}>
-                    <WifiOff size={16} /> SIMULATE FAILURE
-                </h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                    {drones.map((d) => {
-                        const droneColor = '#00ffcc';
-                        const isAiDisconnected = aiDisconnectedRef.current.has(d.id);
-                        const isRecentlyReconnected = (aiReconnectedUntilTickRef.current.get(d.id) ?? -1) > time;
-                        return (
-                            <button
-                                key={d.id}
-                                onClick={() => triggerFailureEvent(d.id)}
-                                disabled={isAiDisconnected}
-                                style={{
-                                    background: 'rgba(0,0,0,0.3)',
-                                    border: `1px solid ${isAiDisconnected ? '#ff4444' : isRecentlyReconnected ? '#33ffaa' : droneColor}`,
-                                    padding: '8px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '8px',
-                                    cursor: isAiDisconnected ? 'not-allowed' : 'pointer',
-                                    transition: 'all 0.2s',
-                                    borderRadius: '2px',
-                                    opacity: isAiDisconnected ? 0.7 : 1
-                                }}
-                            >
-                                <WifiOff size={12} style={{ color: isAiDisconnected ? '#ff4444' : 'var(--text-secondary)', opacity: isAiDisconnected ? 1 : 0.3 }} />
-                                <span style={{
-                                    color: isAiDisconnected ? '#ff4444' : isRecentlyReconnected ? '#33ffaa' : droneColor,
-                                    fontSize: '0.75rem',
-                                    fontWeight: 700,
-                                    fontFamily: 'var(--font-mono)'
-                                }}>
-                                    {d.id}
-                                </span>
-                                <div style={{
-                                    width: '6px',
-                                    height: '6px',
-                                    borderRadius: '50%',
-                                    background: isAiDisconnected ? '#ff4444' : isRecentlyReconnected ? '#33ffaa' : droneColor,
-                                    boxShadow: isAiDisconnected ? '0 0 8px #ff4444' : `0 0 8px ${isRecentlyReconnected ? '#33ffaa' : droneColor}`
-                                }} className={!isAiDisconnected ? 'animate-pulse' : ''} />
-                            </button>
                         );
                     })}
                 </div>

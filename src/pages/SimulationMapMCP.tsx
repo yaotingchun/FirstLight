@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useCallback } from 'react';
 import { Hexagon, Play, Pause, FastForward, RotateCcw, Activity, Wifi, WifiOff, MessageSquare } from 'lucide-react';
 
 import { useSimulationEngine } from '../hooks/useSimulationEngine';
@@ -9,11 +9,6 @@ import { MCPChatPanel } from '../components/SimulationMap/MCPChatPanel';
 
 const SimulationMapMCP: React.FC = () => {
     const aiBusyRef = useRef(false);
-
-    const onRelaySwapDecisionMade = useCallback((preferredId: string, msg: string) => {
-        // We need to trigger a chat decision for relay swap. We'll get runOrchestratorPrompt via ref or just let it trigger via event later.
-        console.log("Relay Swap Decision Made", preferredId, msg);
-    }, []);
 
     const {
         running, setRunning,
@@ -27,14 +22,14 @@ const SimulationMapMCP: React.FC = () => {
         autoRecallThresholdsRef, relayTakeoverTargetRef,
         aiDisconnectedRef, aiReconnectedUntilTickRef,
         metricsRef,
-        toggleRunning, resetSim, triggerFailureEvent,
+        toggleRunning, resetSim,
         getSectorProbability, performTickCore
     } = useSimulationEngine(
         (eventPayload: { type: string; droneId: string }) => {
             // handle failure event triggered
             console.log("Failure triggered for", eventPayload.droneId);
         },
-        (nextRunning: boolean, tick: number) => {
+        () => {
             // handle play pause
         }
     );
@@ -54,7 +49,7 @@ const SimulationMapMCP: React.FC = () => {
         chatResizeRef,
         chatInput, setChatInput,
         chatSending,
-        chatMessages, setChatMessages,
+        chatMessages,
         chatScrollRef,
         sendChatMessage,
         runThinkNow,
@@ -68,15 +63,10 @@ const SimulationMapMCP: React.FC = () => {
         resetSim, aiBusyRef
     );
 
-    // Patch the failure event to also trigger an orchestrator prompt
-    const triggerFailureAndPrompt = useCallback((droneId: string) => {
-        triggerFailureEvent(droneId);
-        runOrchestratorPrompt(`Critical: Drone ${droneId} connection lost. Take action immediately to maintain coverage or assign a replacement. Output JSON actions only.`, 'auto');
-    }, [triggerFailureEvent, runOrchestratorPrompt]);
-
     // The core tick loop wrapped to pass the MCP sync functions
     const performTick = useCallback(() => {
         performTickCore(syncToMcp, processMcpCommands, (preferredId: string, msg: string) => {
+            void preferredId;
             runOrchestratorPrompt(msg, 'auto');
         });
     }, [performTickCore, syncToMcp, processMcpCommands, runOrchestratorPrompt]);
@@ -204,7 +194,6 @@ const SimulationMapMCP: React.FC = () => {
                     time={timeRef.current}
                     aiDisconnectedRef={aiDisconnectedRef}
                     aiReconnectedUntilTickRef={aiReconnectedUntilTickRef}
-                    triggerFailureEvent={triggerFailureAndPrompt}
                     metrics={metricsRef.current}
                     sensorWeights={sensorWeightsRef.current}
                 />
