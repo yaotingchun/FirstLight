@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Terminal, X, MessageSquare, Send } from 'lucide-react';
+import { Terminal, X, FileText } from 'lucide-react';
 import { getOrchestratorRecords, type OrchestratorRecord } from '../../services/mcpClient';
 import type { OrchestratorChatMessage } from '../../types/simulation';
 
@@ -25,11 +25,8 @@ interface MCPChatPanelProps {
     chatResizeRef: React.MutableRefObject<{ isResizing: boolean, startWidth: number, startHeight: number, startX: number, startY: number, startPosX: number, startPosY: number }>;
     chatScrollRef: React.MutableRefObject<HTMLDivElement | null>;
     chatMessages: OrchestratorChatMessage[];
-    chatInput: string;
-    setChatInput: (input: string) => void;
-    chatSending: boolean;
-    sendChatMessage: () => void;
-    runThinkNow: () => void;
+    running: boolean;
+    onStartSimulation: () => void;
 }
 
 export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
@@ -38,9 +35,10 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
     executeMcpTool, mcpToolOutput,
     chatOpen, setChatOpen, chatPos, setChatPos, chatSize, setChatSize,
     chatDragRef, chatResizeRef, chatScrollRef,
-    chatMessages, chatInput, setChatInput, chatSending, sendChatMessage, runThinkNow
+    chatMessages, running, onStartSimulation
 }) => {
     const [activityRecords, setActivityRecords] = useState<OrchestratorRecord[]>([]);
+    const [startPressedOnce, setStartPressedOnce] = useState(false);
     const shouldAutoScrollRef = useRef(true);
 
     const updateAutoScrollState = useCallback(() => {
@@ -273,7 +271,7 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                 </div>
             )}
 
-            {/* AI Orchestrator Chat Panel */}
+            {/* Mission Log Panel */}
             {chatOpen && (
                 <div style={{
                     position: 'fixed',
@@ -309,12 +307,15 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                                 e.currentTarget.releasePointerCapture(e.pointerId);
                             }}
                         >
-                            <MessageSquare size={16} /> Orchestrator Chat
+                            <FileText size={16} /> Mission Log
                         </h3>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <button
-                                onClick={runThinkNow}
-                                disabled={!mcpConnected || chatSending}
+                                onClick={() => {
+                                    setStartPressedOnce(true);
+                                    if (!running) onStartSimulation();
+                                }}
+                                disabled={startPressedOnce || running}
                                 style={{
                                     background: '#00ffcc',
                                     border: 'none',
@@ -323,11 +324,11 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                                     padding: '4px 8px',
                                     fontSize: 11,
                                     fontWeight: 700,
-                                    cursor: !mcpConnected || chatSending ? 'not-allowed' : 'pointer',
-                                    opacity: !mcpConnected || chatSending ? 0.5 : 1
+                                    cursor: startPressedOnce || running ? 'not-allowed' : 'pointer',
+                                    opacity: startPressedOnce || running ? 0.5 : 1
                                 }}
                             >
-                                THINK NOW
+                                START SIMULATION
                             </button>
                             <button onClick={() => setChatOpen(false)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}>
                                 <X size={16} />
@@ -445,81 +446,6 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                             )}
                         </div>
 
-                        <div style={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            letterSpacing: '0.08em',
-                            color: '#9db1c1',
-                            textTransform: 'uppercase',
-                            marginTop: 2
-                        }}>
-                            Chat
-                        </div>
-
-                        {chatMessages.map((m, i) => (
-                            <div key={i} style={{
-                                alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-                                maxWidth: '90%',
-                                background: m.role === 'user' ? 'rgba(0,255,204,0.15)' : m.role === 'ai' ? 'rgba(77, 163, 255, 0.15)' : 'rgba(255,255,255,0.06)',
-                                border: '1px solid rgba(255,255,255,0.12)',
-                                borderRadius: 6,
-                                padding: '6px 8px',
-                                fontSize: 13,
-                                lineHeight: '1.4',
-                                overflowWrap: 'break-word',
-                            }}>
-                                <ReactMarkdown
-                                    components={{
-                                        p: ({ node, ...props }) => <p style={{ margin: '0 0 8px 0' }} {...props} />,
-                                        ul: ({ node, ...props }) => <ul style={{ margin: '0 0 8px 0', paddingLeft: '22px', listStyleType: 'disc' }} {...props} />,
-                                        ol: ({ node, ...props }) => <ol style={{ margin: '0 0 8px 0', paddingLeft: '22px', listStyleType: 'decimal' }} {...props} />,
-                                        li: ({ node, ...props }) => <li style={{ marginBottom: '4px' }} {...props} />,
-                                        strong: ({ node, ...props }) => <strong style={{ color: '#fff' }} {...props} />
-                                    }}
-                                >
-                                    {m.text}
-                                </ReactMarkdown>
-                            </div>
-                        ))}
-                    </div>
-
-                    <div style={{ display: 'flex', gap: 8 }}>
-                        <input
-                            value={chatInput}
-                            onChange={(e) => setChatInput(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    sendChatMessage();
-                                }
-                            }}
-                            placeholder={mcpConnected ? 'Asking AI Orchestrator...' : 'Connect MCP server first'}
-                            disabled={!mcpConnected || chatSending}
-                            style={{
-                                flex: 1,
-                                background: '#0a1520',
-                                border: '1px solid #334455',
-                                color: '#fff',
-                                borderRadius: 6,
-                                padding: '8px 10px',
-                                fontSize: 12
-                            }}
-                        />
-                        <button
-                            onClick={sendChatMessage}
-                            disabled={!mcpConnected || chatSending || !chatInput.trim()}
-                            style={{
-                                border: 'none',
-                                borderRadius: 6,
-                                padding: '8px 10px',
-                                background: '#00ffcc',
-                                color: '#001018',
-                                cursor: !mcpConnected || chatSending || !chatInput.trim() ? 'not-allowed' : 'pointer',
-                                opacity: !mcpConnected || chatSending || !chatInput.trim() ? 0.5 : 1
-                            }}
-                        >
-                            <Send size={14} />
-                        </button>
                     </div>
 
                     {/* Resize Handle */}

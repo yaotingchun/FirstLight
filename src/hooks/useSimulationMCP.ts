@@ -35,6 +35,7 @@ export const useSimulationMCP = (
     const [chatSending, setChatSending] = useState(false);
     const chatScrollRef = useRef<HTMLDivElement | null>(null);
     const processMcpCommandsRef = useRef<() => Promise<void>>(async () => {});
+    const syncedSurvivorIdsRef = useRef<Set<string>>(new Set());
     const [chatMessages, setChatMessages] = useState<OrchestratorChatMessage[]>([
         { role: 'system', text: 'AI chat ready. Ask status or issue commands (e.g. "move DRN-Alpha to 5,8"). Use THINK NOW to force one AI decision cycle.' }
     ]);
@@ -225,6 +226,24 @@ export const useSimulationMCP = (
         })));
         await mcpClient.syncGridState(gridState);
 
+        // Ensure survivor discoveries made by the simulation are reflected in MCP mission stats.
+        for (const pin of pinsRef.current) {
+            if (syncedSurvivorIdsRef.current.has(pin.id)) continue;
+
+            const synced = await mcpClient.syncSurvivor({
+                id: pin.id,
+                x: pin.x,
+                y: pin.y,
+                droneId: 'SYSTEM',
+                message: pin.info?.message || 'Survivor confirmed',
+                tick: timeRef.current,
+            });
+
+            if (synced) {
+                syncedSurvivorIdsRef.current.add(pin.id);
+            }
+        }
+
         if (mcpConnected) {
             await mcpClient.executeTool('updateMissionStats', {
                 totalUniqueScans: metricsRef.current.totalUniqueScans,
@@ -299,6 +318,7 @@ export const useSimulationMCP = (
                 }
                 case 'RESET_MISSION': {
                     resetSim();
+                    syncedSurvivorIdsRef.current.clear();
                     break;
                 }
                 case 'SET_SIMULATION_STATE': {
@@ -343,7 +363,10 @@ export const useSimulationMCP = (
                             y: sy,
                             info: { message: smessage, battery: 'unknown' }
                         });
-                        mcpClient.syncSurvivor({ id: pinId, x: sx, y: sy, droneId: sdroneId, message: smessage, tick: timeRef.current });
+                        const synced = await mcpClient.syncSurvivor({ id: pinId, x: sx, y: sy, droneId: sdroneId, message: smessage, tick: timeRef.current });
+                        if (synced) {
+                            syncedSurvivorIdsRef.current.add(pinId);
+                        }
                     }
                     break;
                 }

@@ -1,5 +1,5 @@
 import React, { useRef, useCallback } from 'react';
-import { Hexagon, Play, Pause, FastForward, RotateCcw, Activity, Wifi, WifiOff, MessageSquare } from 'lucide-react';
+import { Hexagon, Play, Pause, Activity, FileText } from 'lucide-react';
 
 import { useSharedSimulation } from '../context/SimulationContext';
 import { useSimulationMCP } from '../hooks/useSimulationMCP';
@@ -12,11 +12,12 @@ const SimulationMapMCP: React.FC = () => {
 
     const {
         running, setRunning,
-        speed, setSpeed,
+        speed,
         selectedPin, setSelectedPin,
-        showSensors, setShowSensors,
+        showSensors,
         showTrails, setShowTrails,
-        selectedTrailDroneId, setSelectedTrailDroneId,
+        selectedTrailDroneId,
+        setSelectedTrailDroneId,
         gridRef, dronesRef, survivorsRef, pinsRef,
         timeRef, commLinksRef, sensorWeightsRef,
         autoRecallThresholdsRef, relayTakeoverTargetRef,
@@ -39,12 +40,8 @@ const SimulationMapMCP: React.FC = () => {
         chatDragRef,
         chatSize, setChatSize,
         chatResizeRef,
-        chatInput, setChatInput,
-        chatSending,
         chatMessages,
         chatScrollRef,
-        sendChatMessage,
-        runThinkNow,
 
         syncToMcp,
         processMcpCommands,
@@ -86,12 +83,6 @@ const SimulationMapMCP: React.FC = () => {
                     <button onClick={toggleRunning} className="hud-btn" style={{ padding: '8px 16px', display: 'flex', gap: '8px', cursor: 'pointer' }}>
                         {running ? <Pause size={18} /> : <Play size={18} />} {running ? 'PAUSE' : 'START SCAN'}
                     </button>
-                    <button onClick={() => setSpeed(s => s === 1 ? 5 : 1)} className={`hud-btn ${speed > 1 ? 'glow-text' : ''}`} style={{ padding: '8px 16px', display: 'flex', gap: '8px', cursor: 'pointer', borderColor: speed > 1 ? 'var(--accent-primary)' : '' }}>
-                        <FastForward size={18} /> x{speed}
-                    </button>
-                    <button onClick={() => setShowSensors(!showSensors)} className={`hud-btn ${showSensors ? 'glow-text' : ''}`} style={{ padding: '8px 16px', display: 'flex', gap: '8px', cursor: 'pointer', borderColor: showSensors ? 'var(--accent-primary)' : '' }}>
-                        <Activity size={18} /> {showSensors ? 'SENSORS' : 'SENSORS'}
-                    </button>
                     <div style={{ display: 'flex', gap: '0', background: 'rgba(0,0,0,0.3)', borderRadius: '4px', border: '1px solid var(--panel-border)', overflow: 'hidden' }}>
                         <button 
                             onClick={() => setShowTrails(!showTrails)} 
@@ -129,24 +120,6 @@ const SimulationMapMCP: React.FC = () => {
                             ))}
                         </select>
                     </div>
-                    <button onClick={resetSim} className="hud-btn" style={{ padding: '8px 16px', display: 'flex', gap: '8px', cursor: 'pointer' }}>
-                        <RotateCcw size={18} /> RESET
-                    </button>
-                    <button
-                        onClick={() => setMcpPanelOpen(!mcpPanelOpen)}
-                        className={`hud-btn ${mcpPanelOpen ? 'glow-text' : ''}`}
-                        style={{
-                            padding: '8px 16px',
-                            display: 'flex',
-                            gap: '8px',
-                            cursor: 'pointer',
-                            borderColor: mcpPanelOpen ? 'var(--accent-primary)' : '',
-                            marginLeft: '8px'
-                        }}
-                    >
-                        {mcpConnected ? <Wifi size={18} /> : <WifiOff size={18} />}
-                        MCP {mcpConnected ? 'ONLINE' : 'OFFLINE'}
-                    </button>
                     <button
                         onClick={() => setChatOpen(!chatOpen)}
                         className={`hud-btn ${chatOpen ? 'glow-text' : ''}`}
@@ -158,7 +131,7 @@ const SimulationMapMCP: React.FC = () => {
                             borderColor: chatOpen ? 'var(--accent-primary)' : ''
                         }}
                     >
-                        <MessageSquare size={18} /> AI CHAT
+                        <FileText size={18} /> MISSION LOG
                     </button>
                 </div>
             </header>
@@ -212,11 +185,10 @@ const SimulationMapMCP: React.FC = () => {
                 chatResizeRef={chatResizeRef}
                 chatScrollRef={chatScrollRef}
                 chatMessages={chatMessages}
-                chatInput={chatInput}
-                setChatInput={setChatInput}
-                chatSending={chatSending}
-                sendChatMessage={sendChatMessage}
-                runThinkNow={runThinkNow}
+                running={running}
+                onStartSimulation={() => {
+                    if (!running) toggleRunning();
+                }}
             />
 
             <style>{`
