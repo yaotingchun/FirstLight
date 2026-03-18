@@ -1,7 +1,7 @@
 import React, { useRef, useCallback } from 'react';
 import { Hexagon, Play, Pause, FastForward, RotateCcw, Activity, Wifi, WifiOff, MessageSquare } from 'lucide-react';
 
-import { useSimulationEngine } from '../hooks/useSimulationEngine';
+import { useSharedSimulation } from '../context/SimulationContext';
 import { useSimulationMCP } from '../hooks/useSimulationMCP';
 import { SimulationGrid } from '../components/SimulationMap/SimulationGrid';
 import { SimulationDashboard } from '../components/SimulationMap/SimulationDashboard';
@@ -24,15 +24,7 @@ const SimulationMapMCP: React.FC = () => {
         metricsRef,
         toggleRunning, resetSim,
         getSectorProbability, performTickCore
-    } = useSimulationEngine(
-        (eventPayload: { type: string; droneId: string }) => {
-            // handle failure event triggered
-            console.log("Failure triggered for", eventPayload.droneId);
-        },
-        () => {
-            // handle play pause
-        }
-    );
+    } = useSharedSimulation();
 
     const {
         mcpConnected,

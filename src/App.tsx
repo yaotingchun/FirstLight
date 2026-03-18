@@ -8,6 +8,7 @@ import SimulationMapMCP from './pages/SimulationMapMCP';
 import DroneCam from './pages/DroneCam';
 import LoadingScreen from './components/LoadingScreen';
 import { clearOrchestratorRecords } from './services/mcpClient';
+import { SimulationProvider } from './context/SimulationContext';
 
 const pages = [
   { path: '/dashboard', element: <Dashboard /> },
@@ -62,16 +63,18 @@ function App() {
     <Router>
       {isLoading && <LoadingScreen onComplete={() => setIsLoading(false)} />}
 
-      <div style={{ display: 'flex', width: '100%', height: '100%', opacity: isLoading ? 0 : 1, transition: 'opacity 0.5s ease-in' }}>
-        <Sidebar />
-        <main style={{ flex: 1, position: 'relative', overflowY: 'auto' }}>
-          <div className="scanline-overlay"></div>
-          <Routes>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="*" element={<PersistentPages />} />
-          </Routes>
-        </main>
-      </div>
+      <SimulationProvider>
+        <div style={{ display: 'flex', width: '100%', height: '100%', opacity: isLoading ? 0 : 1, transition: 'opacity 0.5s ease-in' }}>
+          <Sidebar />
+          <main style={{ flex: 1, position: 'relative', overflowY: 'auto' }}>
+            <div className="scanline-overlay"></div>
+            <Routes>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="*" element={<PersistentPages />} />
+            </Routes>
+          </main>
+        </div>
+      </SimulationProvider>
     </Router>
   );
 }
