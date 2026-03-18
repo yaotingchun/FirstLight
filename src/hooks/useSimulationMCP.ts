@@ -36,6 +36,7 @@ export const useSimulationMCP = (
     const chatScrollRef = useRef<HTMLDivElement | null>(null);
     const processMcpCommandsRef = useRef<() => Promise<void>>(async () => {});
     const syncedSurvivorIdsRef = useRef<Set<string>>(new Set());
+    const bootstrappedServerStateRef = useRef(false);
     const [chatMessages, setChatMessages] = useState<OrchestratorChatMessage[]>([
         { role: 'system', text: 'AI chat ready. Ask status or issue commands (e.g. "move DRN-Alpha to 5,8"). Use THINK NOW to force one AI decision cycle.' }
     ]);
@@ -450,9 +451,17 @@ export const useSimulationMCP = (
     }, [processMcpCommands]);
 
     useEffect(() => {
-        if (mcpConnected) {
-            syncToMcp(true); 
-        }
+        if (!mcpConnected || bootstrappedServerStateRef.current) return;
+
+        bootstrappedServerStateRef.current = true;
+
+        void (async () => {
+            // Clear stale in-memory server runtime state from previous browser sessions.
+            await mcpClient.resetServerState();
+            await mcpClient.clearOrchestratorRecords();
+            syncedSurvivorIdsRef.current.clear();
+            await syncToMcp(true);
+        })();
     }, [mcpConnected, syncToMcp]);
 
     useEffect(() => {

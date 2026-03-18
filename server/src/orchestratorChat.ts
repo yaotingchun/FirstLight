@@ -263,7 +263,6 @@ function buildStateSummary(): string {
         `running=${stats.simulationRunning}`,
         `scanProgress=${stats.scanProgress.toFixed(1)}%`,
         `survivorsFound=${stats.survivorsFound}`,
-        `totalExpectedSurvivors=${stats.totalEstimatedSurvivors}`,
         `avgBattery=${stats.averageBattery.toFixed(1)}%`,
         `meanProbabilityScanned=${stats.meanProbabilityScanned?.toFixed(3) || 0}`,
         `imageScannedCells=${grid.flat().filter(c => c.scanned && !!c.disasterImage).length}`,
@@ -664,6 +663,7 @@ no_action()
 Critical rules:
 - Reasoning voice must be autonomous. Never write phrases like "the user requested" or "user has requested". Base decisions on mission state and telemetry only.
 - Provide explicit percentages: When discussing scan progress, state the exact percentage (e.g., "Scan Progress: 9.5%") instead of using vague phrases like "very low" or "moderate".
+- Survivors reporting policy: never reference "expected", "estimated", or "target" survivor counts. Mention only confirmed survivors found and actionable search status.
 - Natural phrasing for findings: Never literally mention "img=" or "finding=" or quote image paths. Use natural language: "A survivor has been confirmed at C13(2,12)" or "A thermal signature was detected at B4".
 - Never invent drone IDs; use only synced drones from state.
 - Every action line must use full function syntax with required parameters (e.g., replace_relay("RLY-Prime"), not just replace_relay).

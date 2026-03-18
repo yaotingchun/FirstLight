@@ -250,6 +250,23 @@ export async function syncTick(tick: number, running: boolean): Promise<boolean>
     }
 }
 
+/**
+ * Reset MCP server in-memory simulation state.
+ * Useful when the frontend boots after a browser reload so stale runtime data is cleared.
+ */
+export async function resetServerState(): Promise<boolean> {
+    try {
+        const response = await fetch(`${MCP_SERVER_URL}/api/state/reset`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const result = await response.json();
+        return result.success;
+    } catch {
+        return false;
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // COMMAND POLLING (Server -> Frontend)
 // ═══════════════════════════════════════════════════════════════════════════
