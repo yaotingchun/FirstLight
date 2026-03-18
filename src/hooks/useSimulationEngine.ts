@@ -28,6 +28,8 @@ export const useSimulationEngine = (
     const [, setTickFlip] = useState(0);
     const [selectedPin, setSelectedPin] = useState<FoundPin | null>(null);
     const [showSensors, setShowSensors] = useState(false);
+    const [showTrails, setShowTrails] = useState(false);
+    const [selectedTrailDroneId, setSelectedTrailDroneId] = useState<string | 'all'>('all');
 
     const initialSurvivors = createSurvivors();
     const gridRef = useRef<Sector[][]>(createGrid(initialSurvivors));
@@ -136,6 +138,10 @@ export const useSimulationEngine = (
                     type: 'HIGH_SIGNAL',
                     payload: { survivorId: survivor.id }
                 });
+            }
+
+            if (drone.path.length > 0) {
+                drone.path[drone.path.length - 1].scanned = true;
             }
 
             drone.mode = 'Wide';
@@ -557,10 +563,7 @@ export const useSimulationEngine = (
                     d.x = BASE_X;
                     d.y = BASE_Y;
                     d.mode = 'Charging';
-                    return;
-                }
-                
-                if (relayDistToTarget >= 0.3) {
+                } else if (relayDistToTarget >= 0.3) {
                     const relaySpeed = 0.3;
                     const relayAngle = Math.atan2(d.ty - d.y, d.tx - d.x);
                     d.x += Math.cos(relayAngle) * Math.min(relaySpeed, relayDistToTarget);
@@ -568,6 +571,16 @@ export const useSimulationEngine = (
                     d.x = Math.max(0, Math.min(GRID_W - 1, d.x));
                     d.y = Math.max(0, Math.min(GRID_H - 1, d.y));
                 }
+
+                // Breadcrumb Path Recording for Relay
+                const lastRelayPath = d.path[d.path.length - 1];
+                if (!lastRelayPath || Math.abs(lastRelayPath.x - d.x) > 0.15 || Math.abs(lastRelayPath.y - d.y) > 0.15) {
+                    d.path.push({ x: d.x, y: d.y, tick: timeRef.current });
+                    if (d.path.length > 5000) {
+                        d.path.shift();
+                    }
+                }
+
                 return;
             }
 
@@ -887,6 +900,15 @@ export const useSimulationEngine = (
                 const sensorDrain = d.mode === 'Wide' ? 0.015 : 0.005;
                 const movementDrain = totalMove * 0.075;
                 d.battery -= (sensorDrain + movementDrain);
+
+                // Breadcrumb Path Recording
+                const last = d.path[d.path.length - 1];
+                if (!last || Math.abs(last.x - d.x) > 0.15 || Math.abs(last.y - d.y) > 0.15) {
+                    d.path.push({ x: d.x, y: d.y, tick: timeRef.current });
+                    if (d.path.length > 5000) {
+                        d.path.shift();
+                    }
+                }
             }
         });
 
@@ -1029,6 +1051,8 @@ export const useSimulationEngine = (
         speed, setSpeed,
         selectedPin, setSelectedPin,
         showSensors, setShowSensors,
+        showTrails, setShowTrails,
+        selectedTrailDroneId, setSelectedTrailDroneId,
 
         // Refs
         gridRef,
