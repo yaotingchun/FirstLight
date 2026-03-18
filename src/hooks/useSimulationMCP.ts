@@ -384,12 +384,13 @@ export const useSimulationMCP = (
                     const y = cmd.params.y as number;
                     const drone = drones.find(d => d.id === relayId);
                     if (drone && drone.id.startsWith('RLY-')) {
-                        if (drone.mode === 'Charging') {
-                            drone.mode = 'Relay';
+                        // Strict: Do NOT deploy a charging relay via MOVE_RELAY.
+                        // Charging relays only deploy via REPLACE_RELAY.
+                        if (drone.mode === 'Relay') {
+                            drone.tx = x;
+                            drone.ty = y;
+                            relayTakeoverTargetRef.current = { x, y };
                         }
-                        drone.tx = x;
-                        drone.ty = y;
-                        relayTakeoverTargetRef.current = { x, y };
                     }
                     break;
                 }

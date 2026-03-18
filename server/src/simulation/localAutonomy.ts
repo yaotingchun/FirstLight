@@ -206,45 +206,6 @@ class LocalAutonomyEngine {
             }
         }
 
-        const disconnected = drones.filter((d) => !d.id.startsWith('RLY-') && d.isActive && !d.isConnected);
-        if (disconnected.length === 0) {
-            return;
-        }
-
-        const lastMoveTick = this.lastRelayMoveTick.get(relay.id) ?? -9999;
-        if (tick - lastMoveTick < RELAY_REPOSITION_COOLDOWN_TICKS) {
-            return;
-        }
-
-        const centroid = disconnected.reduce(
-            (acc, d) => {
-                acc.x += d.position.x;
-                acc.y += d.position.y;
-                return acc;
-            },
-            { x: 0, y: 0 },
-        );
-
-        const avgX = centroid.x / disconnected.length;
-        const avgY = centroid.y / disconnected.length;
-        const relayX = this.clamp(Math.round((avgX + BASE_X) / 2), 0, GRID_W - 1);
-        const relayY = this.clamp(Math.round((avgY + BASE_Y) / 2), 0, GRID_H - 1);
-
-        if (!this.shouldIssueTarget(relay, relayX, relayY, tick)) {
-            return;
-        }
-
-        droneStore.enqueueCommand('MOVE_RELAY', {
-            relayId: relay.id,
-            x: relayX,
-            y: relayY,
-        });
-        this.lastRelayMoveTick.set(relay.id, tick);
-        actions.push({
-            droneId: relay.id,
-            type: 'MOVE_RELAY',
-            reason: `Repositioning now to help reconnect ${disconnected.length} disconnected search drone(s).`,
-        });
     }
 
     private needsNewTask(drone: DroneStatus): boolean {

@@ -73,18 +73,11 @@ export async function moveRelayDrone(
     }
 
     if (drone.mode !== 'Relay') {
-        if (drone.id.startsWith('RLY-') && drone.mode === 'Charging') {
-            droneStore.enqueueCommand('SET_MODE', {
-                droneId: params.relayId,
-                mode: 'Relay',
-            });
-        } else {
-            return {
-                success: false,
-                error: `${params.relayId} is not in Relay mode (current: ${drone.mode})`,
-                timestamp: Date.now(),
-            };
-        }
+        return {
+            success: false,
+            error: `${params.relayId} is not in Relay mode (current: ${drone.mode}). Movement is restricted to active field relays.`,
+            timestamp: Date.now(),
+        };
     }
 
     if (params.x < 0 || params.x >= GRID_W || params.y < 0 || params.y >= GRID_H) {

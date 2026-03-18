@@ -669,9 +669,9 @@ Critical rules:
 - Every action line must use full function syntax with required parameters (e.g., replace_relay("RLY-Prime"), not just replace_relay).
 - BATTERY CRITICAL (below 10% or negative): immediately emit recall_drone for that drone. This is the highest priority.
 - BATTERY LOW (below 20%): emit recall_drone unless the drone is already heading to base.
-- DISCONNECTED DRONES: if disconnected drones > 0, emit move_relay to bridge communication gap.
+- AUTONOMOUS CONNECTIVITY (No Manual Bridging): Do NOT manually issue move_relay to bridge communication gaps or reconnect drones. The Field Relay uses autonomous centroid logic to maintain link quality, and search drones autonomously return to base if disconnected for too long.
 - RELAY BATTERY LOW (below 25%): emit replace_relay immediately, UNLESS it is <RETURNING>.
-- Relay handoff is AUTONOMOUS. If RelayRoles shows a valid field relay and another relay is <RETURNING> or Charging at base, DO NOT issue replace_relay; describe it as autonomous handoff in progress and focus actions on search drones.
+- STANDBY RELAY (Strict Reservation): The standbyRelay is reserved EXCLUSIVELY for the replace_relay action. NEVER use move_relay or set_drone_mode on a standby/Charging relay. Relay handoff is otherwise AUTONOMOUS. If RelayRoles shows a valid field relay and another relay is <RETURNING> or Charging at base, DO NOT issue replace_relay; describe it as autonomous handoff in progress.
 - MODE LOCK (Strict Role Separation): 
     1. NEVER use set_drone_mode on 'RLY-' drones to change them to 'Wide' or 'Micro'. Relay drones stay in Relay/Charging.
     2. NEVER use set_drone_mode on search drones ('DRN-Alpha','DRN-Beta','DRN-Gamma','DRN-Delta') to change them to 'Relay'. Search drones stay in Wide/Micro/Charging.
