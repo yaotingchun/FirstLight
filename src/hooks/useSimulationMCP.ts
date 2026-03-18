@@ -3,6 +3,7 @@ import type { MutableRefObject, Dispatch, SetStateAction } from 'react';
 import * as mcpClient from '../services/mcpClient';
 import type { Sector, Drone, FoundPin, OrchestratorChatMessage } from '../types/simulation';
 import { BASE_STATION, GRID_W, GRID_H } from '../types/simulation';
+import type { SensorWeights } from '../services/gridDataService';
 
 export const useSimulationMCP = (
     timeRef: MutableRefObject<number>,
@@ -13,6 +14,7 @@ export const useSimulationMCP = (
     pinsRef: MutableRefObject<FoundPin[]>,
     autoRecallThresholdsRef: MutableRefObject<Map<string, number>>,
     relayTakeoverTargetRef: MutableRefObject<{ x: number, y: number }>,
+    sensorWeightsRef: MutableRefObject<SensorWeights>,
     metricsRef: MutableRefObject<any>,
     resetSim: () => void,
     aiBusyRef: MutableRefObject<boolean>
@@ -230,10 +232,11 @@ export const useSimulationMCP = (
                 missionTimeSec: metricsRef.current.missionTimeSec,
                 averageZoneCoverage: metricsRef.current.averageZoneCoverage,
                 meanProbabilityScanned: metricsRef.current.meanProbabilityScanned,
-                repeatedScanRate: metricsRef.current.repeatedScanRate
+                repeatedScanRate: metricsRef.current.repeatedScanRate,
+                sensorWeights: sensorWeightsRef.current
             });
         }
-    }, [mcpConnected, running, dronesRef, gridRef, metricsRef, timeRef]);
+    }, [mcpConnected, running, dronesRef, gridRef, sensorWeightsRef, metricsRef, timeRef]);
 
     const processMcpCommands = useCallback(async () => {
         const commands = await mcpClient.getPendingCommands();

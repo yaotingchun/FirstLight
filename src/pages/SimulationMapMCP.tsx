@@ -51,7 +51,7 @@ const SimulationMapMCP: React.FC = () => {
         runOrchestratorPrompt
     } = useSimulationMCP(
         timeRef, running, setRunning, dronesRef, gridRef, pinsRef,
-        autoRecallThresholdsRef, relayTakeoverTargetRef, metricsRef,
+        autoRecallThresholdsRef, relayTakeoverTargetRef, sensorWeightsRef, metricsRef,
         resetSim, aiBusyRef
     );
 

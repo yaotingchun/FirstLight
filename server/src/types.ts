@@ -226,6 +226,20 @@ export interface MissionStats {
     meanProbabilityScanned?: number;
     repeatedScanRate?: number;
     missionTimeSec?: number;
+    sensorWeights?: SensorWeightsSnapshot;
+}
+
+export interface SensorWeightEntry {
+    base: number;
+    conf: number;
+    color: string;
+}
+
+export interface SensorWeightsSnapshot {
+    mobile: SensorWeightEntry;
+    thermal: SensorWeightEntry;
+    sound: SensorWeightEntry;
+    wifi: SensorWeightEntry;
 }
 
 export interface SetSurvivorPinParams {
