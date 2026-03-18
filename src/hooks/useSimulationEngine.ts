@@ -759,6 +759,9 @@ export const useSimulationEngine = (
                     metricsRef.current.totalRepeatScans = searchMemoryRef.current.repeatScans;
                     metricsRef.current.repeatedScanRate = (metricsRef.current.totalScans > 0)
                         ? (metricsRef.current.totalRepeatScans / metricsRef.current.totalScans) * 100 : 0;
+                    metricsRef.current.meanProbabilityScanned = (metricsRef.current.totalUniqueScans > 0)
+                        ? (metricsRef.current.uniqueProbSum / metricsRef.current.totalUniqueScans)
+                        : 0;
                 }
             }
 
