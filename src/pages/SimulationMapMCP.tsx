@@ -1,5 +1,5 @@
 import React, { useRef, useCallback } from 'react';
-import { Hexagon, Play, Pause, Activity, FileText } from 'lucide-react';
+import { Hexagon, Play, Pause, FileText } from 'lucide-react';
 
 import { useSharedSimulation } from '../context/SimulationContext';
 import { useSimulationMCP } from '../hooks/useSimulationMCP';
@@ -83,43 +83,6 @@ const SimulationMapMCP: React.FC = () => {
                     <button onClick={toggleRunning} className="hud-btn" style={{ padding: '8px 16px', display: 'flex', gap: '8px', cursor: 'pointer' }}>
                         {running ? <Pause size={18} /> : <Play size={18} />} {running ? 'PAUSE' : 'START SCAN'}
                     </button>
-                    <div style={{ display: 'flex', gap: '0', background: 'rgba(0,0,0,0.3)', borderRadius: '4px', border: '1px solid var(--panel-border)', overflow: 'hidden' }}>
-                        <button 
-                            onClick={() => setShowTrails(!showTrails)} 
-                            className={`hud-btn ${showTrails ? 'glow-text' : ''}`} 
-                            style={{ 
-                                padding: '8px 16px', 
-                                border: 'none', 
-                                borderRight: '1px solid var(--panel-border)',
-                                display: 'flex', 
-                                gap: '8px', 
-                                cursor: 'pointer',
-                                background: 'transparent',
-                                color: showTrails ? 'var(--accent-primary)' : 'var(--text-primary)'
-                            }}
-                        >
-                            <Activity size={18} style={{ transform: 'rotate(90deg)' }} /> TRAILS
-                        </button>
-                        <select 
-                            value={selectedTrailDroneId} 
-                            onChange={(e) => setSelectedTrailDroneId(e.target.value)}
-                            style={{ 
-                                background: 'transparent', 
-                                color: 'var(--text-primary)', // Ensure main text is visible
-                                border: 'none', 
-                                padding: '0 8px', 
-                                cursor: 'pointer',
-                                outline: 'none',
-                                fontSize: '0.8rem',
-                                fontFamily: 'var(--font-mono)'
-                            }}
-                        >
-                            <option value="all" style={{ background: 'var(--panel-bg)', color: 'var(--text-primary)' }}>ALL</option>
-                            {dronesRef.current.map(d => (
-                                <option key={d.id} value={d.id} style={{ background: 'var(--panel-bg)', color: 'var(--text-primary)' }}>{d.id.replace('DRN-', '')}</option>
-                            ))}
-                        </select>
-                    </div>
                     <button
                         onClick={() => setChatOpen(!chatOpen)}
                         className={`hud-btn ${chatOpen ? 'glow-text' : ''}`}
@@ -147,7 +110,9 @@ const SimulationMapMCP: React.FC = () => {
                     setSelectedPin={setSelectedPin}
                     showSensors={showSensors}
                     showTrails={showTrails}
+                    setShowTrails={setShowTrails}
                     selectedTrailDroneId={selectedTrailDroneId}
+                    setSelectedTrailDroneId={setSelectedTrailDroneId}
                     getSectorProbability={getSectorProbability}
                     time={timeRef.current}
                     aiDisconnectedRef={aiDisconnectedRef}

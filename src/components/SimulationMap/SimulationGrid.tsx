@@ -15,7 +15,9 @@ interface SimulationGridProps {
     setSelectedPin: (pin: FoundPin | null) => void;
     showSensors: boolean;
     showTrails: boolean;
+    setShowTrails: (show: boolean) => void;
     selectedTrailDroneId: string | 'all';
+    setSelectedTrailDroneId: (id: string | 'all') => void;
     getSectorProbability: (x: number, y: number) => number;
     time: number;
     aiDisconnectedRef: React.MutableRefObject<Set<string>>;
@@ -35,7 +37,8 @@ export const getDroneThemeColor = (id?: string) => {
 
 export const SimulationGrid: React.FC<SimulationGridProps> = ({
     grid, drones, commLinks, survivors, pins,
-    selectedPin, setSelectedPin, showSensors, showTrails, selectedTrailDroneId, 
+    selectedPin, setSelectedPin, showSensors, 
+    showTrails, setShowTrails, selectedTrailDroneId, setSelectedTrailDroneId,
     getSectorProbability, time, aiDisconnectedRef, aiReconnectedUntilTickRef
 }) => {
     return (
@@ -325,6 +328,107 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                     </g>
                 ))}
             </svg>
+            
+            {/* Trail Manager Overlay (Red Box area) */}
+            <div style={{ 
+                position: 'absolute', 
+                top: 16, 
+                right: 16, 
+                width: '200px',
+                background: 'rgba(5, 10, 16, 0.85)', 
+                border: '1px solid var(--panel-border)', 
+                padding: '12px', 
+                fontFamily: 'var(--font-mono)', 
+                fontSize: '0.75rem', 
+                backdropFilter: 'blur(8px)',
+                boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px'
+            }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(0,255,204,0.2)', paddingBottom: '8px' }}>
+                    <span style={{ color: 'var(--accent-primary)', fontWeight: 'bold', letterSpacing: '1px' }}>TRAIL SYSTEMS</span>
+                    <div 
+                        onClick={() => setShowTrails(!showTrails)}
+                        style={{ 
+                            width: '32px', 
+                            height: '16px', 
+                            background: showTrails ? 'var(--accent-primary)' : '#333', 
+                            borderRadius: '8px', 
+                            position: 'relative', 
+                            cursor: 'pointer',
+                            transition: 'all 0.3s ease'
+                        }}
+                    >
+                        <div style={{ 
+                            width: '12px', 
+                            height: '12px', 
+                            background: '#fff', 
+                            borderRadius: '50%', 
+                            position: 'absolute', 
+                            top: '2px', 
+                            left: showTrails ? '18px' : '2px',
+                            transition: 'all 0.3s ease'
+                        }} />
+                    </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div 
+                        onClick={() => setSelectedTrailDroneId('all')}
+                        style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '8px', 
+                            cursor: 'pointer',
+                            padding: '4px 8px',
+                            borderRadius: '2px',
+                            background: selectedTrailDroneId === 'all' ? 'rgba(0,255,204,0.1)' : 'transparent',
+                            color: selectedTrailDroneId === 'all' ? 'var(--accent-primary)' : 'var(--text-secondary)'
+                        }}
+                    >
+                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', border: '1px solid #fff', opacity: 0.5 }} />
+                        <span>ALL DRONES</span>
+                    </div>
+
+                    {drones.map(d => {
+                        const color = getDroneThemeColor(d.id);
+                        const isSelected = selectedTrailDroneId === d.id;
+                        return (
+                            <div 
+                                key={`trail-sel-${d.id}`}
+                                onClick={() => setSelectedTrailDroneId(d.id)}
+                                style={{ 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    gap: '8px', 
+                                    cursor: 'pointer',
+                                    padding: '4px 8px',
+                                    borderRadius: '2px',
+                                    background: isSelected ? `${color}22` : 'transparent',
+                                    color: isSelected ? color : 'var(--text-secondary)',
+                                    transition: 'all 0.2s ease'
+                                }}
+                            >
+                                <div style={{ 
+                                    width: '8px', 
+                                    height: '8px', 
+                                    borderRadius: '2px', 
+                                    background: color,
+                                    boxShadow: isSelected ? `0 0 8px ${color}` : 'none'
+                                }} />
+                                <span>{d.id.replace('DRN-', '').replace('RLY-', 'RELAY-')}</span>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                {showTrails && (
+                    <div style={{ fontSize: '0.65rem', color: 'rgba(0,255,204,0.5)', marginTop: '4px', fontStyle: 'italic' }}>
+                        * Rendering {selectedTrailDroneId === 'all' ? 'all' : 'selected'} search paths
+                    </div>
+                )}
+            </div>
 
             {/* Legend */}
             <div style={{ position: 'absolute', bottom: 16, left: 16, display: 'flex', gap: '16px' }}>
