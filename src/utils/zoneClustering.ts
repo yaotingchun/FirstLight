@@ -12,8 +12,10 @@ export interface GridCell {
     x: number;
     y: number;
     prob: number;
+    pheromone: number;
     scanned: boolean;
     lastScanned: number;
+    lastVisitedTick: number;
     signals: {
         mobile: number;
         thermal: number;

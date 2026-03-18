@@ -1,5 +1,8 @@
 import React from 'react';
 import { Activity, Wifi, WifiOff, Radio } from 'lucide-react';
+import {
+    GRID_W, GRID_H
+} from '../../types/simulation';
 import type { Drone } from '../../types/simulation';
 
 interface SimulationDashboardProps {
@@ -23,6 +26,8 @@ export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
     drones, time, aiDisconnectedRef, aiReconnectedUntilTickRef,
     triggerFailureEvent, metrics, sensorWeights
 }) => {
+    const TOTAL_CELLS = GRID_W * GRID_H;
+
     return (
         <div style={{ width: '320px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {/* Live Swarm Status */}
@@ -166,7 +171,7 @@ export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
                         <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
                             SEARCH DURATION
                         </div>
-                        <div style={{ fontSize: '1.2rem', color: metrics.totalUniqueScans >= 400 ? '#00ffcc' : 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+                        <div style={{ fontSize: '1.2rem', color: metrics.totalUniqueScans >= TOTAL_CELLS ? '#00ffcc' : 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
                             {(() => {
                                 const s = Math.floor(metrics.missionTimeSec);
                                 const hours = Math.floor(s / 3600);
@@ -175,10 +180,10 @@ export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
                                 return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
                             })()}
                         </div>
-                        {metrics.totalUniqueScans >= 400 && (
+                        {metrics.totalUniqueScans >= TOTAL_CELLS && (
                             <div style={{ fontSize: '0.55rem', color: '#00ffcc', fontWeight: 'bold', marginTop: '2px' }}>MISSION COMPLETE</div>
                         )}
-                        <div style={{ position: 'absolute', bottom: 0, left: 0, height: '2px', background: '#00ccff', width: `${Math.min(100, (metrics.totalUniqueScans / 400) * 100)}%`, opacity: 0.5 }} />
+                        <div style={{ position: 'absolute', bottom: 0, left: 0, height: '2px', background: '#00ccff', width: `${Math.min(100, (metrics.totalUniqueScans / TOTAL_CELLS) * 100)}%`, opacity: 0.5 }} />
                     </div>
 
                     {/* Metric: Mean Probability */}

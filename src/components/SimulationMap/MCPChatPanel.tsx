@@ -359,34 +359,60 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                                             second: '2-digit',
                                         });
 
-                                        const sourceColor =
-                                            record.source === 'error'
-                                                ? '#ff6b6b'
-                                                : record.source === 'ai'
-                                                    ? '#4da3ff'
-                                                    : record.source === 'action'
-                                                        ? '#00ffcc'
-                                                        : '#9db1c1';
+                                        const getDroneColor = (id?: string) => {
+                                            if (!id) return '#9db1c1';
+                                            if (id === 'ORCHESTRATOR') return '#00ffcc';
+                                            if (id.includes('Alpha')) return '#4da3ff';
+                                            if (id.includes('Beta')) return '#51cf66';
+                                            if (id.includes('Gamma')) return '#f06595';
+                                            if (id.includes('Delta')) return '#fcc419';
+                                            if (id.startsWith('RLY')) return '#ff922b';
+                                            return '#adb5bd';
+                                        };
+
+                                        const droneId = record.droneId || (record.source === 'ai' ? 'ORCHESTRATOR' : undefined);
+                                        const themeColor = getDroneColor(droneId);
 
                                         return (
                                             <div
                                                 key={`${record.timestamp}-${index}`}
                                                 style={{
-                                                    border: '1px solid rgba(255,255,255,0.08)',
+                                                    border: `1px solid ${droneId ? themeColor + '44' : 'rgba(255,255,255,0.08)'}`,
                                                     borderRadius: 6,
                                                     padding: '6px 8px',
-                                                    background: 'rgba(0,0,0,0.2)',
+                                                    background: droneId ? `${themeColor}11` : 'rgba(0,0,0,0.2)',
                                                     fontSize: 12,
                                                     lineHeight: 1.45,
+                                                    position: 'relative',
+                                                    borderLeft: droneId ? `3px solid ${themeColor}` : '1px solid rgba(255,255,255,0.08)'
                                                 }}
                                             >
-                                                <div style={{ display: 'flex', gap: 8, marginBottom: 4, fontSize: 11 }}>
-                                                    <span style={{ color: '#8aa0b3' }}>[{stamp}]</span>
-                                                    <span style={{ color: sourceColor }}>[{record.source.toUpperCase()}]</span>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 10, fontWeight: 600 }}>
+                                                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                                        <div style={{ 
+                                                            width: 14, 
+                                                            height: 14, 
+                                                            borderRadius: '50%', 
+                                                            background: themeColor, 
+                                                            display: 'flex', 
+                                                            alignItems: 'center', 
+                                                            justifyContent: 'center', 
+                                                            fontSize: 9, 
+                                                            color: '#000',
+                                                            fontWeight: 800,
+                                                            flexShrink: 0
+                                                        }}>
+                                                            {(droneId || record.source.toUpperCase())[0]}
+                                                        </div>
+                                                        <span style={{ color: '#8aa0b3' }}>[{stamp}]</span>
+                                                        <span style={{ color: themeColor }}>{droneId || record.source.toUpperCase()}</span>
+                                                    </div>
+                                                    {record.source === 'ai' && <span style={{ color: '#4da3ff', opacity: 0.8 }}>STRATEGIC_INTEL</span>}
+                                                    {record.source === 'action' && <span style={{ color: '#00ffcc', opacity: 0.8 }}>EXECUTED</span>}
                                                 </div>
                                                 <ReactMarkdown
                                                     components={{
-                                                        p: ({ node, ...props }) => <p style={{ margin: 0 }} {...props} />,
+                                                        p: ({ node, ...props }) => <p style={{ margin: 0, color: droneId ? '#eee' : '#9db1c1' }} {...props} />,
                                                         ul: ({ node, ...props }) => <ul style={{ margin: '4px 0 0 18px', padding: 0 }} {...props} />,
                                                         ol: ({ node, ...props }) => <ol style={{ margin: '4px 0 0 18px', padding: 0 }} {...props} />,
                                                         li: ({ node, ...props }) => <li style={{ marginBottom: '2px' }} {...props} />,

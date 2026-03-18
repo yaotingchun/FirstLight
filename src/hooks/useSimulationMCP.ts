@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import type { MutableRefObject, Dispatch, SetStateAction } from 'react';
 import * as mcpClient from '../services/mcpClient';
 import type { Sector, Drone, FoundPin, OrchestratorChatMessage } from '../types/simulation';
-import { BASE_STATION } from '../types/simulation';
+import { BASE_STATION, GRID_W, GRID_H } from '../types/simulation';
 
 export const useSimulationMCP = (
     timeRef: MutableRefObject<number>,
@@ -90,11 +90,12 @@ export const useSimulationMCP = (
 
         const decision = result.decision;
         if (decision) {
-            const actions = decision.actions ?? [];
+            const actions = (decision.actions ?? []).filter(a => a.type !== 'no_action');
             const normalizedReasoning = decision.reasoning
                 .replace(/\b[Tt]he user has requested\b/g, 'Mission context indicates')
                 .replace(/\b[Tt]he user requested\b/g, 'Mission context indicates')
                 .replace(/\b[Ii] will\b/g, 'AI will');
+                
             const actionSummary = actions
                 .map((a) => {
                     const type = String(a.type ?? 'unknown');
@@ -122,12 +123,16 @@ export const useSimulationMCP = (
                     if (type === 'set_simulation_state') {
                         return `${type}(${String(a.running ?? '?')})`;
                     }
-                    if (type === 'no_action') {
-                        return `${type}(${String(a.reason ?? 'none')})`;
-                    }
                     return type;
                 })
                 .join('\n- ');
+
+            const logMessage = [
+                `[TICK: ${String(timeRef.current).padStart(4, '0')}]`,
+                `PRIORITY: ${(decision.priority ?? 'medium').toUpperCase()}`,
+                `ANALYSIS: ${normalizedReasoning}`,
+                ...(actions.length > 0 ? [`COMMANDS:\n- ${actionSummary}`] : [])
+            ].join('\n');
 
             setChatMessages(prev => {
                 const cleaned = prev.filter(m => !m.text.startsWith('Auto-think:'));
@@ -135,7 +140,7 @@ export const useSimulationMCP = (
                     ...cleaned,
                     {
                         role: 'ai',
-                        text: `[${(decision.priority ?? 'medium').toUpperCase()}]\n${normalizedReasoning}\n\nActions:\n- ${actionSummary || 'None'}`
+                        text: logMessage
                     }
                 ];
             });
@@ -221,7 +226,7 @@ export const useSimulationMCP = (
         if (mcpConnected) {
             await mcpClient.executeTool('updateMissionStats', {
                 totalUniqueScans: metricsRef.current.totalUniqueScans,
-                gridSize: 400,
+                gridSize: GRID_W * GRID_H,
                 missionTimeSec: metricsRef.current.missionTimeSec,
                 averageZoneCoverage: metricsRef.current.averageZoneCoverage,
                 meanProbabilityScanned: metricsRef.current.meanProbabilityScanned,
@@ -324,18 +329,17 @@ export const useSimulationMCP = (
                     const smessage = (cmd.params.message as string) || 'Survivor confirmed by MCP';
                     const pinId = `MCP-${Date.now()}`;
                     if (!pinsRef.current.find(p => p.x === sx && p.y === sy)) {
+                        if (sy >= 0 && sy < 20 && sx >= 0 && sx < 20) {
+                            grid[sy][sx].scanned = true;
+                            grid[sy][sx].lastScanned = timeRef.current;
+                        }
+
                         pinsRef.current.push({
                             id: pinId,
                             x: sx,
                             y: sy,
                             info: { message: smessage, battery: 'unknown' }
                         });
-                        for (let py = Math.max(0, sy - 3); py <= Math.min(20 - 1, sy + 3); py++) {
-                            for (let px = Math.max(0, sx - 3); px <= Math.min(20 - 1, sx + 3); px++) {
-                                grid[py][px].pheromone = 0;
-                                grid[py][px].prob = 0;
-                            }
-                        }
                         mcpClient.syncSurvivor({ id: pinId, x: sx, y: sy, droneId: sdroneId, message: smessage, tick: timeRef.current });
                     }
                     break;

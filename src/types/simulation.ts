@@ -22,6 +22,9 @@ export type Sector = {
     terrain: string;
     scanned: boolean;
     lastScanned: number;
+    lastVisitedTick: number;
+    currentDrones: number;
+    confidence: number;
     signals: {
         mobile: number;
         thermal: number;
@@ -46,6 +49,10 @@ export type Drone = {
     savedTy?: number;
     startTick?: number;
     knownOtherDrones: { [id: string]: { x: number; y: number; lastUpdate: number } };
+    lastScannedX?: number;
+    lastScannedY?: number;
+    lockTarget?: boolean;
+    preventReassignment?: boolean;
 };
 
 export type SwarmMessage = {
@@ -86,6 +93,7 @@ export type FoundPin = {
 export type OrchestratorChatMessage = {
     role: 'user' | 'ai' | 'system';
     text: string;
+    droneId?: string;
 };
 
 export type FailureEvent = {

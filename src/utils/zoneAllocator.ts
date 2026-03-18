@@ -9,6 +9,7 @@
 import type { SearchZone } from './zoneClustering.js';
 import type { SearchMemory } from './searchMemory.js';
 import { shouldAvoidZone } from './searchMemory.js';
+import type { FoundPin } from '../types/simulation';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -78,6 +79,8 @@ export const allocateDrones = (
     drones: AllocatableDrone[],
     zones: SearchZone[],
     memory: SearchMemory,
+    currentTick: number,
+    pins: FoundPin[] = [],
     config: AllocationConfig = DEFAULT_ALLOCATION_CONFIG,
 ): DroneMission[] => {
     const missions: DroneMission[] = [];
@@ -129,6 +132,8 @@ export const allocateDrones = (
         }
 
         if (bestZone) {
+            // Pick the best cell in the zone using weighted scoring
+            const target = getBestCellInZone(bestZone, currentTick, pins);
             // Choose action based on zone probability
             const action: MissionAction = bestZone.probabilityScore >= config.microScanThreshold
                 ? 'micro_scan'
@@ -137,10 +142,10 @@ export const allocateDrones = (
             missions.push({
                 droneId: drone.id,
                 zoneId: bestZone.zoneId,
-                targetX: bestZone.centroid.x,
-                targetY: bestZone.centroid.y,
+                targetX: target.x,
+                targetY: target.y,
                 action,
-                reason: `Zone ${bestZone.zoneId} score=${bestZone.zoneScore.toFixed(2)} prob=${bestZone.probabilityScore.toFixed(2)} unscanned=${bestZone.unscannedCount}/${bestZone.totalCells}`,
+                reason: `Zone ${bestZone.zoneId} score=${bestZone.zoneScore.toFixed(2)} prob=${bestZone.probabilityScore.toFixed(2)} target=[${target.x},${target.y}]`,
             });
 
             // Update assignment count
@@ -159,20 +164,34 @@ export const allocateDrones = (
  */
 export const getBestCellInZone = (
     zone: SearchZone,
+    currentTick: number,
+    pins: FoundPin[] = [],
 ): { x: number; y: number } => {
-    const unscanned = zone.cells
-        .filter(c => !c.scanned)
-        .sort((a, b) => b.prob - a.prob);
+    if (zone.cells.length === 0) return zone.centroid;
 
-    if (unscanned.length > 0) {
-        return { x: unscanned[0].x, y: unscanned[0].y };
-    }
+    // score = (probability * 0.6) + ((1 - pheromone) * 0.3) + (recencyFactor * 0.1)
+    // recencyFactor = min(1, (currentTick - lastVisitedTick) / 10)
+    
+    // Survivor Avoidance & Target Selection
+    const unscannedCells = zone.cells.filter(c => !c.scanned);
+    const candidateCells = unscannedCells.length > 0 ? unscannedCells : zone.cells;
 
-    // Fallback: highest probability cell
-    const sorted = [...zone.cells].sort((a, b) => b.prob - a.prob);
-    if (sorted.length > 0) {
-        return { x: sorted[0].x, y: sorted[0].y };
-    }
+    const scoredCells = candidateCells.map(c => {
+        const lastVisited = c.lastVisitedTick ?? 0;
+        const recencyFactor = Math.min(1, (currentTick - lastVisited) / 10);
+        
+        // Survivor Avoidance: check if cell is near a pin
+        const isNearPin = pins.some(p => Math.abs(p.x - c.x) <= 1.5 && Math.abs(p.y - c.y) <= 1.5);
+        const isExactPin = pins.some(p => Math.abs(p.x - c.x) < 0.5 && Math.abs(p.y - c.y) < 0.5);
+        
+        // STRIKE: Strictly forbid targeting the exact pin.
+        // Penalty for proximity to Pin.
+        const pinPenalty = isExactPin ? 1000.0 : (isNearPin ? 100.0 : 0);
 
-    return zone.centroid;
+        const score = (c.prob * 0.6) + ((1 - c.pheromone) * 0.3) + (recencyFactor * 0.1) - pinPenalty;
+        return { cell: c, score };
+    });
+
+    scoredCells.sort((a, b) => b.score - a.score);
+    return { x: scoredCells[0].cell.x, y: scoredCells[0].cell.y };
 };

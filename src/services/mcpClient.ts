@@ -100,6 +100,7 @@ export interface OrchestratorRecord {
     timestamp: number;
     source: 'system' | 'ai' | 'action' | 'error';
     message: string;
+    droneId?: string;
 }
 
 /**

@@ -98,30 +98,58 @@ const Dashboard: React.FC = () => {
                 second: '2-digit',
             });
 
-            const sourceColor =
-                record.source === 'error'
-                    ? 'var(--danger)'
-                    : record.source === 'ai'
-                        ? 'var(--accent-primary)'
-                        : 'var(--text-secondary)';
+            const getDroneColor = (id?: string) => {
+                if (!id) return '#9db1c1';
+                if (id === 'ORCHESTRATOR') return '#00ffcc';
+                if (id.includes('Alpha')) return '#4da3ff';
+                if (id.includes('Beta')) return '#51cf66';
+                if (id.includes('Gamma')) return '#f06595';
+                if (id.includes('Delta')) return '#fcc419';
+                if (id.startsWith('RLY')) return '#ff922b';
+                return '#adb5bd';
+            };
+
+            const droneId = record.droneId || (record.source === 'ai' ? 'ORCHESTRATOR' : undefined);
+            const themeColor = getDroneColor(droneId);
 
             return (
                 <div
                     key={`${record.timestamp}-${index}`}
                     style={{
-                        border: '1px solid var(--panel-border)',
-                        background: 'rgba(0, 30, 45, 0.28)',
+                        border: `1px solid ${droneId ? themeColor + '44' : 'var(--panel-border)'}`,
+                        borderRadius: 4,
+                        background: droneId ? `${themeColor}08` : 'rgba(0, 30, 45, 0.28)',
                         padding: '10px 12px',
                         display: 'flex',
                         flexDirection: 'column',
                         gap: '8px',
+                        borderLeft: droneId ? `4px solid ${themeColor}` : '1px solid var(--panel-border)',
+                        position: 'relative'
                     }}
                 >
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '0.8rem' }}>
-                        <span style={{ color: 'var(--text-secondary)' }}>[{stamp}]</span>
-                        <span style={{ color: sourceColor }}>[{record.source.toUpperCase()}]</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem' }}>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <div style={{ 
+                                width: 16, 
+                                height: 16, 
+                                borderRadius: '50%', 
+                                background: themeColor, 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'center', 
+                                fontSize: 10, 
+                                color: '#000',
+                                fontWeight: 800
+                            }}>
+                                {(droneId || record.source.toUpperCase())[0]}
+                            </div>
+                            <span style={{ color: 'var(--text-secondary)' }}>[{stamp}]</span>
+                            <span style={{ color: themeColor, fontWeight: 600 }}>{droneId || record.source.toUpperCase()}</span>
+                        </div>
+                        {record.source === 'ai' && <span style={{ color: 'var(--accent-primary)', fontSize: '0.7rem', opacity: 0.8 }}>STRATEGIC_INTEL</span>}
+                        {record.source === 'action' && <span style={{ color: '#00ffcc', fontSize: '0.7rem', opacity: 0.8 }}>EXECUTED</span>}
                     </div>
-                    <div style={{ color: 'var(--text-primary)', lineHeight: 1.55 }}>
+                    <div style={{ color: droneId ? '#eee' : 'var(--text-primary)', lineHeight: 1.55 }}>
                         <ReactMarkdown
                             components={{
                                 p: ({ children }) => <p style={{ margin: 0 }}>{children}</p>,

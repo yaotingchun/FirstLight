@@ -37,11 +37,6 @@ async function runPeriodicOrchestratorThink(tick: number): Promise<void> {
     orchestratorThinkInFlight = true;
     lastOrchestratorThinkTick = tick;
 
-    appendOrchestratorRecord(
-        'system',
-        `[ORCHESTRATOR_THINK] tick=${tick} periodic strategic review started`
-    );
-
     try {
         const result = await processOrchestratorChat(
             'Periodic strategic review: evaluate global mission progress, battery posture, relay network health, hotspot coverage, and survivor search efficiency. Issue actions only if meaningful intervention is required; otherwise use no_action with a short reason.'
@@ -311,23 +306,13 @@ app.post('/api/state/tick', (req, res) => {
     droneStore.setRunning(running);
 
     const autonomy = localAutonomy.onTick(tick);
-    if (autonomy.actions.length > 0) {
-        appendOrchestratorRecord(
-            'system',
-            `[LOCAL_AUTONOMY] tick=${tick} generated ${autonomy.actions.length} action(s)`
-        );
         autonomy.actions.forEach((action) => {
             appendOrchestratorRecord(
                 'action',
-                `[LOCAL_AUTONOMY] ${action.type} ${action.droneId} - ${action.reason}`
+                `[LOCAL_AUTONOMY] ${action.type} ${action.droneId} - ${action.reason}`,
+                action.droneId
             );
         });
-    } else if (running && tick % 10 === 0) {
-        appendOrchestratorRecord(
-            'system',
-            `[LOCAL_AUTONOMY] tick=${tick} no_action (state stable)`
-        );
-    }
 
     if (running && tick > 0 && tick % ORCHESTRATOR_THINK_INTERVAL_TICKS === 0) {
         void runPeriodicOrchestratorThink(tick);

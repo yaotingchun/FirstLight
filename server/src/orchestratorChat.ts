@@ -53,6 +53,7 @@ export interface OrchestratorRecord {
     timestamp: number;
     source: 'system' | 'ai' | 'action' | 'error';
     message: string;
+    droneId?: string;
 }
 
 let orchestratorRecords: OrchestratorRecord[] = [];
@@ -105,11 +106,12 @@ function pushOrchestratorRecord(record: OrchestratorRecord): void {
     persistOrchestratorRecords();
 }
 
-export function appendOrchestratorRecord(source: OrchestratorRecord['source'], message: string): void {
+export function appendOrchestratorRecord(source: OrchestratorRecord['source'], message: string, droneId?: string): void {
     pushOrchestratorRecord({
         timestamp: Date.now(),
         source,
         message,
+        droneId,
     });
 }
 
@@ -391,14 +393,14 @@ function buildRegionPlans(): RegionPlan[] {
     });
 }
 
-async function executeRegionBootstrap(): Promise<{ decision: ParsedDecision; executionLog: string[] }> {
+async function executeRegionBootstrap(): Promise<{ decision: ParsedDecision; executionLog: LogEntry[] }> {
     const plans = buildRegionPlans();
-    const executionLog: string[] = [];
+    const executionLog: LogEntry[] = [];
     const actions: ChatAction[] = [];
 
     // Ensure simulation is running so assigned drones actually move.
     await executeTool('setSimulationRunning', { running: true });
-    executionLog.push('setSimulationRunning(true)');
+    executionLog.push({ message: 'setSimulationRunning(true)' });
 
     for (const plan of plans) {
         await executeTool('setDroneMode', { droneId: plan.droneId, mode: 'Wide' });
@@ -408,9 +410,10 @@ async function executeRegionBootstrap(): Promise<{ decision: ParsedDecision; exe
             targetY: plan.targetY,
         });
 
-        executionLog.push(
-            `region_assign(${plan.droneId}: x[${plan.xMin}-${plan.xMax}] y[${plan.yMin}-${plan.yMax}] -> target ${plan.targetX},${plan.targetY})`
-        );
+        executionLog.push({
+            message: `region_assign(${plan.droneId}: x[${plan.xMin}-${plan.xMax}] y[${plan.yMin}-${plan.yMax}] -> target ${plan.targetX},${plan.targetY})`,
+            droneId: plan.droneId,
+        });
 
         actions.push({
             type: 'set_drone_mode',
@@ -440,8 +443,13 @@ async function executeRegionBootstrap(): Promise<{ decision: ParsedDecision; exe
     };
 }
 
-async function executeActions(actions: ChatAction[]): Promise<string[]> {
-    const logs: string[] = [];
+interface LogEntry {
+    message: string;
+    droneId?: string;
+}
+
+async function executeActions(actions: ChatAction[]): Promise<LogEntry[]> {
+    const logs: LogEntry[] = [];
 
     for (const action of actions) {
         try {
@@ -452,7 +460,7 @@ async function executeActions(actions: ChatAction[]): Promise<string[]> {
                         targetX: action.x,
                         targetY: action.y,
                     });
-                    logs.push(`setDroneTarget(${action.droneId} -> ${action.x},${action.y})`);
+                    logs.push({ message: `setDroneTarget(${action.droneId} -> ${action.x},${action.y})`, droneId: action.droneId });
                     break;
                 }
                 case 'set_drone_mode': {
@@ -460,12 +468,12 @@ async function executeActions(actions: ChatAction[]): Promise<string[]> {
                         droneId: action.droneId,
                         mode: action.mode,
                     });
-                    logs.push(`setDroneMode(${action.droneId} -> ${action.mode})`);
+                    logs.push({ message: `setDroneMode(${action.droneId} -> ${action.mode})`, droneId: action.droneId });
                     break;
                 }
                 case 'recall_drone': {
                     await executeTool('recallDroneToBase', { droneId: action.droneId });
-                    logs.push(`recallDroneToBase(${action.droneId})`);
+                    logs.push({ message: `recallDroneToBase(${action.droneId})`, droneId: action.droneId });
                     break;
                 }
                 case 'deploy_team': {
@@ -475,55 +483,60 @@ async function executeActions(actions: ChatAction[]): Promise<string[]> {
                         droneId: action.droneId ?? 'AI_AGENT',
                         message: action.reason ?? 'Potential survivor confirmation',
                     });
-                    logs.push(`setSurvivorPin(${action.x},${action.y})`);
+                    logs.push({ message: `setSurvivorPin(${action.x},${action.y})`, droneId: action.droneId });
                     break;
                 }
                 case 'set_simulation_state': {
                     await executeTool('setSimulationRunning', { running: action.running });
-                    logs.push(`setSimulationRunning(${action.running})`);
+                    logs.push({ message: `setSimulationRunning(${action.running})` });
                     break;
                 }
                 case 'reset_simulation': {
                     await executeTool('resetMission', {});
-                    logs.push('resetMission()');
+                    logs.push({ message: 'resetMission()' });
                     break;
                 }
                 case 'no_action': {
-                    logs.push(`no_action: ${action.reason}`);
+                    // Silent
                     break;
                 }
                 case 'move_relay': {
-                    const result = await executeTool('moveRelayDrone', {
+                    const result = (await executeTool('moveRelayDrone', {
                         relayId: action.relayId,
                         x: action.x,
                         y: action.y,
+                    })) as { success: boolean };
+                    logs.push({
+                        message: `[AI ORCHESTRATOR] moveRelayDrone(${action.relayId},${action.x},${action.y}) → ${result.success ? 'Repositioned' : 'FAILED'}`,
+                        droneId: action.relayId,
                     });
-                    const res = result as { success: boolean };
-                    logs.push(`[AI ORCHESTRATOR] moveRelayDrone({relayId:${action.relayId},x:${action.x},y:${action.y}}) → ${res.success ? 'Repositioned' : 'FAILED'}${action.reason ? ` | reason: ${action.reason}` : ''}`);
                     break;
                 }
                 case 'replace_relay': {
-                    const result = await executeTool('replaceRelayDrone', {
+                    const result = (await executeTool('replaceRelayDrone', {
                         relayId: action.relayId,
+                    })) as { success: boolean; data?: { newRelayId: string } };
+                    logs.push({
+                        message: `[AI ORCHESTRATOR] replaceRelayDrone(${action.relayId}) → ${result.success ? `Replaced with ${result.data?.newRelayId}` : 'FAILED'}`,
+                        droneId: action.relayId,
                     });
-                    const res = result as { success: boolean; data?: { newRelayId: string } };
-                    logs.push(`[AI ORCHESTRATOR] replaceRelayDrone({relayId:${action.relayId}}) → ${res.success ? `Replaced with ${res.data?.newRelayId}` : 'FAILED'}${action.reason ? ` | reason: ${action.reason}` : ''}`);
                     break;
                 }
                 case 'broadcast_swarm': {
-                    const result = await executeTool('broadcastSwarmCommand', {
+                    const result = (await executeTool('broadcastSwarmCommand', {
                         command: action.command,
                         targetArea: action.targetArea,
+                    })) as { success: boolean; data?: { reachableDrones: string[] } };
+                    logs.push({
+                        message: `[AI ORCHESTRATOR] broadcastSwarmCommand(${action.command}) → ${result.success ? `Broadcast to ${result.data?.reachableDrones?.length ?? 0} drones` : 'FAILED'}`,
                     });
-                    const res = result as { success: boolean; data?: { reachableDrones: string[] } };
-                    logs.push(`[AI ORCHESTRATOR] broadcastSwarmCommand({command:${action.command}}) → ${res.success ? `Broadcast to ${res.data?.reachableDrones?.length ?? 0} drones` : 'FAILED'}${action.reason ? ` | reason: ${action.reason}` : ''}`);
                     break;
                 }
                 default:
-                    logs.push(`unsupported action: ${(action as { type: string }).type}`);
+                    logs.push({ message: `unsupported action: ${(action as { type: string }).type}` });
             }
         } catch (error) {
-            logs.push(`error on ${action.type}: ${error instanceof Error ? error.message : String(error)}`);
+            logs.push({ message: `error on ${action.type}: ${error instanceof Error ? error.message : String(error)}` });
         }
     }
 
@@ -604,19 +617,21 @@ export async function processOrchestratorChat(message: string): Promise<{
                 timestamp: Date.now(),
                 source: 'ai',
                 message: normalizeReasoning(decision.reasoning),
+                droneId: 'ORCHESTRATOR',
             });
             executionLog.forEach((entry) => {
                 pushOrchestratorRecord({
                     timestamp: Date.now(),
                     source: 'action',
-                    message: entry,
+                    message: entry.message,
+                    droneId: entry.droneId,
                 });
             });
             return {
                 success: true,
                 reply: JSON.stringify(decision),
                 decision,
-                executionLog,
+                executionLog: executionLog.map(e => e.message),
                 timestamp: Date.now(),
             };
         }
@@ -708,12 +723,14 @@ Critical rules:
             timestamp: Date.now(),
             source: 'ai',
             message: normalizeReasoning(decision.reasoning),
+            droneId: 'ORCHESTRATOR',
         });
         executionLog.forEach((entry) => {
             pushOrchestratorRecord({
                 timestamp: Date.now(),
                 source: 'action',
-                message: entry,
+                message: entry.message,
+                droneId: entry.droneId,
             });
         });
 
@@ -731,7 +748,7 @@ Critical rules:
             success: true,
             reply,
             decision: safeDecision,
-            executionLog,
+            executionLog: executionLog.map(e => e.message),
             timestamp: Date.now(),
         };
     } catch (error) {

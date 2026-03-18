@@ -7,6 +7,7 @@
 
 import type { SearchZone } from './zoneClustering.js';
 import type { SearchMemory } from './searchMemory.js';
+import type { FoundPin } from '../types/simulation';
 
 // ── Configurable scoring weights ─────────────────────────────────────────────
 
@@ -48,9 +49,19 @@ export const scoreZones = (
     zones: SearchZone[],
     memory: SearchMemory,
     currentTick: number,
+    pins: FoundPin[] = [],
     weights: ZoneScoringWeights = DEFAULT_ZONE_WEIGHTS,
 ): SearchZone[] => {
     for (const zone of zones) {
+        // Find pins inside this zone
+        // A zone is roughly defined by its cells' min/max x,y.
+        // Simplest: check if any pin's x,y matches any cell in zone.cells
+        const pinsInZone = pins.filter(p => 
+            zone.cells.some(c => Math.round(p.x) === c.x && Math.round(p.y) === c.y)
+        ).length;
+        
+        const pinPenalty = pinsInZone * 10.0; // Strong but allows finishing the zone if many cells are unscanned
+
         // ── Recency penalty (0–1, higher = scanned more recently) ────────
         const lastScan = memory.recentlyScannedZones.get(zone.zoneId) ?? 0;
         const ticksSinceScan = currentTick - lastScan;
@@ -84,7 +95,8 @@ export const scoreZones = (
             (weights.persistentSignal * persistentBonus) -
             (weights.recency * recency) -
             (weights.droneOverlap * droneCount) -
-            (weights.failedScanPenalty * failedPenalty);
+            (weights.failedScanPenalty * failedPenalty) -
+            pinPenalty;
     }
 
     // Sort descending by score
