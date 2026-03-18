@@ -4,20 +4,16 @@ import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
 import MapSimulator from './pages/MapSimulator';
 import ProbabilityMap3D from './pages/3DMap';
-import SimulationMap from './pages/SimulationMap';
 import SimulationMapMCP from './pages/SimulationMapMCP';
-import RoutingSandbox from './pages/RoutingSandbox';
 import DroneCam from './pages/DroneCam';
 import LoadingScreen from './components/LoadingScreen';
 import { clearOrchestratorRecords } from './services/mcpClient';
 
 const pages = [
   { path: '/dashboard', element: <Dashboard /> },
-  { path: '/map', element: <MapSimulator /> },
   { path: '/3d-map', element: <ProbabilityMap3D /> },
-  { path: '/simulation', element: <SimulationMap /> },
+  { path: '/map', element: <MapSimulator /> },
   { path: '/simulation-mcp', element: <SimulationMapMCP /> },
-  { path: '/routing', element: <RoutingSandbox /> },
   { path: '/drone-cam', element: <DroneCam /> },
 ];
 
