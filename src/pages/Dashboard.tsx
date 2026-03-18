@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react'
 import { Download, Activity, Radar, BarChart2, Terminal, Layers } from 'lucide-react';
 import { executeTool, getOrchestratorRecords, type OrchestratorRecord } from '../services/mcpClient';
 import ReactMarkdown from 'react-markdown';
+import { RobotIcon, DroneIcon } from '../components/SimulationMap/LogIcons';
 
 type DroneMode = 'Wide' | 'Micro' | 'Relay' | 'Charging';
 
@@ -104,7 +105,7 @@ const Dashboard: React.FC = () => {
         const mapped = result.data.map((d) => {
             const isOffline = !d.isActive || !d.isConnected;
             const signal = isOffline ? 0 : Math.min(100, Math.max(45, Math.round(70 + d.battery * 0.3)));
-            
+
             let intent = 'Idle';
             if (isOffline) intent = 'OFFLINE';
             else if (d.mode === 'Wide') intent = d.target ? `Exploring Sector (${Math.round(d.target.x)},${Math.round(d.target.y)})` : 'Exploring Sector';
@@ -191,7 +192,7 @@ const Dashboard: React.FC = () => {
         return logicChainRecords.map((record, index) => {
             const date = new Date(record.timestamp);
             const stamp = date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            
+
             const getDroneColor = (id?: string) => {
                 if (!id) return '#9db1c1';
                 if (id === 'ORCHESTRATOR') return '#00ffcc';
@@ -223,20 +224,22 @@ const Dashboard: React.FC = () => {
                 >
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: '0.65rem', fontWeight: 600 }}>
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                            <div style={{ 
-                                width: 16, 
-                                height: 16, 
-                                borderRadius: '50%', 
-                                background: themeColor, 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                justifyContent: 'center', 
-                                fontSize: '0.5rem', 
-                                color: '#000',
-                                fontWeight: 800,
-                                flexShrink: 0
+                            <div style={{
+                                width: 18,
+                                height: 18,
+                                borderRadius: '4px',
+                                background: `${themeColor}22`,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                                border: `1px solid ${themeColor}44`
                             }}>
-                                {(droneId || record.source.toUpperCase())[0]}
+                                {record.source === 'ai' || (droneId && droneId.toLowerCase().includes('agent')) || droneId === 'ORCHESTRATOR' ? (
+                                    <RobotIcon color={themeColor} size={11} />
+                                ) : (
+                                    <DroneIcon color={themeColor} size={11} />
+                                )}
                             </div>
                             <span style={{ color: '#8aa0b3' }}>[{stamp}]</span>
                             <span style={{ color: themeColor }}>{droneId || record.source.toUpperCase()}</span>
@@ -265,29 +268,29 @@ const Dashboard: React.FC = () => {
 
     const missionCoverage = missionStats?.averageZoneCoverage ?? missionStats?.scanProgress ?? 0;
     const missionSeconds = missionStats?.missionTimeSec ?? (missionStats ? missionStats.currentTick * 0.1 : 0);
-    
-    const explorationRate = missionStats && missionSeconds > 0 
-        ? (missionStats.sectorsScanned / missionSeconds).toFixed(1) 
+
+    const explorationRate = missionStats && missionSeconds > 0
+        ? (missionStats.sectorsScanned / missionSeconds).toFixed(1)
         : '0.0';
-        
-    const repeatRate = missionStats?.repeatedScanRate !== undefined 
+
+    const repeatRate = missionStats?.repeatedScanRate !== undefined
         ? missionStats.repeatedScanRate.toFixed(1)
         : '0.0';
-        
+
     const activeInvestigations = swarmDrones.filter(d => d.rawMode === 'Micro').length;
 
     const searchDrones = swarmDrones.filter(d => d.rawMode !== 'Relay' && d.state === 'OK');
     const wideCount = searchDrones.filter(d => d.rawMode === 'Wide').length;
     const microCount = searchDrones.filter(d => d.rawMode === 'Micro').length;
     const totalSearch = Math.max(1, wideCount + microCount);
-    
+
     const explorationBias = Math.round((wideCount / totalSearch) * 100);
     const investigationBias = Math.round((microCount / totalSearch) * 100);
-    
+
     let strategyMode = 'Wide';
     if (investigationBias > 0 && explorationBias > 0) strategyMode = 'Hybrid (Wide + Micro)';
     else if (investigationBias > 0) strategyMode = 'Micro';
-    
+
     const focusDrone = searchDrones.find(d => d.rawMode === 'Micro' && d.target);
     const focusString = focusDrone ? `Hotspot at (${Math.round(focusDrone.target!.x)}, ${Math.round(focusDrone.target!.y)})` : 'None';
 
@@ -301,7 +304,7 @@ const Dashboard: React.FC = () => {
                 }
             }
         }
-        return list.sort((a,b) => b.conf - a.conf).slice(0, 3);
+        return list.sort((a, b) => b.conf - a.conf).slice(0, 3);
     }, [gridHeatmap]);
 
 
@@ -311,7 +314,7 @@ const Dashboard: React.FC = () => {
             <header style={{ borderBottom: '1px solid rgba(0, 255, 204, 0.3)', paddingBottom: '12px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexShrink: 0 }}>
                 <div>
                     <h2 style={{ margin: 0, fontSize: '1.8rem', color: '#00ffcc', letterSpacing: '3px', textTransform: 'uppercase', fontFamily: 'monospace', textShadow: '0 0 10px rgba(0, 255, 204, 0.4)' }}>
-                        TELEMETRY & OVERRIDE
+                        TELEMETRY DASHBOARD
                     </h2>
                     <div style={{ color: '#6b8a8b', letterSpacing: '1px', fontSize: '0.75rem', marginTop: '6px', fontFamily: 'monospace' }}>
                         [MISSION COMMAND CENTER]
@@ -324,13 +327,13 @@ const Dashboard: React.FC = () => {
 
             {/* Triptych Layout */}
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(360px, 1.5fr) minmax(280px, 1fr) minmax(240px, 0.95fr)', gap: '16px', flex: 1, minHeight: 0, overflow: 'hidden', paddingBottom: '2px' }}>
-                
+
                 {/* ---------- LEFT COLUMN: Intelligence Feed ---------- */}
                 <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', paddingBottom: '2px' }}>
-                    <CyberPanel 
-                        title="AI_LOGIC_CHAIN" 
-                        icon={<Terminal size={16} />} 
-                        flex={1} 
+                    <CyberPanel
+                        title="AI_LOGIC_CHAIN"
+                        icon={<Terminal size={16} />}
+                        flex={1}
                         headerRight={
                             <button onClick={downloadLogicChainAsText} style={{ background: 'transparent', border: '1px solid currentColor', color: '#00ffcc', padding: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', opacity: 0.8 }}>
                                 <Download size={14} />
@@ -345,7 +348,7 @@ const Dashboard: React.FC = () => {
 
                 {/* ---------- MIDDLE COLUMN: Strategy & Intent ---------- */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflow: 'hidden', minHeight: 0, paddingBottom: '2px' }}>
-                    
+
                     {/* SWARM STRATEGY */}
                     <CyberPanel title="SWARM STRATEGY" icon={<Layers size={16} />} color="#fff" flex={0.8}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', justifyContent: 'center', height: '100%', padding: '4px 8px' }}>
@@ -392,13 +395,13 @@ const Dashboard: React.FC = () => {
 
                 {/* ---------- RIGHT COLUMN: Hotspots & Progression ---------- */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflow: 'hidden', minHeight: 0, paddingBottom: '2px' }}>
-                    
+
                     {/* ACTIVE HOTSPOTS */}
                     <CyberPanel title="ACTIVE HOTSPOTS" icon={<Radar size={16} />} color="#ff4444" flex={1}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1, padding: '8px', overflowY: 'auto' }}>
                             {hotspots.length > 0 ? hotspots.map((h, i) => (
                                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-                                    <span style={{ color: '#6b8a8b' }}>#{i+1} ({h.x},{h.y})</span>
+                                    <span style={{ color: '#6b8a8b' }}>#{i + 1} ({h.x},{h.y})</span>
                                     <span style={{ fontWeight: 'bold', color: '#ff4444' }}>{h.conf.toFixed(2)} WT</span>
                                 </div>
                             )) : <div style={{ fontSize: '0.85rem', color: '#6b8a8b', textAlign: 'center', marginTop: '20px' }}>NO ACTIVE HOTSPOTS</div>}
@@ -414,7 +417,7 @@ const Dashboard: React.FC = () => {
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div style={{ fontSize: '0.7rem', color: '#6b8a8b', letterSpacing: '1px' }}>EXPLORATION RATE</div>
-                                <div style={{ fontSize: '1.2rem', color: '#fff', fontWeight: 'bold', fontFamily: 'monospace' }}>{explorationRate} <span style={{fontSize: '0.6rem', color: '#6b8a8b'}}>cells/s</span></div>
+                                <div style={{ fontSize: '1.2rem', color: '#fff', fontWeight: 'bold', fontFamily: 'monospace' }}>{explorationRate} <span style={{ fontSize: '0.6rem', color: '#6b8a8b' }}>cells/s</span></div>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div style={{ fontSize: '0.7rem', color: '#6b8a8b', letterSpacing: '1px' }}>REPEAT RATE</div>
@@ -422,7 +425,7 @@ const Dashboard: React.FC = () => {
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div style={{ fontSize: '0.7rem', color: '#6b8a8b', letterSpacing: '1px', maxWidth: '50%' }}>HOTSPOT INVESTIGATIONS</div>
-                                <div style={{ fontSize: '1.2rem', color: '#ff9900', fontWeight: 'bold', fontFamily: 'monospace' }}>{activeInvestigations} <span style={{fontSize: '0.6rem', color: '#6b8a8b'}}>Drones</span></div>
+                                <div style={{ fontSize: '1.2rem', color: '#ff9900', fontWeight: 'bold', fontFamily: 'monospace' }}>{activeInvestigations} <span style={{ fontSize: '0.6rem', color: '#6b8a8b' }}>Drones</span></div>
                             </div>
                         </div>
                     </CyberPanel>

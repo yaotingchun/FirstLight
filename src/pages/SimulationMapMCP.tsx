@@ -1,5 +1,5 @@
 import React, { useRef, useCallback } from 'react';
-import { Hexagon, Play, Pause, FileText } from 'lucide-react';
+import { Play, Pause, FileText } from 'lucide-react';
 
 import { useSharedSimulation } from '../context/SimulationContext';
 import { useSimulationMCP } from '../hooks/useSimulationMCP';
@@ -74,7 +74,7 @@ const SimulationMapMCP: React.FC = () => {
             <header style={{ padding: '16px', paddingBottom: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
                     <h2 className="hud-text glow-text" style={{ fontSize: '1.5rem', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <Hexagon /> MULTI-RES SWARM SIMULATION
+                        MULTI-RES SWARM SIMULATION
                     </h2>
                     <p className="hud-text" style={{ color: 'var(--text-secondary)' }}>&gt; ADAPTIVE SEARCH & SURVIVOR DETECTION</p>
                 </div>

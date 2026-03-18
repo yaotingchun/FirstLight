@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
-import { Camera, Target, Radio, Crosshair, Activity } from 'lucide-react';
+import { Target, Radio, Crosshair, Activity } from 'lucide-react';
 import { useSharedSimulation } from '../context/SimulationContext';
 import { INITIAL_SENSORS } from '../services/gridDataService';
 
@@ -271,9 +271,9 @@ const DroneCam: React.FC = () => {
             <header style={{ paddingLeft: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', paddingRight: '20px' }}>
                 <div>
                     <h2 className="hud-text glow-text" style={{ fontSize: '1.5rem', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <Camera size={24} /> DRONE CAM OPTICS (CESIUM)
+                        DRONE CAM OPTICS
                     </h2>
-                    <p className="hud-text" style={{ color: 'var(--text-secondary)' }}>&gt; LIVE UPLINK — SYNCHRONIZED WITH SWARM COMMAND</p>
+                    <p className="hud-text" style={{ color: 'var(--text-secondary)' }}>&gt; Real-time view for each drone</p>
                 </div>
                 <div style={{ display: 'flex', gap: '10px', background: 'var(--panel-bg)', padding: '10px', border: '1px solid var(--panel-border)', borderRadius: '4px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 12px', color: running ? '#00ffcc' : 'var(--warning)', fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>

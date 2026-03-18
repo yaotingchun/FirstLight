@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Activity, Map as MapIcon, Target, Layers, Camera, Wifi } from 'lucide-react';
+import { Activity, BarChart2, Map as MapIcon, Layers, Camera, Radar } from 'lucide-react';
 
 const Sidebar: React.FC = () => {
     return (
@@ -14,10 +14,10 @@ const Sidebar: React.FC = () => {
             padding: '24px 0'
         }}>
             <div style={{ padding: '0 24px', marginBottom: '48px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <Target size={28} color="var(--accent-primary)" />
+                <Activity size={28} color="var(--accent-primary)" />
                 <div>
-                    <h1 className="hud-text glow-text" style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', margin: 0 }}>SWARM AI</h1>
-                    <p className="hud-text" style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>COMMAND_SYS.v9</p>
+                    <h1 className="hud-text glow-text" style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', margin: 0 }}>FirstLight</h1>
+                    <p className="hud-text" style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>COMMAND_SYS.v4.0</p>
                 </div>
             </div>
 
@@ -36,7 +36,7 @@ const Sidebar: React.FC = () => {
                     transition: 'all 0.2s ease',
                     boxShadow: isActive ? '0 0 10px rgba(0, 255, 204, 0.3)' : 'none'
                 })}>
-                    <Activity size={20} />
+                    <BarChart2 size={20} />
                     Dashboard
                 </NavLink>
 
@@ -92,8 +92,8 @@ const Sidebar: React.FC = () => {
                     transition: 'all 0.2s ease',
                     boxShadow: isActive ? '0 0 10px rgba(0, 255, 204, 0.3)' : 'none'
                 })}>
-                    <Wifi size={20} />
-                    Swarm + MCP
+                    <Radar size={20} />
+                    Simulation
                 </NavLink>
 
 

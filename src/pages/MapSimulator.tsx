@@ -279,8 +279,8 @@ const MapSimulator: React.FC = () => {
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '16px' }}>
             <header style={{ padding: '24px 24px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
-                    <h2 className="hud-text glow-text" style={{ fontSize: '1.5rem', color: 'var(--accent-primary)' }}>TACTICAL MISSION MAP</h2>
-                    <p className="hud-text" style={{ color: 'var(--text-secondary)' }}>&gt; 20X20 MISSION GRID | SECTOR A1-T20 ACTIVE</p>
+                    <h2 className="hud-text glow-text" style={{ fontSize: '1.5rem', color: 'var(--accent-primary)' }}>TACTICAL HEATMAP</h2>
+                    <p className="hud-text" style={{ color: 'var(--text-secondary)' }}>&gt; Adaptive predictive modeling</p>
                 </div>
             </header>
 

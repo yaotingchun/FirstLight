@@ -230,8 +230,8 @@ const ProbabilityMap3D: React.FC = () => {
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '16px' }}>
             <header style={{ padding: '24px', paddingBottom: 0 }}>
-                <h2 className="hud-text glow-text" style={{ fontSize: '1.5rem', color: 'var(--accent-primary)' }}>REAL-TIME SURVIVOR HEATMAP</h2>
-                <p className="hud-text" style={{ color: 'var(--text-secondary)' }}>&gt; OPENSTREETMAP BUILDING DATA + DYNAMIC SCAN UPDATE</p>
+                <h2 className="hud-text glow-text" style={{ fontSize: '1.5rem', color: 'var(--accent-primary)' }}>PREDICTIVE SURVIVOR HEATMAP</h2>
+                <p className="hud-text" style={{ color: 'var(--text-secondary)' }}>&gt; Predictive analysis of survivor locations based on environmental data</p>
                 {loading && <p style={{ color: 'var(--warning)', marginTop: '8px', fontSize: '0.85rem' }}>Fetching satellite building data (OSM)...</p>}
                 {error && <p style={{ color: '#ff4444', marginTop: '8px', fontSize: '0.85rem' }}>Error: {error}</p>}
                 {!loading && !error && <p style={{ color: '#00ffcc', marginTop: '8px', fontSize: '0.85rem' }}>Loaded {data.length} building centroids successfully.</p>}

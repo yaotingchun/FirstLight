@@ -5,7 +5,7 @@ interface LoadingScreenProps {
 }
 
 const LoadingScreen: React.FC<LoadingScreenProps> = ({ onComplete }) => {
-    const [loadingText, setLoadingText] = useState('INITIALIZING SWARM PROTOCOL...');
+    const [loadingText, setLoadingText] = useState('INITIALIZING FIRSTLIGHT PROTOCOL...');
     const [progress, setProgress] = useState(0);
     const [opacity, setOpacity] = useState(1);
 
@@ -34,7 +34,7 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ onComplete }) => {
             { time: 800, text: 'ESTABLISHING SECURE UPLINK...' },
             { time: 1500, text: 'CALIBRATING ADAPTIVE SENSORS...' },
             { time: 2200, text: 'LOADING PROBABILITY MATRICES...' },
-            { time: 2800, text: 'DEPLOYING SWARM AI...' },
+            { time: 2800, text: 'DEPLOYING FIRSTLIGHT AI...' },
             { time: 3500, text: 'SYSTEM READY.' }
         ];
 
@@ -164,7 +164,7 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ onComplete }) => {
 
             {/* Bottom Bar */}
             <div style={{ position: 'absolute', bottom: 20, left: 40, right: 40, height: '2px', backgroundColor: 'rgba(0, 255, 204, 0.3)' }}>
-                <div style={{ position: 'absolute', bottom: '-15px', left: '50%', transform: 'translateX(-50%)', color: 'rgba(0, 255, 204, 0.5)', fontSize: '10px', letterSpacing: '4px' }}>FIRST LIGHT SWARM OPTICS LOGIC</div>
+                <div style={{ position: 'absolute', bottom: '-15px', left: '50%', transform: 'translateX(-50%)', color: 'rgba(0, 255, 204, 0.5)', fontSize: '10px', letterSpacing: '4px' }}>FIRSTLIGHT OPTICS COMMAND ENGINE</div>
             </div>
 
             {/* --- Streaming Data Panels (Filling left/right empty space) --- */}

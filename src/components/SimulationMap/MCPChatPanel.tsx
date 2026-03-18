@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import { Terminal, X, FileText } from 'lucide-react';
 import { getOrchestratorRecords, type OrchestratorRecord } from '../../services/mcpClient';
 import type { OrchestratorChatMessage } from '../../types/simulation';
+import { RobotIcon, DroneIcon } from './LogIcons';
 
 interface MCPChatPanelProps {
     mcpConnected: boolean;
@@ -408,19 +409,21 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 10, fontWeight: 600 }}>
                                                     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                                                         <div style={{ 
-                                                            width: 14, 
-                                                            height: 14, 
-                                                            borderRadius: '50%', 
-                                                            background: themeColor, 
+                                                            width: 18, 
+                                                            height: 18, 
+                                                            borderRadius: '4px', 
+                                                            background: `${themeColor}22`, 
                                                             display: 'flex', 
                                                             alignItems: 'center', 
                                                             justifyContent: 'center', 
-                                                            fontSize: 9, 
-                                                            color: '#000',
-                                                            fontWeight: 800,
-                                                            flexShrink: 0
+                                                            flexShrink: 0,
+                                                            border: `1px solid ${themeColor}44`
                                                         }}>
-                                                            {(droneId || record.source.toUpperCase())[0]}
+                                                            {record.source === 'ai' || (droneId && droneId.toLowerCase().includes('agent')) || droneId === 'ORCHESTRATOR' ? (
+                                                                <RobotIcon color={themeColor} size={11} />
+                                                            ) : (
+                                                                <DroneIcon color={themeColor} size={11} />
+                                                            )}
                                                         </div>
                                                         <span style={{ color: '#8aa0b3' }}>[{stamp}]</span>
                                                         <span style={{ color: themeColor }}>{droneId || record.source.toUpperCase()}</span>
