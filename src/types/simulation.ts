@@ -53,6 +53,7 @@ export type Drone = {
     lastScannedY?: number;
     lockTarget?: boolean;
     preventReassignment?: boolean;
+    path: { x: number; y: number; tick: number; scanned?: boolean; }[];
 };
 
 export type SwarmMessage = {

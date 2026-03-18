@@ -166,12 +166,12 @@ export const createDrones = (): Drone[] => {
     // RLY-Prime   → center      (~9 cells away)       → depart tick 15
     // Gamma/Delta → lower corners (~7.8 cells away)  → depart tick 25
     return [
-        { id: 'DRN-Alpha', x: bx, y: by, tx: 2, ty: 2, mode: 'Wide', battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 0, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1 },
-        { id: 'DRN-Beta', x: bx, y: by, tx: 17, ty: 2, mode: 'Wide', battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 0, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1 },
-        { id: 'RLY-Prime', x: bx, y: by, tx: GRID_W / 2, ty: GRID_H / 2, mode: 'Relay', battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 15, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1 },
-        { id: 'RLY-Backup', x: bx, y: by, tx: bx, ty: by, mode: 'Charging', battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 0, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1 },
-        { id: 'DRN-Gamma', x: bx, y: by, tx: 2,  ty: 17, mode: 'Wide',  battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 25, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1 },
-        { id: 'DRN-Delta', x: bx, y: by, tx: 17, ty: 17, mode: 'Wide',  battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 25, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1 }
+        { id: 'DRN-Alpha', x: bx, y: by, tx: 2, ty: 2, mode: 'Wide', battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 0, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] },
+        { id: 'DRN-Beta', x: bx, y: by, tx: 17, ty: 2, mode: 'Wide', battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 0, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] },
+        { id: 'RLY-Prime', x: bx, y: by, tx: GRID_W / 2, ty: GRID_H / 2, mode: 'Relay', battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 15, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] },
+        { id: 'RLY-Backup', x: bx, y: by, tx: bx, ty: by, mode: 'Charging', battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 0, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] },
+        { id: 'DRN-Gamma', x: bx, y: by, tx: 2,  ty: 17, mode: 'Wide',  battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 25, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] },
+        { id: 'DRN-Delta', x: bx, y: by, tx: 17, ty: 17, mode: 'Wide',  battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 25, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] }
     ];
 };
 

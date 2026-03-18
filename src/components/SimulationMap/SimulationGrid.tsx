@@ -14,16 +14,29 @@ interface SimulationGridProps {
     selectedPin: FoundPin | null;
     setSelectedPin: (pin: FoundPin | null) => void;
     showSensors: boolean;
+    showTrails: boolean;
+    selectedTrailDroneId: string | 'all';
     getSectorProbability: (x: number, y: number) => number;
     time: number;
     aiDisconnectedRef: React.MutableRefObject<Set<string>>;
     aiReconnectedUntilTickRef: React.MutableRefObject<Map<string, number>>;
 }
 
+export const getDroneThemeColor = (id?: string) => {
+    if (!id) return '#9db1c1';
+    if (id === 'ORCHESTRATOR') return '#00ffcc';
+    if (id.includes('Alpha')) return '#4da3ff';
+    if (id.includes('Beta')) return '#51cf66';
+    if (id.includes('Gamma')) return '#f06595';
+    if (id.includes('Delta')) return '#fcc419';
+    if (id.startsWith('RLY')) return '#ff922b';
+    return '#adb5bd';
+};
+
 export const SimulationGrid: React.FC<SimulationGridProps> = ({
     grid, drones, commLinks, survivors, pins,
-    selectedPin, setSelectedPin, showSensors, getSectorProbability,
-    time, aiDisconnectedRef, aiReconnectedUntilTickRef
+    selectedPin, setSelectedPin, showSensors, showTrails, selectedTrailDroneId, 
+    getSectorProbability, time, aiDisconnectedRef, aiReconnectedUntilTickRef
 }) => {
     return (
         <div className="hud-panel" style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -37,13 +50,15 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                                 y={y * CELL_SIZE}
                                 width={CELL_SIZE}
                                 height={CELL_SIZE}
-                                fill={cell.scanned ? `rgba(255, 68, 68, ${getSectorProbability(x, y) * 0.8})` : 'transparent'}
-                                stroke="rgba(0, 255, 204, 0.05)"
+                                fill={!showTrails && cell.scanned 
+                                    ? `rgba(255, 68, 68, ${0.05 + getSectorProbability(x, y) * 0.75})` 
+                                    : 'transparent'}
+                                stroke={(!showTrails && cell.scanned) ? "rgba(0, 255, 204, 0.2)" : "rgba(0, 255, 204, 0.05)"}
                                 strokeWidth="1"
                             />
 
                             {/* Disaster Image Discovery - Visible if scanned OR sensors toggled */}
-                            {(cell.scanned || showSensors) && cell.disasterImage && (
+                            {!showTrails && (cell.scanned || showSensors) && cell.disasterImage && (
                                 <image
                                     href={cell.disasterImage}
                                     x={x * CELL_SIZE + 2}
@@ -55,7 +70,7 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                             )}
 
                             {/* Sensor Values Overlay */}
-                            {showSensors && (
+                            {!showTrails && showSensors && (
                                 <g style={{ pointerEvents: 'none' }}>
                                     <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 8} fontSize="5" fill="#00ffcc" opacity="0.9" fontFamily="var(--font-mono)">M:{cell.signals.mobile.toFixed(1)}</text>
                                     <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 15} fontSize="5" fill="#ff4444" opacity="0.9" fontFamily="var(--font-mono)">T:{cell.signals.thermal.toFixed(1)}</text>
@@ -84,6 +99,7 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
 
                 {/* Comm Network Edges */}
                 {commLinks.map((link, idx) => {
+                    if (showTrails) return null;
                     const getCoords = (id: string) => {
                         if (id === BASE_STATION.id) return { x: BASE_STATION.x, y: BASE_STATION.y };
                         const d = drones.find((dr: Drone) => dr.id === id);
@@ -109,7 +125,9 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                 })}
 
                 {/* Mesh Network Lines (collision avoidance awareness) */}
-                {drones.map(d => (
+                {drones.map(d => {
+                    if (showTrails) return null;
+                    return (
                     <g key={`mesh-${d.id}`}>
                         {Object.entries(d.knownOtherDrones).map(([otherId, knownPos]) => {
                             if (time - knownPos.lastUpdate < 20) {
@@ -143,18 +161,21 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                             return null;
                         })}
                     </g>
-                ))}
+                    );
+                })}
 
                 {/* Base Station */}
-                <g transform={`translate(${BASE_STATION.x * CELL_SIZE + CELL_SIZE / 2}, ${BASE_STATION.y * CELL_SIZE + CELL_SIZE / 2})`}>
-                    <rect x="-15" y="-15" width="30" height="30" fill="var(--panel-bg)" stroke="#33ffaa" strokeWidth="2" />
-                    <Radio color="#33ffaa" size={20} style={{ transform: 'translate(-10px, -10px)' }} />
-                    <text x="20" y="5" fill="#33ffaa" fontSize="10" fontFamily="var(--font-mono)">BASE</text>
-                    <circle r={COMM_RANGE_BASE * CELL_SIZE} fill="transparent" stroke="#33ffaa" strokeWidth="1" strokeDasharray="10 5" style={{ animation: 'spin 10s linear infinite reverse', opacity: 0.2 }} />
-                </g>
+                {!showTrails && (
+                    <g transform={`translate(${BASE_STATION.x * CELL_SIZE + CELL_SIZE / 2}, ${BASE_STATION.y * CELL_SIZE + CELL_SIZE / 2})`}>
+                        <rect x="-15" y="-15" width="30" height="30" fill="var(--panel-bg)" stroke="#33ffaa" strokeWidth="2" />
+                        <Radio color="#33ffaa" size={20} style={{ transform: 'translate(-10px, -10px)' }} />
+                        <text x="20" y="5" fill="#33ffaa" fontSize="10" fontFamily="var(--font-mono)">BASE</text>
+                        <circle r={COMM_RANGE_BASE * CELL_SIZE} fill="transparent" stroke="#33ffaa" strokeWidth="1" strokeDasharray="10 5" style={{ animation: 'spin 10s linear infinite reverse', opacity: 0.2 }} />
+                    </g>
+                )}
 
                 {/* Terrain Overlays */}
-                {grid.map((row, y) => row.map((cell, x) => {
+                {!showTrails && grid.map((row, y) => row.map((cell, x) => {
                     if (cell.terrain === 'Road') {
                         return <line key={`road-${x}-${y}`} x1={x * CELL_SIZE} y1={y * CELL_SIZE + CELL_SIZE / 2} x2={x * CELL_SIZE + CELL_SIZE} y2={y * CELL_SIZE + CELL_SIZE / 2} stroke="rgba(255,255,255,0.1)" strokeWidth="2" strokeDasharray="4" />
                     }
@@ -163,9 +184,66 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                     }
                     return null;
                 }))}
+                
+                {/* Breadcrumb Trails */}
+                {showTrails && drones.map(d => {
+                    if (selectedTrailDroneId !== 'all' && selectedTrailDroneId !== d.id) return null;
+                    
+                    return (
+                        <g key={`trail-${d.id}`}>
+                            {d.path.map((p, i) => {
+                                const isScan = p.scanned;
+                                const color = isScan ? "#ffffff" : getDroneThemeColor(d.id);
+                                return (
+                                    <circle
+                                        key={`path-${d.id}-${i}`}
+                                        cx={p.x * CELL_SIZE + CELL_SIZE / 2}
+                                        cy={p.y * CELL_SIZE + CELL_SIZE / 2}
+                                        r={isScan ? 5 : 2}
+                                        fill={color}
+                                        style={{ 
+                                            opacity: 1,
+                                            filter: `drop-shadow(0 0 6px ${color})`
+                                        }}
+                                    />
+                                );
+                            })}
+                            
+                            {/* Start Marker */}
+                            {d.path.length > 0 && (() => {
+                                const color = getDroneThemeColor(d.id);
+                                return (
+                                    <circle
+                                        cx={d.path[0].x * CELL_SIZE + CELL_SIZE / 2}
+                                        cy={d.path[0].y * CELL_SIZE + CELL_SIZE / 2}
+                                        r="4.5"
+                                        fill={color}
+                                        style={{ pointerEvents: 'none', filter: `drop-shadow(0 0 4px ${color})` }}
+                                    />
+                                );
+                            })()}
+
+                            {/* End Marker */}
+                            {d.path.length > 1 && (() => {
+                                const color = getDroneThemeColor(d.id);
+                                return (
+                                    <circle
+                                        cx={d.path[d.path.length - 1].x * CELL_SIZE + CELL_SIZE / 2}
+                                        cy={d.path[d.path.length - 1].y * CELL_SIZE + CELL_SIZE / 2}
+                                        r="4.5"
+                                        fill={color}
+                                        style={{ pointerEvents: 'none', filter: `drop-shadow(0 0 4px ${color})` }}
+                                    />
+                                );
+                            })()}
+                        </g>
+                    );
+                })}
 
                 {/* Drones */}
-                {drones.map(d => (
+                {drones.map(d => {
+                    if (showTrails) return null;
+                    return (
                     <g key={d.id} transform={`translate(${d.x * CELL_SIZE + CELL_SIZE / 2}, ${d.y * CELL_SIZE + CELL_SIZE / 2})`}>
                         {(() => {
                             const isAiDisconnected = aiDisconnectedRef.current.has(d.id);
@@ -229,10 +307,11 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                             );
                         })()}
                     </g>
-                ))}
+                    );
+                })}
 
                 {/* Visible Survivor Pins */}
-                {pins.map(pin => (
+                {!showTrails && pins.map(pin => (
                     <g key={pin.id}
                         transform={`translate(${pin.x * CELL_SIZE + CELL_SIZE / 2}, ${pin.y * CELL_SIZE + CELL_SIZE / 2})`}
                         style={{ cursor: 'pointer' }}
