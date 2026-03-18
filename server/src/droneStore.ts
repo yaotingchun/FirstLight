@@ -18,7 +18,8 @@ import type {
     DronePosition,
     RelayDroneStatus,
     SwarmKnowledge,
-    NetworkTopology
+    NetworkTopology,
+    SensorWeightsSnapshot
 } from './types.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -73,6 +74,7 @@ interface DroneStateStore {
     meanProbabilityScanned: number;
     repeatedScanRate: number;
     missionTimeSec: number;
+    sensorWeights: SensorWeightsSnapshot;
     
     // Pending commands (to be picked up by frontend)
     pendingCommands: PendingCommand[];
@@ -125,6 +127,12 @@ class DroneStore {
         meanProbabilityScanned: 0,
         repeatedScanRate: 0,
         missionTimeSec: 0,
+        sensorWeights: {
+            mobile: { base: 0.4, conf: 0.9, color: '#00ffcc' },
+            thermal: { base: 0.3, conf: 0.6, color: '#ff4444' },
+            sound: { base: 0.2, conf: 0.7, color: '#ffff00' },
+            wifi: { base: 0.1, conf: 0.8, color: '#ff00ff' },
+        },
         pendingCommands: [],
         autoRecallThresholds: new Map(),
         relayStates: new Map(),
@@ -213,6 +221,7 @@ class DroneStore {
         if (stats.meanProbabilityScanned !== undefined) this.state.meanProbabilityScanned = stats.meanProbabilityScanned;
         if (stats.repeatedScanRate !== undefined) this.state.repeatedScanRate = stats.repeatedScanRate;
         if (stats.missionTimeSec !== undefined) this.state.missionTimeSec = stats.missionTimeSec;
+        if (stats.sensorWeights !== undefined) this.state.sensorWeights = stats.sensorWeights;
         this.notify();
     }
 
@@ -229,6 +238,12 @@ class DroneStore {
             meanProbabilityScanned: 0,
             repeatedScanRate: 0,
             missionTimeSec: 0,
+            sensorWeights: {
+                mobile: { base: 0.4, conf: 0.9, color: '#00ffcc' },
+                thermal: { base: 0.3, conf: 0.6, color: '#ff4444' },
+                sound: { base: 0.2, conf: 0.7, color: '#ffff00' },
+                wifi: { base: 0.1, conf: 0.8, color: '#ff00ff' },
+            },
             pendingCommands: [],
             autoRecallThresholds: new Map(),
             relayStates: new Map(),
@@ -361,7 +376,8 @@ class DroneStore {
             averageZoneCoverage: this.state.averageZoneCoverage,
             meanProbabilityScanned: this.state.meanProbabilityScanned,
             repeatedScanRate: this.state.repeatedScanRate,
-            missionTimeSec: this.state.missionTimeSec
+            missionTimeSec: this.state.missionTimeSec,
+            sensorWeights: this.state.sensorWeights
         };
     }
 
