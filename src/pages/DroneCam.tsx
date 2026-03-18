@@ -379,7 +379,7 @@ const DroneCam: React.FC = () => {
                 }
             } else {
                 // Movement with collision avoidance (identical to 2D sim)
-                const moveSpeed = d.mode === 'Wide' ? 0.4 : 0.1;
+                const moveSpeed = d.mode === 'Wide' ? 0.3 : 0.075;
                 let totalMove = Math.min(moveSpeed, distT);
                 let angle = Math.atan2(d.ty - d.y, d.tx - d.x);
                 const SEP = d.mode === 'Wide' ? 3.0 : 2.0;

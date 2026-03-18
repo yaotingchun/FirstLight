@@ -712,7 +712,7 @@ const SimulationMap: React.FC = () => {
                 }
             } else {
                 // Move towards target with collision avoidance
-                const moveSpeed = d.mode === 'Wide' ? 0.4 : 0.1;
+                const moveSpeed = d.mode === 'Wide' ? 0.3 : 0.075;
                 let totalMove = Math.min(moveSpeed, distToTarget);
                 let angle = Math.atan2(d.ty - d.y, d.tx - d.x);
 

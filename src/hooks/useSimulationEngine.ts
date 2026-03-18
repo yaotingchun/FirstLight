@@ -564,7 +564,7 @@ export const useSimulationEngine = (
                     d.y = BASE_Y;
                     d.mode = 'Charging';
                 } else if (relayDistToTarget >= 0.3) {
-                    const relaySpeed = 0.3;
+                    const relaySpeed = 0.225;
                     const relayAngle = Math.atan2(d.ty - d.y, d.tx - d.x);
                     d.x += Math.cos(relayAngle) * Math.min(relaySpeed, relayDistToTarget);
                     d.y += Math.sin(relayAngle) * Math.min(relaySpeed, relayDistToTarget);
@@ -846,7 +846,7 @@ export const useSimulationEngine = (
                     }
                 } else {
                     // ── Physical Movement Logic ─────────────────────────
-                const moveSpeed = d.mode === 'Wide' ? 0.4 : 0.1;
+                const moveSpeed = d.mode === 'Wide' ? 0.3 : 0.075;
                 let totalMove = Math.min(moveSpeed, distToTarget);
                 let angle = Math.atan2(d.ty - d.y, d.tx - d.x);
 

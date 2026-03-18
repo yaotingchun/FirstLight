@@ -22,8 +22,8 @@ import type {
 } from '../types.js';
 
 const MOVE_DRAIN_PER_TILE = 0.075;
-const SPEED_WIDE = 0.4;
-const SPEED_MICRO = 0.1;
+const SPEED_WIDE = 0.3;
+const SPEED_MICRO = 0.075;
 const SENSOR_WIDE = 0.015;
 const SENSOR_MICRO = 0.005;
 

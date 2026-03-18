@@ -394,7 +394,7 @@ export async function killDrone(
  * Battery drain model (mirrors SimulationMapMCP.tsx constants):
  *   movement drain  = distance × 0.075 per tile
  *   sensor overhead = 0.015 per estimated tick (Wide) | 0.005 per tick (Micro)
- *   speed           = 0.4 tile/tick (Wide) | 0.1 tile/tick (Micro)
+ *   speed           = 0.3 tile/tick (Wide) | 0.075 tile/tick (Micro)
  *
  * Optional `assumedMode` lets the caller override the drone's current mode
  * to forecast battery usage if the mode will change mid-trip.
@@ -426,7 +426,7 @@ export async function getBatteryForecast(
     }
 
     const mode = params.assumedMode ?? (drone.mode === 'Micro' ? 'Micro' : 'Wide');
-    const speed = mode === 'Wide' ? 0.4 : 0.1;       // tile/tick
+    const speed = mode === 'Wide' ? 0.3 : 0.075;       // tile/tick
     const sensorDrain = mode === 'Wide' ? 0.015 : 0.005; // per tick
     const moveDrainPerTile = 0.075;
 
