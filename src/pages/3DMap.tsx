@@ -73,12 +73,10 @@ const getProbabilityFromTags = (tags: any): number => {
 const ProbabilityMap3D: React.FC = () => {
     const [data, setData] = useState<HeatmapPoint[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
-    const [error, setError] = useState<string | null>(null);
 
     // Fetch building footprints and extract centroids from Overpass API
     const fetchOSMData = async () => {
         setLoading(true);
-        setError(null);
 
         // Define bounding box around MAP_CENTER (~1km radius)
         // south, west, north, east
@@ -141,7 +139,6 @@ const ProbabilityMap3D: React.FC = () => {
             setData(points);
         } catch (err: any) {
             console.error("Failed to load OSM data:", err);
-            setError(err.message || "Failed to load real-world data.");
         } finally {
             setLoading(false);
         }
@@ -228,16 +225,23 @@ const ProbabilityMap3D: React.FC = () => {
     ];
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '16px' }}>
-            <header style={{ padding: '24px', paddingBottom: 0 }}>
-                <h2 className="hud-text glow-text" style={{ fontSize: '1.5rem', color: 'var(--accent-primary)' }}>PREDICTIVE SURVIVOR HEATMAP</h2>
-                <p className="hud-text" style={{ color: 'var(--text-secondary)' }}>&gt; Predictive analysis of survivor locations based on environmental data</p>
-                {loading && <p style={{ color: 'var(--warning)', marginTop: '8px', fontSize: '0.85rem' }}>Fetching satellite building data (OSM)...</p>}
-                {error && <p style={{ color: '#ff4444', marginTop: '8px', fontSize: '0.85rem' }}>Error: {error}</p>}
-                {!loading && !error && <p style={{ color: '#00ffcc', marginTop: '8px', fontSize: '0.85rem' }}>Loaded {data.length} building centroids successfully.</p>}
+        <div style={{ display: 'flex', flexDirection: 'column', backgroundColor: '#020608', height: '100%', gap: '16px', padding: '24px 20px 16px', boxSizing: 'border-box', overflow: 'hidden' }}>
+            <header style={{ borderBottom: '1px solid rgba(0, 255, 204, 0.3)', paddingBottom: '12px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexShrink: 0, margin: 0 }}>
+                <div>
+                    <h2 style={{ margin: 0, fontSize: '1.8rem', color: '#00ffcc', letterSpacing: '3px', textTransform: 'uppercase', fontFamily: 'monospace', textShadow: '0 0 10px rgba(0, 255, 204, 0.4)' }}>
+                        PREDICTIVE SURVIVOR HEATMAP
+                    </h2>
+                    <div style={{ color: '#6b8a8b', letterSpacing: '1px', fontSize: '0.75rem', marginTop: '6px', fontFamily: 'monospace' }}>
+                        [PREDICTIVE ANALYSIS BASED ON ENVIRONMENTAL DATA]
+                    </div>
+                </div>
+                <div style={{ fontSize: '0.85rem', fontFamily: 'monospace', textAlign: 'right', marginBottom: '4px' }}>
+                    {loading && <span style={{ color: 'var(--warning)' }}>FETCHING SATELLITE BUILDING DATA...</span>}
+                    {!loading && data.length > 0 && <span style={{ color: '#00ffcc', opacity: 0.8 }}>LOADED {data.length} CENTROIDS SUCCESSFULLY</span>}
+                </div>
             </header>
 
-            <div style={{ flex: 1, position: 'relative', margin: '0 24px 24px 24px', border: '1px solid var(--panel-border)', overflow: 'hidden' }} className="hud-panel">
+            <div style={{ flex: 1, position: 'relative', margin: 0, border: '1px solid var(--panel-border)', overflow: 'hidden' }} className="hud-panel">
                 <DeckGL
                     layers={layers}
                     initialViewState={INITIAL_VIEW_STATE}

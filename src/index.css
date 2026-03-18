@@ -177,6 +177,7 @@ body {
 .mesh-link-base {
   stroke: rgba(0, 119, 255, 0.15);
 }
+
 @keyframes sweep {
   from {
     transform: rotate(0deg);
@@ -247,8 +248,11 @@ body {
 
 /* Drone Cam Specific Styles */
 .drone-view {
-  flex: 1;
-  height: 100%;
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  max-width: calc((100vh - 80px) * 16 / 9);
+  /* Prevent overflowing screen height */
+  margin: auto;
   border-radius: 4px;
   overflow: hidden;
   border: 1px solid rgba(0, 255, 204, 0.3);
@@ -260,8 +264,7 @@ body {
 .drone-container {
   display: flex;
   width: 100%;
-  height: calc(100% - 80px);
-  /* Adjust for header */
+  height: 100%;
   padding: 0 24px 24px 24px;
   position: relative;
   gap: 20px;
@@ -308,7 +311,7 @@ body {
 }
 
 .drone-side-panel {
-  width: 380px;
+  width: 320px;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -398,12 +401,14 @@ body {
 
 input[type=range].drone-slider {
   -webkit-appearance: none;
+  appearance: none;
   width: 100%;
   background: transparent;
 }
 
 input[type=range].drone-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
+  appearance: none;
   height: 12px;
   width: 12px;
   border-radius: 50%;

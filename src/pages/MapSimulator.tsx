@@ -75,7 +75,6 @@ const getTerrainFromTags = (tags: any): TerrainType => {
 const MapSimulator: React.FC = () => {
     const [points, setPoints] = useState<HeatmapPoint[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
-    const [error, setError] = useState<string | null>(null);
     const [scanOverlay, setScanOverlay] = useState<number[][] | null>(null);
     const [activeSource, setActiveSource] = useState<GridSource | null>(null);
 
@@ -97,7 +96,6 @@ const MapSimulator: React.FC = () => {
 
     const fetchOSMData = async () => {
         setLoading(true);
-        setError(null);
         const bbox = `${(MAP_CENTER.latitude - BBOX_OFFSET).toFixed(4)},${(MAP_CENTER.longitude - BBOX_OFFSET).toFixed(4)},${(MAP_CENTER.latitude + BBOX_OFFSET).toFixed(4)},${(MAP_CENTER.longitude + BBOX_OFFSET).toFixed(4)}`;
         
         const query = `
@@ -129,7 +127,6 @@ const MapSimulator: React.FC = () => {
             setPoints(newPoints);
         } catch (err: any) {
             console.error("OSM Fetch Error:", err);
-            setError(err.message);
         } finally {
             setLoading(false);
         }
@@ -276,18 +273,21 @@ const MapSimulator: React.FC = () => {
 
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '16px' }}>
-            <header style={{ padding: '24px 24px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', backgroundColor: '#020608', height: '100%', gap: '16px', padding: '24px 20px 16px', boxSizing: 'border-box', overflow: 'hidden' }}>
+            <header style={{ borderBottom: '1px solid rgba(0, 255, 204, 0.3)', paddingBottom: '12px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexShrink: 0, margin: 0 }}>
                 <div>
-                    <h2 className="hud-text glow-text" style={{ fontSize: '1.5rem', color: 'var(--accent-primary)' }}>TACTICAL HEATMAP</h2>
-                    <p className="hud-text" style={{ color: 'var(--text-secondary)' }}>&gt; Adaptive predictive modeling</p>
+                    <h2 style={{ margin: 0, fontSize: '1.8rem', color: '#00ffcc', letterSpacing: '3px', textTransform: 'uppercase', fontFamily: 'monospace', textShadow: '0 0 10px rgba(0, 255, 204, 0.4)' }}>
+                        TACTICAL HEATMAP
+                    </h2>
+                    <div style={{ color: '#6b8a8b', letterSpacing: '1px', fontSize: '0.75rem', marginTop: '6px', fontFamily: 'monospace' }}>
+                        [ADAPTIVE PREDICTIVE MODELING]
+                    </div>
                 </div>
             </header>
 
-            <div style={{ padding: '0 24px' }}>
+            <div style={{ padding: 0 }}>
                 {loading && <p style={{ color: 'var(--warning)', fontSize: '0.85rem' }}>Synchronizing with Overpass API...</p>}
-                {error && <p style={{ color: '#ff4444', fontSize: '0.85rem' }}>Error: {error}</p>}
-                {!loading && !error && (
+                {!loading && (
                     <p className="hud-text" style={{ color: activeSource === 'scan' ? '#ffff00' : 'var(--accent-primary)', fontSize: '0.85rem' }}>
                         Active Points: {points.length} | 
                         Status: {activeSource === 'scan' ? 'RECEIVING LIVE SCAN DATA' : 'TACTICAL FEED STATIC'}
@@ -295,7 +295,7 @@ const MapSimulator: React.FC = () => {
                 )}
             </div>
 
-            <div style={{ flex: 1, position: 'relative', margin: '0 24px 24px', border: '1px solid var(--panel-border)', overflow: 'hidden', backgroundColor: '#050a10', display: 'flex', justifyContent: 'center', alignItems: 'center' }} className="hud-panel">
+            <div style={{ flex: 1, position: 'relative', margin: 0, border: '1px solid var(--panel-border)', overflow: 'hidden', backgroundColor: '#050a10', display: 'flex', justifyContent: 'center', alignItems: 'center' }} className="hud-panel">
                 <svg 
                     width="100%" 
                     height="100%" 

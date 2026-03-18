@@ -32,7 +32,7 @@ const DroneCam: React.FC = () => {
     const commsLinesRef = useRef<Record<string, Cesium.Entity>>({});
 
     const { 
-        running, timeRef, dronesRef, survivorsRef, pinsRef, sensorWeightsRef, commLinksRef 
+        running, timeRef, dronesRef, sensorWeightsRef, commLinksRef 
     } = useSharedSimulation();
 
     const [activeDrone, setActiveDrone] = useState('DRN-Alpha');
@@ -267,16 +267,18 @@ const DroneCam: React.FC = () => {
     const altitudeLabel = activeD ? (activeD.mode === 'Micro' ? '80M' : activeD.mode === 'Charging' ? '0M (DOCKED)' : '300M') : '—';
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '16px', paddingTop: '40px' }}>
-            <header style={{ paddingLeft: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', paddingRight: '20px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', backgroundColor: '#020608', height: '100%', gap: '16px', padding: '24px 20px 16px', boxSizing: 'border-box', overflow: 'hidden' }}>
+            <header style={{ borderBottom: '1px solid rgba(0, 255, 204, 0.3)', paddingBottom: '12px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexShrink: 0, margin: 0 }}>
                 <div>
-                    <h2 className="hud-text glow-text" style={{ fontSize: '1.5rem', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <h2 style={{ margin: 0, fontSize: '1.8rem', color: '#00ffcc', letterSpacing: '3px', textTransform: 'uppercase', fontFamily: 'monospace', textShadow: '0 0 10px rgba(0, 255, 204, 0.4)' }}>
                         DRONE CAM OPTICS
                     </h2>
-                    <p className="hud-text" style={{ color: 'var(--text-secondary)' }}>&gt; Real-time view for each drone</p>
+                    <div style={{ color: '#6b8a8b', letterSpacing: '1px', fontSize: '0.75rem', marginTop: '6px', fontFamily: 'monospace' }}>
+                        [REAL-TIME VIEW FOR EACH DRONE]
+                    </div>
                 </div>
-                <div style={{ display: 'flex', gap: '10px', background: 'var(--panel-bg)', padding: '10px', border: '1px solid var(--panel-border)', borderRadius: '4px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 12px', color: running ? '#00ffcc' : 'var(--warning)', fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>
+                <div style={{ display: 'flex', gap: '10px', background: 'var(--panel-bg)', padding: '6px 12px', border: '1px solid var(--panel-border)', borderRadius: '4px', marginBottom: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 4px', color: running ? '#00ffcc' : 'var(--warning)', fontFamily: 'var(--font-mono)', fontSize: '0.75rem' }}>
                         {running ? '● SIMULATION RUNNING' : '■ SIMULATION PAUSED BY MCP'}
                     </div>
                 </div>
@@ -294,71 +296,85 @@ const DroneCam: React.FC = () => {
                         </div>
                     </div>
 
-                    <div className="drone-side-panel">
-                        <div className="hud-panel flex-col" style={{ padding: '20px', gap: '16px', height: '100%', overflowY: 'auto' }}>
-                            <div style={{ borderBottom: '1px solid var(--panel-border)', paddingBottom: '12px', flexShrink: 0 }}>
-                                <label className="hud-text" style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '6px', display: 'block' }}>SELECT ACTIVE ASSET</label>
-                                <select className="drone-select" value={activeDrone} onChange={e => handleDroneSwitch(e.target.value)}>
-                                    {dronesRef.current.map(d => <option key={d.id} value={d.id}>{d.id}</option>)}
-                                </select>
-                            </div>
+                    <div className="drone-side-panel" style={{ display: 'flex', flexDirection: 'column', gap: '16px', height: '100%' }}>
+                        
+                        <div className="hud-panel" style={{ padding: '16px', flexShrink: 0 }}>
+                            <h4 className="hud-text" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Target size={16} /> SELECT ACTIVE ASSET
+                            </h4>
+                            <select className="drone-select" value={activeDrone} onChange={e => handleDroneSwitch(e.target.value)}>
+                                {dronesRef.current.map(d => <option key={d.id} value={d.id}>{d.id}</option>)}
+                            </select>
+                        </div>
 
-                            <div style={{ borderBottom: '1px solid var(--panel-border)', paddingBottom: '12px', flexShrink: 0 }}>
-                                <label className="hud-text" style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '6px', display: 'block' }}>SWARM STATUS</label>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>
-                                    {dronesRef.current.map(d => {
-                                        const bc = d.battery > 50 ? '#00ffcc' : d.battery > 20 ? '#ffff00' : '#ff4444';
-                                        const mc = !d.isConnected ? '#555' : d.mode === 'Relay' ? '#0077ff' : d.mode === 'Wide' ? '#00ffcc' : d.mode === 'Charging' ? '#ffa500' : '#ff4444';
-                                        return (
-                                            <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 6px', background: d.id === activeDrone ? 'rgba(0,255,204,0.08)' : 'transparent', border: d.id === activeDrone ? '1px solid rgba(0,255,204,0.3)' : '1px solid transparent', cursor: 'pointer' }} onClick={() => handleDroneSwitch(d.id)}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                    {d.mode === 'Wide' ? <Target size={12} color="#00ffcc" /> : d.mode === 'Relay' ? <Radio size={12} color="#0077ff" /> : d.mode === 'Charging' ? <Activity size={12} color="#ffa500" /> : <Crosshair size={12} color="#ff4444" />}
-                                                    <span>{d.id}</span>
-                                                </div>
-                                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                                    <span style={{ color: bc }}>{Math.floor(d.battery)}%</span>
-                                                    <span style={{ color: mc, minWidth: 50, textAlign: 'right' }}>{!d.isConnected ? 'OFF' : d.mode}</span>
-                                                </div>
+                        <div className="hud-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+                            <h4 className="hud-text" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Activity size={16} /> SWARM STATUS
+                            </h4>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>
+                                {dronesRef.current.map(d => {
+                                    const bc = d.battery > 50 ? '#00ffcc' : d.battery > 20 ? '#ffff00' : '#ff4444';
+                                    const mc = !d.isConnected ? '#555' : d.mode === 'Relay' ? '#0077ff' : d.mode === 'Wide' ? '#00ffcc' : d.mode === 'Charging' ? '#ffa500' : '#ff4444';
+                                    return (
+                                        <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px', background: d.id === activeDrone ? 'rgba(0,255,204,0.08)' : 'rgba(255,255,255,0.02)', border: d.id === activeDrone ? '1px solid rgba(0,255,204,0.3)' : '1px solid var(--panel-border)', cursor: 'pointer', borderRadius: '4px' }} onClick={() => handleDroneSwitch(d.id)}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                {d.mode === 'Wide' ? <Target size={14} color="#00ffcc" /> : d.mode === 'Relay' ? <Radio size={14} color="#0077ff" /> : d.mode === 'Charging' ? <Activity size={14} color="#ffa500" /> : <Crosshair size={14} color="#ff4444" />}
+                                                <span style={{ fontWeight: 600 }}>{d.id}</span>
                                             </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-
-                            <div style={{ borderBottom: '1px solid var(--panel-border)', paddingBottom: '12px', flexShrink: 0 }}>
-                                <label className="hud-text" style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '6px', display: 'block' }}>ADAPTIVE SENSORS</label>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                    {(Object.entries(sensorWeightsRef.current) as [keyof typeof INITIAL_SENSORS, { base: number; conf: number; color?: string }][]).map(([key, data]) => {
-                                        const fw = (data.base * data.conf).toFixed(2);
-                                        const defaultColor = key === 'mobile' ? '#00ffcc' : key === 'thermal' ? '#ff4444' : key === 'sound' ? '#ffff00' : '#ff00ff';
-                                        return (
-                                            <div key={key}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', color: 'var(--text-primary)' }}>
-                                                    <span>{key}</span><span style={{ color: data.color || defaultColor }}>w={fw}</span>
-                                                </div>
-                                                <div style={{ width: '100%', height: '3px', background: 'var(--panel-border)', borderRadius: '2px', overflow: 'hidden' }}>
-                                                    <div style={{ width: `${(parseFloat(fw) / 0.4) * 100}%`, height: '100%', background: data.color || defaultColor }} />
-                                                </div>
+                                            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                                                <span style={{ color: bc }}>{Math.floor(d.battery)}%</span>
+                                                <span style={{ color: mc, minWidth: '60px', textAlign: 'right' }}>{!d.isConnected ? 'OFF' : d.mode}</span>
                                             </div>
-                                        );
-                                    })}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        <div className="hud-panel" style={{ padding: '16px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                            <h4 className="hud-text" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                                <Radio size={16} /> ADAPTIVE SENSORS
+                            </h4>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                {(Object.entries(sensorWeightsRef.current) as [keyof typeof INITIAL_SENSORS, { base: number; conf: number; color?: string }][]).map(([key, data]) => {
+                                    const fw = (data.base * data.conf).toFixed(2);
+                                    const defaultColor = key === 'mobile' ? '#00ffcc' : key === 'thermal' ? '#ff4444' : key === 'sound' ? '#ffff00' : '#ff00ff';
+                                    return (
+                                        <div key={key}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', color: 'var(--text-primary)', marginBottom: '6px' }}>
+                                                <span>{key} SIG</span><span style={{ color: data.color || defaultColor }}>w={fw}</span>
+                                            </div>
+                                            <div style={{ width: '100%', height: '6px', background: 'var(--panel-border)', borderRadius: '3px', overflow: 'hidden' }}>
+                                                <div style={{ width: `${(parseFloat(fw) / 0.4) * 100}%`, height: '100%', background: data.color || defaultColor, boxShadow: `0 0 8px ${data.color || defaultColor}` }} />
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        <div className="hud-panel" style={{ padding: '16px', flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
+                            <h4 className="hud-text" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                                <Target size={16} /> SYSTEM TELEMETRY
+                            </h4>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(0, 255, 204, 0.1)', paddingBottom: '6px' }}>
+                                    <span style={{ color: 'var(--text-secondary)' }}>UPLINK STATUS</span>
+                                    <span style={{ color: activeD?.isConnected ? '#00ffcc' : '#ff4444' }}>{activeD?.isConnected ? 'STABLE' : 'DISCONNECTED'}</span>
                                 </div>
-                            </div>
-
-                            <div style={{ borderBottom: '1px solid var(--panel-border)', paddingBottom: '12px', flexShrink: 0 }}>
-                                <label className="hud-text" style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>SURVIVORS FOUND</label>
-                                <div style={{ fontSize: '1.2rem', fontFamily: 'var(--font-mono)', color: '#00ffcc' }}>{pinsRef.current.length} / {survivorsRef.current.length}</div>
-                            </div>
-
-                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                                <label className="hud-text" style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '6px', display: 'flex', justifyContent: 'space-between', flexShrink: 0 }}>
-                                    <span>ALGORITHM LOG</span>
-                                </label>
-                                <div className="log-feed" style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', fontStyle: 'italic', padding: '10px' }}>
-                                    Please refer to the Swarm + MCP dashboard for the full interactive AI orchestration logs and live communication metrics.
+                                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(0, 255, 204, 0.1)', paddingBottom: '6px' }}>
+                                    <span style={{ color: 'var(--text-secondary)' }}>ALTITUDE MSL</span>
+                                    <span style={{ color: '#00ffcc' }}>{activeD?.mode === 'Micro' ? '80.0m' : activeD?.mode === 'Charging' ? '0.0m' : '300.0m'}</span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(0, 255, 204, 0.1)', paddingBottom: '6px' }}>
+                                    <span style={{ color: 'var(--text-secondary)' }}>CURRENT POS</span>
+                                    <span style={{ color: '#00ffcc' }}>
+                                        {activeLngLat ? `${(activeLngLat as number[])[1].toFixed(4)}, ${(activeLngLat as number[])[0].toFixed(4)}` : 'N/A'}
+                                    </span>
                                 </div>
                             </div>
                         </div>
+
                     </div>
 
                 </div>

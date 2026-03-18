@@ -70,36 +70,40 @@ const SimulationMapMCP: React.FC = () => {
     }, [running, speed, performTick]);
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '8px', color: 'var(--text-primary)' }}>
-            <header style={{ padding: '16px', paddingBottom: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', backgroundColor: '#020608', height: '100%', gap: '8px', color: 'var(--text-primary)', padding: '24px 20px 16px', boxSizing: 'border-box', overflow: 'hidden' }}>
+            <header style={{ borderBottom: '1px solid rgba(0, 255, 204, 0.3)', paddingBottom: '12px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexShrink: 0, margin: 0 }}>
                 <div>
-                    <h2 className="hud-text glow-text" style={{ fontSize: '1.5rem', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <h2 style={{ margin: 0, fontSize: '1.8rem', color: '#00ffcc', letterSpacing: '3px', textTransform: 'uppercase', fontFamily: 'monospace', textShadow: '0 0 10px rgba(0, 255, 204, 0.4)' }}>
                         MULTI-RES SWARM SIMULATION
                     </h2>
-                    <p className="hud-text" style={{ color: 'var(--text-secondary)' }}>&gt; ADAPTIVE SEARCH & SURVIVOR DETECTION</p>
+                    <div style={{ color: '#6b8a8b', letterSpacing: '1px', fontSize: '0.75rem', marginTop: '6px', fontFamily: 'monospace' }}>
+                        [ADAPTIVE SEARCH & SURVIVOR DETECTION]
+                    </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '12px', background: 'var(--panel-bg)', padding: '12px', border: '1px solid var(--panel-border)', borderRadius: '4px' }}>
-                    <button onClick={toggleRunning} className="hud-btn" style={{ padding: '8px 16px', display: 'flex', gap: '8px', cursor: 'pointer' }}>
-                        {running ? <Pause size={18} /> : <Play size={18} />} {running ? 'PAUSE' : 'START SCAN'}
+                <div style={{ display: 'flex', gap: '8px', background: 'var(--panel-bg)', padding: '6px 12px', border: '1px solid var(--panel-border)', borderRadius: '4px', marginBottom: '4px' }}>
+                    <button onClick={toggleRunning} className="hud-btn" style={{ padding: '6px 12px', fontSize: '0.75rem', display: 'flex', gap: '6px', alignItems: 'center', cursor: 'pointer' }}>
+                        {running ? <Pause size={14} /> : <Play size={14} />} {running ? 'PAUSE' : 'START SCAN'}
                     </button>
                     <button
                         onClick={() => setChatOpen(!chatOpen)}
                         className={`hud-btn ${chatOpen ? 'glow-text' : ''}`}
                         style={{
-                            padding: '8px 16px',
+                            padding: '6px 12px',
+                            fontSize: '0.75rem',
                             display: 'flex',
-                            gap: '8px',
+                            gap: '6px',
+                            alignItems: 'center',
                             cursor: 'pointer',
                             borderColor: chatOpen ? 'var(--accent-primary)' : ''
                         }}
                     >
-                        <FileText size={18} /> MISSION LOG
+                        <FileText size={14} /> MISSION LOG
                     </button>
                 </div>
             </header>
 
-            <div style={{ flex: 1, display: 'flex', gap: '12px', margin: '0 12px 12px 12px' }}>
+            <div style={{ flex: 1, display: 'flex', gap: '12px' }}>
                 <SimulationGrid
                     grid={gridRef.current}
                     drones={dronesRef.current}
