@@ -26,7 +26,8 @@ import type {
     MCPToolResult,
     DroneStatus,
     SectorAssignment,
-    SectorAssignmentsResult
+    SectorAssignmentsResult,
+    SensorWeightsSnapshot
 } from '../types.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -127,6 +128,7 @@ export interface UpdateMissionStatsParams {
     meanProbabilityScanned?: number;
     repeatedScanRate?: number;
     missionTimeSec?: number;
+    sensorWeights?: SensorWeightsSnapshot;
 }
 
 /**
