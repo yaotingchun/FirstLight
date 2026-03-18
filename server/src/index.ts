@@ -26,6 +26,15 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const ORCHESTRATOR_THINK_INTERVAL_TICKS = parseInt(process.env.ORCHESTRATOR_THINK_INTERVAL_TICKS ?? '30', 10);
 
+function getAutonomyAgentName(droneId: string): string {
+    if (droneId.startsWith('RLY-')) return 'Agent Relay';
+    if (droneId.includes('Alpha')) return 'Agent Alpha';
+    if (droneId.includes('Beta')) return 'Agent Beta';
+    if (droneId.includes('Gamma')) return 'Agent Gamma';
+    if (droneId.includes('Delta')) return 'Agent Delta';
+    return 'Agent';
+}
+
 let orchestratorThinkInFlight = false;
 let lastOrchestratorThinkTick = -1;
 
@@ -307,10 +316,11 @@ app.post('/api/state/tick', (req, res) => {
 
     const autonomy = localAutonomy.onTick(tick);
         autonomy.actions.forEach((action) => {
+            const agentName = getAutonomyAgentName(action.droneId);
             appendOrchestratorRecord(
                 'action',
-                `[LOCAL_AUTONOMY] ${action.type} ${action.droneId} - ${action.reason}`,
-                action.droneId
+                action.reason,
+                agentName
             );
         });
 

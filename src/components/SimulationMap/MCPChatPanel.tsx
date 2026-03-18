@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Terminal, X, MessageSquare, Send } from 'lucide-react';
 import { getOrchestratorRecords, type OrchestratorRecord } from '../../services/mcpClient';
@@ -41,6 +41,16 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
     chatMessages, chatInput, setChatInput, chatSending, sendChatMessage, runThinkNow
 }) => {
     const [activityRecords, setActivityRecords] = useState<OrchestratorRecord[]>([]);
+    const shouldAutoScrollRef = useRef(true);
+
+    const updateAutoScrollState = useCallback(() => {
+        const el = chatScrollRef.current;
+        if (!el) return;
+
+        const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        // Keep auto-scroll only when the user is already near the bottom.
+        shouldAutoScrollRef.current = distanceFromBottom <= 24;
+    }, [chatScrollRef]);
 
     const loadActivityRecords = useCallback(async () => {
         const result = await getOrchestratorRecords(30);
@@ -66,10 +76,17 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
         if (!chatOpen) return;
         const el = chatScrollRef.current;
         if (!el) return;
+        if (!shouldAutoScrollRef.current) return;
+
         requestAnimationFrame(() => {
             el.scrollTop = el.scrollHeight;
         });
     }, [activityRecords, chatMessages, chatOpen, chatScrollRef]);
+
+    useEffect(() => {
+        if (!chatOpen) return;
+        updateAutoScrollState();
+    }, [chatOpen, updateAutoScrollState]);
 
     return (
         <>
@@ -328,7 +345,7 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                         display: 'flex',
                         flexDirection: 'column',
                         gap: 8
-                    }} ref={chatScrollRef}>
+                    }} ref={chatScrollRef} onScroll={updateAutoScrollState}>
                         <div style={{
                             border: '1px solid #243444',
                             borderRadius: 6,
@@ -366,7 +383,7 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                                             if (id.includes('Beta')) return '#51cf66';
                                             if (id.includes('Gamma')) return '#f06595';
                                             if (id.includes('Delta')) return '#fcc419';
-                                            if (id.startsWith('RLY')) return '#ff922b';
+                                            if (id.startsWith('RLY') || id.includes('Relay')) return '#ff922b';
                                             return '#adb5bd';
                                         };
 

@@ -37,10 +37,8 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                                 y={y * CELL_SIZE}
                                 width={CELL_SIZE}
                                 height={CELL_SIZE}
-                                fill={cell.scanned 
-                                    ? `rgba(255, 68, 68, ${0.05 + getSectorProbability(x, y) * 0.75})` 
-                                    : 'transparent'}
-                                stroke={cell.scanned ? "rgba(0, 255, 204, 0.2)" : "rgba(0, 255, 204, 0.05)"}
+                                fill={cell.scanned ? `rgba(255, 68, 68, ${getSectorProbability(x, y) * 0.8})` : 'transparent'}
+                                stroke="rgba(0, 255, 204, 0.05)"
                                 strokeWidth="1"
                             />
 

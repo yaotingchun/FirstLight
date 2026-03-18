@@ -98,7 +98,7 @@ class LocalAutonomyEngine {
             actions.push({
                 droneId: drone.id,
                 type: 'RECALL_TO_BASE',
-                reason: `battery ${drone.battery.toFixed(1)}% <= ${recallThreshold}% threshold`,
+                reason: `Battery is at ${drone.battery.toFixed(1)}%, which is under the ${recallThreshold}% safety threshold. Returning to base now.`,
             });
             return;
         }
@@ -116,7 +116,7 @@ class LocalAutonomyEngine {
                 actions.push({
                     droneId: drone.id,
                     type: 'SET_TARGET',
-                    reason: `disconnected for ${disconnectedTicks} ticks, moving toward base relay corridor`,
+                    reason: `We have been disconnected for ${disconnectedTicks} ticks, so I am moving toward the base relay corridor to recover link quality.`,
                 });
             }
             return;
@@ -140,7 +140,7 @@ class LocalAutonomyEngine {
             actions.push({
                 droneId: drone.id,
                 type: 'SET_MODE',
-                reason: `local target ${targetCell.gridCell} probability=${targetCell.probability.toFixed(2)}`,
+                reason: `I am switching scan mode based on local target ${targetCell.gridCell} (estimated probability ${targetCell.probability.toFixed(2)}).`,
             });
         }
 
@@ -153,7 +153,7 @@ class LocalAutonomyEngine {
             actions.push({
                 droneId: drone.id,
                 type: 'SET_TARGET',
-                reason: `self-assigned local hotspot ${targetCell.gridCell}`,
+                reason: `Assigning myself to local hotspot ${targetCell.gridCell} as the next search objective.`,
             });
         }
     }
@@ -190,7 +190,7 @@ class LocalAutonomyEngine {
                     actions.push({
                         droneId: relay.id,
                         type: 'REPLACE_RELAY',
-                        reason: `relay battery ${relay.battery.toFixed(1)}%, handing off to ${standbyRelay.id}`,
+                        reason: `Relay battery is down to ${relay.battery.toFixed(1)}%, so I am handing this position off to ${standbyRelay.id}.`,
                     });
                     return;
                 }
@@ -200,7 +200,7 @@ class LocalAutonomyEngine {
                 actions.push({
                     droneId: relay.id,
                     type: 'RECALL_TO_BASE',
-                    reason: `relay battery ${relay.battery.toFixed(1)}%, no standby relay available`,
+                    reason: `Relay battery is at ${relay.battery.toFixed(1)}% and no standby relay is available, so I am returning to base.`,
                 });
                 return;
             }
@@ -243,7 +243,7 @@ class LocalAutonomyEngine {
         actions.push({
             droneId: relay.id,
             type: 'MOVE_RELAY',
-            reason: `repositioning to reconnect ${disconnected.length} disconnected search drones`,
+            reason: `Repositioning now to help reconnect ${disconnected.length} disconnected search drone(s).`,
         });
     }
 
