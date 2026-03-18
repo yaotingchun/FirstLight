@@ -53,7 +53,7 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                                 fill={!showTrails && cell.scanned 
                                     ? `rgba(255, 68, 68, ${0.05 + getSectorProbability(x, y) * 0.75})` 
                                     : 'transparent'}
-                                stroke={(!showTrails && cell.scanned) ? "rgba(0, 255, 204, 0.2)" : "rgba(0, 255, 204, 0.05)"}
+                                stroke="rgba(0, 255, 204, 0.05)"
                                 strokeWidth="1"
                             />
 

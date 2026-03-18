@@ -74,7 +74,7 @@ export const createGrid = (survivors?: HiddenSurvivor[]): Sector[][] => {
         });
     } else {
         // Fallback to legacy hotspots if no survivors provided during init
-        const numHotspots = 3;
+        const numHotspots = Math.floor(Math.random() * 5) + 3; // 3 to 7
         for (let i = 0; i < numHotspots; i++) {
             const hx = Math.floor(Math.random() * GRID_W);
             const hy = Math.floor(Math.random() * GRID_H);
@@ -119,8 +119,9 @@ export const createGrid = (survivors?: HiddenSurvivor[]): Sector[][] => {
     const sorted = [...allSectors].sort((a, b) => b.prob - a.prob);
     const selectedSectors: Sector[] = [];
     const MIN_DIST = 6;
+    const targetSectorCount = survivors ? survivors.length : (Math.floor(Math.random() * 5) + 3);
     for (const s of sorted) {
-        if (selectedSectors.length >= 3) break;
+        if (selectedSectors.length >= targetSectorCount) break;
         const tooClose = selectedSectors.some(sel =>
             Math.sqrt(Math.pow(s.x - sel.x, 2) + Math.pow(s.y - sel.y, 2)) < MIN_DIST
         );
@@ -129,15 +130,14 @@ export const createGrid = (survivors?: HiddenSurvivor[]): Sector[][] => {
         }
     }
 
-    if (selectedSectors.length >= 3) {
-        // Only assign images strictly to the first two survivors. 
-        // The third survivor grid will not have a direct image.
+    if (selectedSectors.length >= 2) {
+        // The remaining survivor grids will not have a direct image.
         g[selectedSectors[0].y][selectedSectors[0].x].disasterImage = '/mock_images/survivor.png';
         g[selectedSectors[1].y][selectedSectors[1].x].disasterImage = '/mock_images/thermal.png';
 
         // Scatter empty images ONLY around the survivor grids without a direct image
         selectedSectors.slice(2).forEach((s) => {
-            // Place 2 empty images scattered around the third survivor
+            // Place 2 empty images scattered around each remaining survivor
             for (let i = 0; i < 2; i++) {
                 let dx, dy;
                 do {
@@ -146,7 +146,7 @@ export const createGrid = (survivors?: HiddenSurvivor[]): Sector[][] => {
                 } while (dx === 0 && dy === 0);
                 const nx = Math.max(0, Math.min(GRID_W - 1, s.x + dx));
                 const ny = Math.max(0, Math.min(GRID_H - 1, s.y + dy));
-                
+
                 // Only place empty.png on grids that don't already have an image
                 if (!g[ny][nx].disasterImage) {
                     g[ny][nx].disasterImage = '/mock_images/empty.png';
@@ -170,17 +170,28 @@ export const createDrones = (): Drone[] => {
         { id: 'DRN-Beta', x: bx, y: by, tx: 17, ty: 2, mode: 'Wide', battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 0, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] },
         { id: 'RLY-Prime', x: bx, y: by, tx: GRID_W / 2, ty: GRID_H / 2, mode: 'Relay', battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 15, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] },
         { id: 'RLY-Backup', x: bx, y: by, tx: bx, ty: by, mode: 'Charging', battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 0, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] },
-        { id: 'DRN-Gamma', x: bx, y: by, tx: 2,  ty: 17, mode: 'Wide',  battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 25, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] },
-        { id: 'DRN-Delta', x: bx, y: by, tx: 17, ty: 17, mode: 'Wide',  battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 25, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] }
+        { id: 'DRN-Gamma', x: bx, y: by, tx: 2, ty: 17, mode: 'Wide', battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 25, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] },
+        { id: 'DRN-Delta', x: bx, y: by, tx: 17, ty: 17, mode: 'Wide', battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 25, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] }
     ];
 };
 
 export const createSurvivors = (grid?: Sector[][]): HiddenSurvivor[] => {
     const messages = [
         "Trapped under concrete. Leg injured.",
-        "Safe but cannot exit building. 3 people here.",
-        "Need water asap."
+        "Safe but cannot exit building.",
+        "Need water asap.",
+        "Medical assistance needed for elderly person.",
+        "We have a baby with us, please hurry.",
+        "Trapped on the second floor, stairs are collapsed.",
+        "Running out of air, please help.",
+        "Small fire in the adjacent room, need evacuation.",
+        "Multiple people injured here, need medics.",
+        "Power is out, cold and need blankets.",
+        "Cut off by debris, but we are unhurt."
     ];
+
+    // Shuffle the messages so they don't repeat in one simulation
+    const shuffledMessages = [...messages].sort(() => Math.random() - 0.5);
 
     if (grid) {
         const allSectors = grid.flat();
@@ -188,9 +199,10 @@ export const createSurvivors = (grid?: Sector[][]): HiddenSurvivor[] => {
         const sorted = [...allSectors].sort((a, b) => b.prob - a.prob);
         const selected: Sector[] = [];
         const MIN_DIST = 6; // Enforce at least 6 cells distance between survivors
+        const numSurvivors = Math.floor(Math.random() * 5) + 3; // 3 to 7
 
         for (const s of sorted) {
-            if (selected.length >= 3) break;
+            if (selected.length >= numSurvivors) break;
             const tooClose = selected.some(sel =>
                 Math.sqrt(Math.pow(s.x - sel.x, 2) + Math.pow(s.y - sel.y, 2)) < MIN_DIST
             );
@@ -204,7 +216,7 @@ export const createSurvivors = (grid?: Sector[][]): HiddenSurvivor[] => {
             x: s.x,
             y: s.y,
             found: false,
-            info: { message: messages[i], battery: `${Math.floor(Math.random() * 50 + 5)}%` }
+            info: { message: shuffledMessages[i % shuffledMessages.length], battery: `${Math.floor(Math.random() * 50 + 5)}%` }
         }));
     }
 
@@ -220,8 +232,9 @@ export const createSurvivors = (grid?: Sector[][]): HiddenSurvivor[] => {
     candidates.sort((a, b) => b.w - a.w);
 
     const selectedPoints: { x: number, y: number }[] = [];
+    const fallbackNumSurvivors = Math.floor(Math.random() * 5) + 3; // 3 to 7
     for (const c of candidates) {
-        if (selectedPoints.length >= 3) break;
+        if (selectedPoints.length >= fallbackNumSurvivors) break;
         const tooClose = selectedPoints.some(p => Math.sqrt(Math.pow(c.x - p.x, 2) + Math.pow(c.y - p.y, 2)) < 6);
         if (!tooClose) selectedPoints.push(c);
     }
@@ -231,6 +244,6 @@ export const createSurvivors = (grid?: Sector[][]): HiddenSurvivor[] => {
         x: p.x,
         y: p.y,
         found: false,
-        info: { message: messages[i % messages.length], battery: "45%" }
+        info: { message: shuffledMessages[i % shuffledMessages.length], battery: "45%" }
     }));
 };
