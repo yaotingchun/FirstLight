@@ -182,7 +182,6 @@ const MapSimulator: React.FC = () => {
             for (let c = 0; c < GRID_CELLS; c++) {
                 const latMin = startLat + r * DEG_STEP;
                 const lonMin = startLon + c * DEG_STEP;
-                const centroid: [number, number] = [lonMin + DEG_STEP / 2, latMin + DEG_STEP / 2];
 
                 // 1. Grid Map is now a full square (no radius clipping for cells)
                 const pointsInside = points.filter(p => 

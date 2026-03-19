@@ -16,6 +16,11 @@
 
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import { executeTool, listTools, getToolSchema } from './tools/index.js';
 import { droneStore } from './droneStore.js';
 import { processOrchestratorChat, getOrchestratorRecords, clearOrchestratorRecords, appendOrchestratorRecord } from './orchestratorChat.js';
@@ -344,6 +349,23 @@ app.post('/api/state/reset', (req, res) => {
         success: true,
         message: 'State reset'
     });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FRONTEND STATIC BUNDLE SERVING (FOR MONOLITHIC DEPLOYMENT)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// The monolithic container compiles the Vite app into the root /dist directory.
+// The built server process runs from /server/dist. Therefore, we navigate up twice.
+const distPath = path.join(__dirname, '../../dist');
+app.use(express.static(distPath));
+
+// Enable React Router SPA support by returning the index file for unknown non-API routes.
+app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) {
+        return next();
+    }
+    res.sendFile(path.join(distPath, 'index.html'));
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

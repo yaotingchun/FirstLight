@@ -8,7 +8,7 @@
  * - Polling for pending commands
  */
 
-const MCP_SERVER_URL = 'http://localhost:3001';
+const MCP_SERVER_URL = import.meta.env.VITE_MCP_SERVER_URL ?? 'http://localhost:3001';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TOOL EXECUTION

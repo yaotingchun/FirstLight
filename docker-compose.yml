@@ -1,0 +1,16 @@
+services:
+  firstlight:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: firstlight-monolith
+    ports:
+      - "3001:3001"
+    env_file:
+      - .env
+    environment:
+      # Explicitly override the container's internal path to point to the mounted volume
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/server/credentials/google.json
+    volumes:
+      # Automatically dynamically mounts the local credentials folder relative to whoever runs this
+      - ./credentials:/app/server/credentials
