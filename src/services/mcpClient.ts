@@ -10,6 +10,14 @@
 
 const MCP_SERVER_URL = import.meta.env.VITE_MCP_SERVER_URL ?? 'http://localhost:3001';
 
+const SESSION_ID = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
+
+export async function mcpFetch(url: string, options: RequestInit = {}) {
+    const headers = new Headers(options.headers || {});
+    headers.set('x-session-id', SESSION_ID);
+    return fetch(url, { ...options, headers });
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // TOOL EXECUTION
 // ═══════════════════════════════════════════════════════════════════════════
@@ -29,7 +37,7 @@ export async function executeTool<T = unknown>(
     params: Record<string, unknown> = {}
 ): Promise<MCPToolResult<T>> {
     try {
-        const response = await fetch(`${MCP_SERVER_URL}/api/tools/${toolName}`, {
+        const response = await mcpFetch(`${MCP_SERVER_URL}/api/tools/${toolName}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(params)
@@ -54,7 +62,7 @@ export async function listTools(): Promise<{
     error?: string;
 }> {
     try {
-        const response = await fetch(`${MCP_SERVER_URL}/api/tools`);
+        const response = await mcpFetch(`${MCP_SERVER_URL}/api/tools`);
         return await response.json();
     } catch (error) {
         return {
@@ -76,7 +84,7 @@ export async function getServerStatus(): Promise<{
     dronesOnline: number;
 } | null> {
     try {
-        const response = await fetch(`${MCP_SERVER_URL}/api/status`);
+        const response = await mcpFetch(`${MCP_SERVER_URL}/api/status`);
         return await response.json();
     } catch {
         return null;
@@ -108,7 +116,7 @@ export interface OrchestratorRecord {
  */
 export async function orchestratorChat(message: string): Promise<OrchestratorChatResponse> {
     try {
-        const response = await fetch(`${MCP_SERVER_URL}/api/orchestrator/chat`, {
+        const response = await mcpFetch(`${MCP_SERVER_URL}/api/orchestrator/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message })
@@ -135,7 +143,7 @@ export async function getOrchestratorRecords(limit?: number): Promise<{
 }> {
     try {
         const query = typeof limit === 'number' ? `?limit=${limit}` : '';
-        const response = await fetch(`${MCP_SERVER_URL}/api/orchestrator/records${query}`);
+        const response = await mcpFetch(`${MCP_SERVER_URL}/api/orchestrator/records${query}`);
         return await response.json();
     } catch (error) {
         return {
@@ -151,7 +159,7 @@ export async function getOrchestratorRecords(limit?: number): Promise<{
  */
 export async function clearOrchestratorRecords(): Promise<boolean> {
     try {
-        const response = await fetch(`${MCP_SERVER_URL}/api/orchestrator/records`, {
+        const response = await mcpFetch(`${MCP_SERVER_URL}/api/orchestrator/records`, {
             method: 'DELETE',
         });
         const result = await response.json();
@@ -204,7 +212,7 @@ export interface SectorStateForSync {
  */
 export async function syncDroneStates(drones: DroneStateForSync[]): Promise<boolean> {
     try {
-        const response = await fetch(`${MCP_SERVER_URL}/api/state/drones`, {
+        const response = await mcpFetch(`${MCP_SERVER_URL}/api/state/drones`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ drones })
@@ -221,7 +229,7 @@ export async function syncDroneStates(drones: DroneStateForSync[]): Promise<bool
  */
 export async function syncGridState(grid: SectorStateForSync[][]): Promise<boolean> {
     try {
-        const response = await fetch(`${MCP_SERVER_URL}/api/state/grid`, {
+        const response = await mcpFetch(`${MCP_SERVER_URL}/api/state/grid`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ grid })
@@ -238,7 +246,7 @@ export async function syncGridState(grid: SectorStateForSync[][]): Promise<boole
  */
 export async function syncTick(tick: number, running: boolean): Promise<boolean> {
     try {
-        const response = await fetch(`${MCP_SERVER_URL}/api/state/tick`, {
+        const response = await mcpFetch(`${MCP_SERVER_URL}/api/state/tick`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ tick, running })
@@ -256,7 +264,7 @@ export async function syncTick(tick: number, running: boolean): Promise<boolean>
  */
 export async function resetServerState(): Promise<boolean> {
     try {
-        const response = await fetch(`${MCP_SERVER_URL}/api/state/reset`, {
+        const response = await mcpFetch(`${MCP_SERVER_URL}/api/state/reset`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
@@ -284,7 +292,7 @@ export interface PendingCommand {
  */
 export async function getPendingCommands(): Promise<PendingCommand[]> {
     try {
-        const response = await fetch(`${MCP_SERVER_URL}/api/commands`);
+        const response = await mcpFetch(`${MCP_SERVER_URL}/api/commands`);
         const result = await response.json();
         return result.commands || [];
     } catch {
@@ -297,7 +305,7 @@ export async function getPendingCommands(): Promise<PendingCommand[]> {
  */
 export async function acknowledgeCommand(commandId: string): Promise<boolean> {
     try {
-        const response = await fetch(`${MCP_SERVER_URL}/api/commands/${commandId}/ack`, {
+        const response = await mcpFetch(`${MCP_SERVER_URL}/api/commands/${commandId}/ack`, {
             method: 'POST'
         });
         const result = await response.json();
@@ -323,7 +331,7 @@ export async function syncSurvivor(survivor: {
     tick: number;
 }): Promise<boolean> {
     try {
-        const response = await fetch(`${MCP_SERVER_URL}/api/state/survivor`, {
+        const response = await mcpFetch(`${MCP_SERVER_URL}/api/state/survivor`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

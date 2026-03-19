@@ -32,6 +32,7 @@ import { createChatModel } from './vertexClient.js';
 import { SYSTEM_PROMPT, buildUserPrompt } from './prompts.js';
 import { buildEnvironmentSnapshot } from './snapshotBuilder.js';
 import { executeDecision } from './actionExecutor.js';
+import { mcpFetch } from '../services/mcpClient.js';
 import {
     initializeSwarm,
     generateShiftedHeatmap,
@@ -189,17 +190,17 @@ const simulateDroneTick = (droneList: SearchDrone[]): SearchDrone[] => {
 const syncSwarmState = async (): Promise<boolean> => {
     try {
         const [swarmRes, gridRes, statsRes] = await Promise.all([
-            fetch(`${MCP_SERVER_URL}/api/tools/getSwarmStatus`, {
+            mcpFetch(`${MCP_SERVER_URL}/api/tools/getSwarmStatus`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({})
             }),
-            fetch(`${MCP_SERVER_URL}/api/tools/getGridHeatmap`, {
+            mcpFetch(`${MCP_SERVER_URL}/api/tools/getGridHeatmap`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({})
             }),
-            fetch(`${MCP_SERVER_URL}/api/tools/getMissionStats`, {
+            mcpFetch(`${MCP_SERVER_URL}/api/tools/getMissionStats`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({})

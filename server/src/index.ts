@@ -22,7 +22,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import { executeTool, listTools, getToolSchema } from './tools/index.js';
-import { droneStore } from './droneStore.js';
+import { droneStore, sessionStores, DroneStore, storeContext } from './droneStore.js';
 import { processOrchestratorChat, getOrchestratorRecords, clearOrchestratorRecords, appendOrchestratorRecord } from './orchestratorChat.js';
 import { localAutonomy } from './simulation/localAutonomy.js';
 import type { DroneStatus, SectorScanResult, CommLink, SurvivorInfo } from './types.js';
@@ -40,16 +40,18 @@ function getAutonomyAgentName(droneId: string): string {
     return 'Agent';
 }
 
-let orchestratorThinkInFlight = false;
-let lastOrchestratorThinkTick = -1;
+const thinkLocks = new Map<string, { inFlight: boolean, lastTick: number }>();
 
-async function runPeriodicOrchestratorThink(tick: number): Promise<void> {
-    if (orchestratorThinkInFlight || lastOrchestratorThinkTick === tick) {
+async function runPeriodicOrchestratorThink(sessionId: string, tick: number): Promise<void> {
+    if (!thinkLocks.has(sessionId)) thinkLocks.set(sessionId, { inFlight: false, lastTick: -1 });
+    const lock = thinkLocks.get(sessionId)!;
+
+    if (lock.inFlight || lock.lastTick === tick) {
         return;
     }
 
-    orchestratorThinkInFlight = true;
-    lastOrchestratorThinkTick = tick;
+    lock.inFlight = true;
+    lock.lastTick = tick;
 
     try {
         const result = await processOrchestratorChat(
@@ -63,7 +65,7 @@ async function runPeriodicOrchestratorThink(tick: number): Promise<void> {
             );
         }
     } finally {
-        orchestratorThinkInFlight = false;
+        lock.inFlight = false;
     }
 }
 
@@ -71,12 +73,27 @@ async function runPeriodicOrchestratorThink(tick: number): Promise<void> {
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
+app.use((req, res, next) => {
+    if (!req.path.startsWith('/api')) {
+        return next();
+    }
+    const sessionId = req.headers['x-session-id'] as string || 'default';
+    if (!sessionStores.has(sessionId)) {
+        console.log(`[Session] Creating new sandbox for session: ${sessionId}`);
+        sessionStores.set(sessionId, new DroneStore());
+    }
+    const store = sessionStores.get(sessionId)!;
+    storeContext.run(store, () => next());
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // API ENDPOINTS
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Server status
 app.get('/api/status', (req, res) => {
+    const sessionId = req.headers['x-session-id'] as string || 'default';
+    const lock = thinkLocks.get(sessionId);
     res.json({
         status: 'online',
         version: '1.0.0',
@@ -85,7 +102,7 @@ app.get('/api/status', (req, res) => {
         currentTick: droneStore.getCurrentTick(),
         dronesOnline: droneStore.getAllDrones().filter(d => d.isActive).length,
         localAutonomyEnabled: localAutonomy.isEnabled(),
-        orchestratorThinkInFlight,
+        orchestratorThinkInFlight: lock ? lock.inFlight : false,
     });
 });
 
@@ -330,7 +347,8 @@ app.post('/api/state/tick', (req, res) => {
         });
 
     if (running && tick > 0 && tick % ORCHESTRATOR_THINK_INTERVAL_TICKS === 0) {
-        void runPeriodicOrchestratorThink(tick);
+        const sessionId = req.headers['x-session-id'] as string || 'default';
+        void runPeriodicOrchestratorThink(sessionId, tick);
     }
     
     res.json({
@@ -358,7 +376,15 @@ app.post('/api/state/reset', (req, res) => {
 // The monolithic container compiles the Vite app into the root /dist directory.
 // The built server process runs from /server/dist. Therefore, we navigate up twice.
 const distPath = path.join(__dirname, '../../dist');
-app.use(express.static(distPath));
+app.use(express.static(distPath, {
+    setHeaders: (res, path) => {
+        if (path.endsWith('.html')) {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+        }
+    }
+}));
 
 // Enable React Router SPA support by returning the index file for unknown non-API routes.
 app.get('*', (req, res, next) => {

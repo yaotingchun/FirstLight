@@ -115,7 +115,9 @@ export interface PendingCommand {
     processed: boolean;
 }
 
-class DroneStore {
+export class DroneStore {
+    public lastAccess: number = Date.now();
+    public chatState: { history: any[], records: any[] } = { history: [], records: [] };
     private state: DroneStateStore = {
         drones: new Map(),
         grid: this.initializeGrid(),
@@ -439,5 +441,40 @@ class DroneStore {
     }
 }
 
-// Singleton export
-export const droneStore = new DroneStore();
+import { AsyncLocalStorage } from 'async_hooks';
+
+export const storeContext = new AsyncLocalStorage<DroneStore>();
+export const sessionStores = new Map<string, DroneStore>();
+export const defaultStore = new DroneStore();
+
+export function getDroneStore(): DroneStore {
+    const store = storeContext.getStore() || defaultStore;
+    store.lastAccess = Date.now();
+    return store;
+}
+
+export const droneStore = new Proxy({} as DroneStore, {
+    get(target, prop, receiver) {
+        const store = getDroneStore();
+        const value = Reflect.get(store, prop, receiver);
+        if (typeof value === 'function') {
+            return value.bind(store);
+        }
+        return value;
+    },
+    set(target, prop, value, receiver) {
+        const store = getDroneStore();
+        return Reflect.set(store, prop, value, receiver);
+    }
+});
+
+// Clean up abandoned sessions every 10 mins
+setInterval(() => {
+    const now = Date.now();
+    for (const [id, store] of sessionStores.entries()) {
+        if (now - store.lastAccess > 2 * 60 * 60 * 1000) { // 2 hours
+            console.log(`[Session] Cleaning up abandoned session: ${id}`);
+            sessionStores.delete(id);
+        }
+    }
+}, 10 * 60 * 1000);

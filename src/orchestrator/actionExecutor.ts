@@ -18,6 +18,7 @@ import {
     recalculateRegionsByPriority,
     buildScanQueueForDrone,
 } from '../utils/swarmRouting.js';
+import { mcpFetch } from '../services/mcpClient.js';
 
 export interface ExecutionResult {
     executed: number;
@@ -48,7 +49,7 @@ export const executeDecision = async (
 
     // Proactive: if any drone action is decided in Live Mode, ensure sim is running
     if (isLiveMode && decision.actions.some(a => ['move_drone', 'set_drone_mode', 'search_pattern', 'recall_drone'].includes(a.type))) {
-        await fetch(`${MCP_SERVER_URL}/api/tools/setSimulationRunning`, {
+        await mcpFetch(`${MCP_SERVER_URL}/api/tools/setSimulationRunning`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ running: true })
@@ -67,7 +68,7 @@ export const executeDecision = async (
                     }
 
                     if (isLiveMode) {
-                        await fetch(`${MCP_SERVER_URL}/api/tools/setDroneMode`, {
+                        await mcpFetch(`${MCP_SERVER_URL}/api/tools/setDroneMode`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ droneId: action.droneId, mode: action.mode })
@@ -103,7 +104,7 @@ export const executeDecision = async (
                     );
 
                     if (isLiveMode) {
-                        await fetch(`${MCP_SERVER_URL}/api/tools/setDroneTarget`, {
+                        await mcpFetch(`${MCP_SERVER_URL}/api/tools/setDroneTarget`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ droneId: action.droneId, targetX, targetY })
@@ -127,7 +128,7 @@ export const executeDecision = async (
                     }
 
                     if (isLiveMode) {
-                        await fetch(`${MCP_SERVER_URL}/api/tools/recallDroneToBase`, {
+                        await mcpFetch(`${MCP_SERVER_URL}/api/tools/recallDroneToBase`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ droneId: action.droneId })
@@ -151,7 +152,7 @@ export const executeDecision = async (
 
                 case 'deploy_team': {
                     if (isLiveMode) {
-                        await fetch(`${MCP_SERVER_URL}/api/tools/setSurvivorPin`, {
+                        await mcpFetch(`${MCP_SERVER_URL}/api/tools/setSurvivorPin`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ 
@@ -182,14 +183,14 @@ export const executeDecision = async (
 
                     if (isLiveMode) {
                         // 1. Set mode to Micro
-                        await fetch(`${MCP_SERVER_URL}/api/tools/setDroneMode`, {
+                        await mcpFetch(`${MCP_SERVER_URL}/api/tools/setDroneMode`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ droneId: action.droneId, mode: 'Micro' })
                         }).catch(e => console.error(`Remote pattern mode failed: ${e}`));
                         
                         // 2. Set target to center
-                        await fetch(`${MCP_SERVER_URL}/api/tools/setDroneTarget`, {
+                        await mcpFetch(`${MCP_SERVER_URL}/api/tools/setDroneTarget`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ droneId: action.droneId, targetX: cx, targetY: cy })
@@ -215,7 +216,7 @@ export const executeDecision = async (
 
                 case 'reset_simulation': {
                     if (isLiveMode) {
-                        await fetch(`${MCP_SERVER_URL}/api/tools/resetMission`, {
+                        await mcpFetch(`${MCP_SERVER_URL}/api/tools/resetMission`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({})
@@ -228,7 +229,7 @@ export const executeDecision = async (
 
                 case 'set_simulation_state': {
                     if (isLiveMode) {
-                        await fetch(`${MCP_SERVER_URL}/api/tools/setSimulationRunning`, {
+                        await mcpFetch(`${MCP_SERVER_URL}/api/tools/setSimulationRunning`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ running: action.running })
@@ -309,12 +310,12 @@ export const executeDecision = async (
                     const cy = zone.centroid.y;
 
                     if (isLiveMode) {
-                        await fetch(`${MCP_SERVER_URL}/api/tools/setDroneMode`, {
+                        await mcpFetch(`${MCP_SERVER_URL}/api/tools/setDroneMode`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ droneId: chosen.id, mode: targetMode })
                         }).catch(e => console.error(`Remote mode set failed: ${e}`));
-                        await fetch(`${MCP_SERVER_URL}/api/tools/setDroneTarget`, {
+                        await mcpFetch(`${MCP_SERVER_URL}/api/tools/setDroneTarget`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ droneId: chosen.id, targetX: cx, targetY: cy })
@@ -362,7 +363,7 @@ export const executeDecision = async (
                     const targetY = zone.centroid.y;
 
                     if (isLiveMode) {
-                        await fetch(`${MCP_SERVER_URL}/api/tools/setDroneTarget`, {
+                        await mcpFetch(`${MCP_SERVER_URL}/api/tools/setDroneTarget`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ droneId: action.droneId, targetX, targetY })

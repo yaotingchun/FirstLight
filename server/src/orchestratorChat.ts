@@ -56,7 +56,13 @@ export interface OrchestratorRecord {
     droneId?: string;
 }
 
-let orchestratorRecords: OrchestratorRecord[] = [];
+const stateProxy = {
+    get orchestratorRecords(): OrchestratorRecord[] { return droneStore.chatState.records; },
+    set orchestratorRecords(v: OrchestratorRecord[]) { droneStore.chatState.records = v; },
+    get chatHistory(): Content[] { return droneStore.chatState.history; },
+    set chatHistory(v: Content[]) { droneStore.chatState.history = v; }
+};
+
 let persistRecordsPromise: Promise<void> = Promise.resolve();
 
 function loadPersistedOrchestratorRecords(): OrchestratorRecord[] {
@@ -87,22 +93,11 @@ function loadPersistedOrchestratorRecords(): OrchestratorRecord[] {
 }
 
 function persistOrchestratorRecords(): void {
-    persistRecordsPromise = persistRecordsPromise
-        .catch(() => undefined)
-        .then(async () => {
-            await writeFile(
-                ORCHESTRATOR_RECORDS_PATH,
-                JSON.stringify(orchestratorRecords, null, 2),
-                'utf8'
-            );
-        })
-        .catch((error) => {
-            console.error('Failed to persist orchestrator records', error);
-        });
+    // Disabled in Sandbox mode to prevent concurrent file corruption across isolated user sessions.
 }
 
 function pushOrchestratorRecord(record: OrchestratorRecord): void {
-    orchestratorRecords.push(record);
+    stateProxy.orchestratorRecords.push(record);
     persistOrchestratorRecords();
 }
 
@@ -127,32 +122,32 @@ function normalizeReasoning(reasoning: string): string {
 
 export function getOrchestratorRecords(limit?: number): OrchestratorRecord[] {
     if (typeof limit === 'number' && Number.isFinite(limit) && limit > 0) {
-        return orchestratorRecords.slice(-Math.floor(limit));
+        return stateProxy.orchestratorRecords.slice(-Math.floor(limit));
     }
 
-    return [...orchestratorRecords];
+    return [...stateProxy.orchestratorRecords];
 }
 
 export function clearOrchestratorRecords(): void {
-    orchestratorRecords = [];
+    stateProxy.orchestratorRecords = [];
     persistOrchestratorRecords();
 }
 
 mkdirSync(path.dirname(ORCHESTRATOR_RECORDS_PATH), { recursive: true });
-orchestratorRecords = loadPersistedOrchestratorRecords();
+// Legacy disk records load omitted to prevent cross-contamination in sandboxes
 
 // Conversation history for stateful multi-turn chat (role: 'user' | 'model')
 const MAX_HISTORY_TURNS = 20; // 10 user + 10 model messages
-let chatHistory: Content[] = [];
+// History handled by stateProxy
 
 function trimHistory(): void {
-    if (chatHistory.length > MAX_HISTORY_TURNS) {
-        chatHistory = chatHistory.slice(chatHistory.length - MAX_HISTORY_TURNS);
+    if (stateProxy.chatHistory.length > MAX_HISTORY_TURNS) {
+        stateProxy.chatHistory = stateProxy.chatHistory.slice(stateProxy.chatHistory.length - MAX_HISTORY_TURNS);
     }
 }
 
 function clearChatHistory(): void {
-    chatHistory = [];
+    stateProxy.chatHistory = [];
 }
 
 function getModel(): GenerativeModel {
@@ -686,15 +681,15 @@ Critical rules:
 
         const chat = m.startChat({
             systemInstruction: { role: 'system', parts: [{ text: systemPrompt }] },
-            history: chatHistory,
+            history: stateProxy.chatHistory,
         });
 
         const result = await chat.sendMessage(userPrompt);
         const reply = result.response.candidates?.[0]?.content?.parts?.[0]?.text ?? '(no response)';
 
         // Persist this turn into history
-        chatHistory.push({ role: 'user', parts: [{ text: userPrompt }] });
-        chatHistory.push({ role: 'model', parts: [{ text: reply }] });
+        stateProxy.chatHistory.push({ role: 'user', parts: [{ text: userPrompt }] });
+        stateProxy.chatHistory.push({ role: 'model', parts: [{ text: reply }] });
         trimHistory();
         const decision = parseDecision(reply);
 
