@@ -75,6 +75,7 @@ interface DroneStateStore {
     repeatedScanRate: number;
     missionTimeSec: number;
     sensorWeights: SensorWeightsSnapshot;
+    totalEstimatedSurvivors: number;
     
     // Pending commands (to be picked up by frontend)
     pendingCommands: PendingCommand[];
@@ -133,6 +134,7 @@ class DroneStore {
             sound: { base: 0.2, conf: 0.7, color: '#ffff00' },
             wifi: { base: 0.1, conf: 0.8, color: '#ff00ff' },
         },
+        totalEstimatedSurvivors: 3,
         pendingCommands: [],
         autoRecallThresholds: new Map(),
         relayStates: new Map(),
@@ -222,6 +224,7 @@ class DroneStore {
         if (stats.repeatedScanRate !== undefined) this.state.repeatedScanRate = stats.repeatedScanRate;
         if (stats.missionTimeSec !== undefined) this.state.missionTimeSec = stats.missionTimeSec;
         if (stats.sensorWeights !== undefined) this.state.sensorWeights = stats.sensorWeights;
+        if (stats.totalEstimatedSurvivors !== undefined) this.state.totalEstimatedSurvivors = stats.totalEstimatedSurvivors;
         this.notify();
     }
 
@@ -244,6 +247,7 @@ class DroneStore {
                 sound: { base: 0.2, conf: 0.7, color: '#ffff00' },
                 wifi: { base: 0.1, conf: 0.8, color: '#ff00ff' },
             },
+            totalEstimatedSurvivors: 3,
             pendingCommands: [],
             autoRecallThresholds: new Map(),
             relayStates: new Map(),
@@ -367,7 +371,7 @@ class DroneStore {
             totalSectors,
             scanProgress: (scannedSectors / totalSectors) * 100,
             survivorsFound: this.state.foundSurvivors.length,
-            totalEstimatedSurvivors: 3, // from simulation
+            totalEstimatedSurvivors: this.state.totalEstimatedSurvivors,
             highPriorityZonesRemaining: highPriorityRemaining,
             averageBattery: avgBattery,
             dronesCharging: charging,

@@ -25,6 +25,7 @@ export const useSimulationEngine = (
 ) => {
     const [running, setRunning] = useState(false);
     const [speed, setSpeed] = useState(1);
+    const [randomizeBattery, setRandomizeBatteryState] = useState(true);
     const [, setTickFlip] = useState(0);
     const [selectedPin, setSelectedPin] = useState<FoundPin | null>(null);
     const [showSensors, setShowSensors] = useState(false);
@@ -82,6 +83,14 @@ export const useSimulationEngine = (
         onFailureEventTriggered(eventPayload);
         setTickFlip(f => f + 1);
     }, [onFailureEventTriggered]);
+
+    const setRandomizeBattery = useCallback((val: boolean) => {
+        setRandomizeBatteryState(val);
+        if (!running) {
+            dronesRef.current = createDrones(val);
+            setTickFlip(f => f + 1);
+        }
+    }, [running]);
 
     const toggleRunning = useCallback(() => {
         const nextRunning = !running;
@@ -162,7 +171,7 @@ export const useSimulationEngine = (
         const newSurvivors = createSurvivors();
         const newGrid = createGrid(newSurvivors);
         gridRef.current = newGrid;
-        dronesRef.current = createDrones();
+        dronesRef.current = createDrones(randomizeBattery);
         survivorsRef.current = newSurvivors;
         pinsRef.current = [];
         commLinksRef.current = [];
@@ -1056,6 +1065,7 @@ export const useSimulationEngine = (
         showSensors, setShowSensors,
         showTrails, setShowTrails,
         selectedTrailDroneId, setSelectedTrailDroneId,
+        randomizeBattery, setRandomizeBattery,
 
         // Refs
         gridRef,

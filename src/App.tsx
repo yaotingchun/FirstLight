@@ -21,7 +21,7 @@ const pages = [
 function PersistentPages() {
   const location = useLocation();
   const currentPath = location.pathname;
-  const visitedRef = useRef<Set<string>>(new Set());
+  const visitedRef = useRef<Set<string>>(new Set(['/simulation-mcp']));
 
   // Track which pages have been visited so we mount them lazily but keep them alive
   visitedRef.current.add(currentPath);

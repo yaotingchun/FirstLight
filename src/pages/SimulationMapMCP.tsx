@@ -24,7 +24,8 @@ const SimulationMapMCP: React.FC = () => {
         aiDisconnectedRef, aiReconnectedUntilTickRef,
         metricsRef,
         toggleRunning, resetSim,
-        getSectorProbability, performTickCore
+        getSectorProbability, performTickCore,
+        randomizeBattery, setRandomizeBattery
     } = useSharedSimulation();
 
     const {
@@ -49,7 +50,7 @@ const SimulationMapMCP: React.FC = () => {
     } = useSimulationMCP(
         timeRef, running, setRunning, dronesRef, gridRef, pinsRef,
         autoRecallThresholdsRef, relayTakeoverTargetRef, sensorWeightsRef, metricsRef,
-        resetSim, aiBusyRef
+        resetSim, aiBusyRef, survivorsRef
     );
 
     // The core tick loop wrapped to pass the MCP sync functions
@@ -130,6 +131,9 @@ const SimulationMapMCP: React.FC = () => {
                     aiReconnectedUntilTickRef={aiReconnectedUntilTickRef}
                     metrics={metricsRef.current}
                     sensorWeights={sensorWeightsRef.current}
+                    randomizeBattery={randomizeBattery}
+                    setRandomizeBattery={setRandomizeBattery}
+                    running={running}
                 />
             </div>
 

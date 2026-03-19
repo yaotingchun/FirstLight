@@ -17,7 +17,8 @@ export const useSimulationMCP = (
     sensorWeightsRef: MutableRefObject<SensorWeights>,
     metricsRef: MutableRefObject<any>,
     resetSim: () => void,
-    aiBusyRef: MutableRefObject<boolean>
+    aiBusyRef: MutableRefObject<boolean>,
+    survivorsRef: MutableRefObject<any[]>
 ) => {
     const [mcpConnected, setMcpConnected] = useState(false);
     const [mcpPanelOpen, setMcpPanelOpen] = useState(false);
@@ -253,10 +254,11 @@ export const useSimulationMCP = (
                 averageZoneCoverage: metricsRef.current.averageZoneCoverage,
                 meanProbabilityScanned: metricsRef.current.meanProbabilityScanned,
                 repeatedScanRate: metricsRef.current.repeatedScanRate,
-                sensorWeights: sensorWeightsRef.current
+                sensorWeights: sensorWeightsRef.current,
+                totalEstimatedSurvivors: survivorsRef.current.length
             });
         }
-    }, [mcpConnected, running, dronesRef, gridRef, sensorWeightsRef, metricsRef, timeRef]);
+    }, [mcpConnected, running, dronesRef, gridRef, sensorWeightsRef, metricsRef, timeRef, survivorsRef]);
 
     const processMcpCommands = useCallback(async () => {
         const commands = await mcpClient.getPendingCommands();

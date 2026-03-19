@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
-import { Download, Activity, Radar, BarChart2, Terminal, Layers } from 'lucide-react';
+import { Download, Activity, Radar, BarChart2, Terminal, Layers, Radio } from 'lucide-react';
 import { executeTool, getOrchestratorRecords, type OrchestratorRecord } from '../services/mcpClient';
 import ReactMarkdown from 'react-markdown';
 import { RobotIcon, DroneIcon } from '../components/SimulationMap/LogIcons';
@@ -41,6 +41,7 @@ interface MissionStats {
         sound: { base: number; conf: number; color: string };
         wifi: { base: number; conf: number; color: string };
     };
+    totalEstimatedSurvivors?: number;
 }
 
 interface GridHeatmap {
@@ -304,8 +305,9 @@ const Dashboard: React.FC = () => {
                 }
             }
         }
-        return list.sort((a, b) => b.conf - a.conf).slice(0, 3);
-    }, [gridHeatmap]);
+        const sliceCount = missionStats?.totalEstimatedSurvivors ?? 3;
+        return list.sort((a, b) => b.conf - a.conf).slice(0, sliceCount);
+    }, [gridHeatmap, missionStats?.totalEstimatedSurvivors]);
 
 
     return (
@@ -349,9 +351,46 @@ const Dashboard: React.FC = () => {
                 {/* ---------- MIDDLE COLUMN: Strategy & Intent ---------- */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflow: 'hidden', minHeight: 0, paddingBottom: '2px' }}>
 
+                    {/* ACTIVE HOTSPOTS */}
+                    <CyberPanel title="ACTIVE HOTSPOTS" icon={<Radar size={16} />} color="#ff4444" flex={1}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', flex: 1, padding: '16px', overflowY: 'auto', justifyContent: 'space-evenly' }}>
+                            {hotspots.length > 0 ? hotspots.map((h, i) => (
+                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                                    <span style={{ color: '#6b8a8b' }}>#{i + 1} ({h.x},{h.y})</span>
+                                    <span style={{ fontWeight: 'bold', color: '#ff4444' }}>{h.conf.toFixed(2)} WT</span>
+                                </div>
+                            )) : <div style={{ fontSize: '0.85rem', color: '#6b8a8b', textAlign: 'center' }}>NO ACTIVE HOTSPOTS</div>}
+                        </div>
+                    </CyberPanel>
+
+                    {/* DRONE INTENT (SWARM_DIAGNOSTIC) */}
+                    <CyberPanel title="DRONE INTENT" icon={<Activity size={16} />} flex={1.4}>
+                        <div style={{ display: 'flex', alignItems: 'flex-end', marginBottom: '10px' }}>
+                            <div style={{ fontSize: '0.75rem', color: '#6b8a8b', letterSpacing: '1px' }}>ACTIVE_ASSETS</div>
+                        </div>
+                        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingRight: '4px', justifyContent: 'space-evenly' }}>
+                            {swarmDrones.slice(0, 10).map((d, i) => {
+                                const isOffline = d.state === 'OFFLINE';
+                                return (
+                                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '12px 14px', borderRadius: '4px', fontSize: '0.76rem' }}>
+                                        <span style={{ color: isOffline ? '#ff4444' : '#fff', fontWeight: 600 }}>{d.id}</span>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <span style={{ color: d.battery > 20 ? '#00ffcc' : '#ff4444' }}>{d.battery}%</span>
+                                            <span style={{ color: isOffline ? '#ff4444' : '#00ffcc', opacity: 0.8 }}>{d.mode}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </CyberPanel>
+                </div>
+
+                {/* ---------- RIGHT COLUMN: Hotspots & Progression ---------- */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflow: 'hidden', minHeight: 0, paddingBottom: '2px' }}>
+
                     {/* SWARM STRATEGY */}
                     <CyberPanel title="SWARM STRATEGY" icon={<Layers size={16} />} color="#fff" flex={0.8}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', justifyContent: 'center', height: '100%', padding: '4px 8px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', justifyContent: 'space-evenly', height: '100%', padding: '8px 12px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
                                 <span style={{ color: '#6b8a8b' }}>MODE</span>
                                 <span style={{ color: '#00ffcc', fontWeight: 'bold' }}>{strategyMode}</span>
@@ -368,43 +407,6 @@ const Dashboard: React.FC = () => {
                                 <span style={{ color: '#6b8a8b' }}>INVESTIGATION_BIAS</span>
                                 <span style={{ fontWeight: 'bold' }}>{investigationBias}%</span>
                             </div>
-                        </div>
-                    </CyberPanel>
-
-                    {/* DRONE INTENT (SWARM_DIAGNOSTIC) */}
-                    <CyberPanel title="DRONE INTENT" icon={<Activity size={16} />} flex={2.25}>
-                        <div style={{ display: 'flex', alignItems: 'flex-end', marginBottom: '10px' }}>
-                            <div style={{ fontSize: '0.75rem', color: '#6b8a8b', letterSpacing: '1px' }}>ACTIVE_ASSETS</div>
-                        </div>
-                        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px', paddingRight: '4px' }}>
-                            {swarmDrones.slice(0, 10).map((d, i) => {
-                                const isOffline = d.state === 'OFFLINE';
-                                return (
-                                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '8px 10px', borderRadius: '4px', fontSize: '0.76rem' }}>
-                                        <span style={{ color: isOffline ? '#ff4444' : '#fff', fontWeight: 600 }}>{d.id}</span>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                            <span style={{ color: d.battery > 20 ? '#00ffcc' : '#ff4444' }}>{d.battery}%</span>
-                                            <span style={{ color: isOffline ? '#ff4444' : '#00ffcc', opacity: 0.8 }}>{d.mode}</span>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </CyberPanel>
-                </div>
-
-                {/* ---------- RIGHT COLUMN: Hotspots & Progression ---------- */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflow: 'hidden', minHeight: 0, paddingBottom: '2px' }}>
-
-                    {/* ACTIVE HOTSPOTS */}
-                    <CyberPanel title="ACTIVE HOTSPOTS" icon={<Radar size={16} />} color="#ff4444" flex={1}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1, padding: '8px', overflowY: 'auto' }}>
-                            {hotspots.length > 0 ? hotspots.map((h, i) => (
-                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-                                    <span style={{ color: '#6b8a8b' }}>#{i + 1} ({h.x},{h.y})</span>
-                                    <span style={{ fontWeight: 'bold', color: '#ff4444' }}>{h.conf.toFixed(2)} WT</span>
-                                </div>
-                            )) : <div style={{ fontSize: '0.85rem', color: '#6b8a8b', textAlign: 'center', marginTop: '20px' }}>NO ACTIVE HOTSPOTS</div>}
                         </div>
                     </CyberPanel>
 
@@ -430,6 +432,29 @@ const Dashboard: React.FC = () => {
                         </div>
                     </CyberPanel>
 
+                    {/* ADAPTIVE SENSORS */}
+                    <CyberPanel title="ADAPTIVE SENSORS" icon={<Radio size={16} />} flex={0.85}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '8px 12px', overflowY: 'auto' }}>
+                            {missionStats?.sensorWeights ? (
+                                (Object.entries(missionStats.sensorWeights) as [string, { base: number; conf: number; color?: string }][]).map(([key, data]) => {
+                                    const fw = (data.base * data.conf).toFixed(2);
+                                    const defaultColor = key === 'mobile' ? '#00ffcc' : key === 'thermal' ? '#ff4444' : key === 'sound' ? '#ffff00' : '#ff00ff';
+                                    return (
+                                        <div key={key}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', color: 'var(--text-primary)', marginBottom: '8px' }}>
+                                                <span>{key} SIG</span><span style={{ color: data.color || defaultColor }}>w={fw}</span>
+                                            </div>
+                                            <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.05)', borderRadius: '2px', overflow: 'hidden' }}>
+                                                <div style={{ width: `${Math.min(100, (parseFloat(fw) / 0.4) * 100)}%`, height: '100%', background: data.color || defaultColor, boxShadow: `0 0 6px ${data.color || defaultColor}` }} />
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            ) : (
+                                <div style={{ fontSize: '0.75rem', color: '#6b8a8b', textAlign: 'center', marginTop: '10px' }}>NO SENSOR DATA</div>
+                            )}
+                        </div>
+                    </CyberPanel>
                 </div>
 
             </div>

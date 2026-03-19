@@ -129,6 +129,7 @@ export interface UpdateMissionStatsParams {
     repeatedScanRate?: number;
     missionTimeSec?: number;
     sensorWeights?: SensorWeightsSnapshot;
+    totalEstimatedSurvivors?: number;
 }
 
 /**

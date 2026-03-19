@@ -19,11 +19,14 @@ interface SimulationDashboardProps {
         totalScans: number;
     };
     sensorWeights: Record<string, { base: number, conf: number, color: string }>;
+    randomizeBattery: boolean;
+    setRandomizeBattery: (val: boolean) => void;
+    running: boolean;
 }
 
 export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
     drones, time, aiDisconnectedRef, aiReconnectedUntilTickRef,
-    metrics, sensorWeights
+    metrics, sensorWeights, randomizeBattery, setRandomizeBattery, running
 }) => {
     const TOTAL_CELLS = GRID_W * GRID_H;
 
@@ -31,9 +34,51 @@ export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
         <div style={{ width: '320px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {/* Live Swarm Status */}
             <div className="hud-panel" style={{ padding: '16px' }}>
-                <h4 className="hud-text" style={{ fontSize: '0.9rem', color: 'var(--accent-primary)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Activity size={18} /> LIVE SWARM STATUS
-                </h4>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <h4 className="hud-text" style={{ margin: 0, fontSize: '0.9rem', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Activity size={18} /> LIVE SWARM STATUS
+                    </h4>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <label style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', letterSpacing: '0.5px' }}>BATTERY:</label>
+                        <div style={{ display: 'flex', border: '1px solid var(--accent-primary)', borderRadius: '4px', overflow: 'hidden', opacity: running ? 0.5 : 1 }}>
+                            <button
+                                onClick={() => setRandomizeBattery(false)}
+                                disabled={running}
+                                style={{
+                                    background: !randomizeBattery ? 'var(--accent-primary)' : 'rgba(0,0,0,0.4)',
+                                    color: !randomizeBattery ? 'var(--bg-color)' : 'var(--text-secondary)',
+                                    border: 'none',
+                                    padding: '4px 8px',
+                                    fontFamily: 'var(--font-mono)',
+                                    fontSize: '0.65rem',
+                                    cursor: running ? 'not-allowed' : 'pointer',
+                                    fontWeight: !randomizeBattery ? 700 : 400,
+                                    transition: 'all 0.2s ease'
+                                }}
+                            >
+                                FULL
+                            </button>
+                            <button
+                                onClick={() => setRandomizeBattery(true)}
+                                disabled={running}
+                                style={{
+                                    background: randomizeBattery ? 'var(--accent-primary)' : 'rgba(0,0,0,0.4)',
+                                    color: randomizeBattery ? 'var(--bg-color)' : 'var(--text-secondary)',
+                                    border: 'none',
+                                    borderLeft: '1px solid var(--accent-primary)',
+                                    padding: '4px 8px',
+                                    fontFamily: 'var(--font-mono)',
+                                    fontSize: '0.65rem',
+                                    cursor: running ? 'not-allowed' : 'pointer',
+                                    fontWeight: randomizeBattery ? 700 : 400,
+                                    transition: 'all 0.2s ease'
+                                }}
+                            >
+                                RANDOM
+                            </button>
+                        </div>
+                    </div>
+                </div>
 
                 <div style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {drones.map((d, i) => {

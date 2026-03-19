@@ -158,7 +158,7 @@ export const createGrid = (survivors?: HiddenSurvivor[]): Sector[][] => {
     return g;
 };
 
-export const createDrones = (): Drone[] => {
+export const createDrones = (randomizeBattery: boolean = true): Drone[] => {
     const bx = BASE_STATION.x;
     const by = BASE_STATION.y;
     // Departure stagger: drones flying to distant targets leave first so all arrive roughly together.
@@ -167,7 +167,7 @@ export const createDrones = (): Drone[] => {
     // Gamma/Delta → lower corners (~7.8 cells away)  → depart tick 25
     
     // Helper to randomize battery between 40 and 100
-    const randomBattery = () => Math.floor(40 + Math.random() * 61);
+    const randomBattery = () => randomizeBattery ? Math.floor(40 + Math.random() * 61) : 100;
 
     return [
         { id: 'DRN-Alpha', x: bx, y: by, tx: 2, ty: 2, mode: 'Wide', battery: randomBattery(), targetSector: null, isConnected: true, memory: [], startTick: 0, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] },
