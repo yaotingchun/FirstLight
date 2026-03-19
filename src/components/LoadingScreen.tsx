@@ -118,8 +118,8 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ onComplete }) => {
             position: 'fixed',
             top: 0,
             left: 0,
-            width: '100vw',
-            height: '100vh',
+            width: '100%',
+            height: '100%',
             backgroundColor: '#010507', // Deep, almost black background
             zIndex: 99999,
             display: 'flex',

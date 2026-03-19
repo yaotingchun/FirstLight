@@ -96,7 +96,7 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                     top: 80,
                     right: 20,
                     width: 450,
-                    maxHeight: 'calc(100vh - 120px)',
+                    maxHeight: 'calc(125vh - 120px)',
                     background: 'rgba(5, 10, 16, 0.98)',
                     border: '1px solid #00ffcc',
                     borderRadius: 8,

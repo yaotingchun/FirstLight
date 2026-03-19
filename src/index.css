@@ -27,18 +27,20 @@ body {
   font-family: var(--font-main);
   min-height: 100vh;
   overflow: hidden;
+}
+
+#root {
+  display: flex;
+  height: 125vh;
+  width: 125vw;
+  position: relative;
+  transform: scale(0.8);
+  transform-origin: top left;
   background-image:
     linear-gradient(rgba(26, 76, 76, 0.1) 1px, transparent 1px),
     linear-gradient(90deg, rgba(26, 76, 76, 0.1) 1px, transparent 1px);
   background-size: 40px 40px;
   background-position: center center;
-}
-
-#root {
-  display: flex;
-  height: 100vh;
-  width: 100vw;
-  position: relative;
 }
 
 ::-webkit-scrollbar {
@@ -129,8 +131,8 @@ body {
   position: fixed;
   top: 0;
   left: 0;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   background: linear-gradient(to bottom, transparent 50%, rgba(0, 255, 204, 0.03) 51%, transparent 100%);
   background-size: 100% 4px;
   pointer-events: none;
@@ -250,7 +252,7 @@ body {
 .drone-view {
   aspect-ratio: 16 / 9;
   width: 100%;
-  max-width: calc((100vh - 80px) * 16 / 9);
+  max-width: calc((125vh - 80px) * 16 / 9);
   /* Prevent overflowing screen height */
   margin: auto;
   border-radius: 4px;
