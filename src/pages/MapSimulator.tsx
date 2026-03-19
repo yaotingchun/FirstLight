@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { gridDataService, type GridSource, type TerrainType } from '../services/gridDataService';
+import { fetchOSMFeatures } from '../utils/osmClient';
 
 // Center location (using the one from 3DMap.tsx for consistency)
 const MAP_CENTER = { longitude: 101.6841, latitude: 3.1319 };
@@ -36,7 +37,7 @@ const getProbabilityFromTags = (tags: any): number => {
     }
     if (['commercial', 'office'].includes(building) || 
         ['clinic', 'hospital', 'restaurant'].includes(amenity)) {
-        return (0.3 + Math.random() * 0.2);
+        return 0.3 + Math.random() * 0.2;
     }
     if (['pitch', 'stadium', 'park'].includes(leisure) || 
         ['garage', 'roof'].includes(building)) {
@@ -98,31 +99,16 @@ const MapSimulator: React.FC = () => {
         setLoading(true);
         const bbox = `${(MAP_CENTER.latitude - BBOX_OFFSET).toFixed(4)},${(MAP_CENTER.longitude - BBOX_OFFSET).toFixed(4)},${(MAP_CENTER.latitude + BBOX_OFFSET).toFixed(4)},${(MAP_CENTER.longitude + BBOX_OFFSET).toFixed(4)}`;
         
-        const query = `
-            [out:json][timeout:25];
-            (way["building"](${bbox}); way["leisure"="pitch"](${bbox}););
-            out center;
-        `;
-
         try {
-            const url = `https://overpass-api.de/api/interpreter`;
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: "data=" + encodeURIComponent(query)
-            });
-
-            if (!response.ok) throw new Error(`Overpass API error: ${response.status}`);
-            const json = await response.json();
+            // Use the robust mirror-rotating client
+            const features = await fetchOSMFeatures(bbox);
             
-            const newPoints: HeatmapPoint[] = (json.elements || [])
-                .filter((el: any) => el.center)
-                .map((el: any) => ({
-                    id: el.id.toString(),
-                    position: [el.center.lon, el.center.lat],
-                    weight: getProbabilityFromTags(el.tags),
-                    tags: el.tags
-                }));
+            const newPoints: HeatmapPoint[] = features.map((f) => ({
+                id: f.id,
+                position: [f.center.lon, f.center.lat],
+                weight: getProbabilityFromTags(f.tags),
+                tags: f.tags
+            }));
 
             setPoints(newPoints);
         } catch (err: any) {
@@ -182,7 +168,6 @@ const MapSimulator: React.FC = () => {
             for (let c = 0; c < GRID_CELLS; c++) {
                 const latMin = startLat + r * DEG_STEP;
                 const lonMin = startLon + c * DEG_STEP;
-                const centroid: [number, number] = [lonMin + DEG_STEP / 2, latMin + DEG_STEP / 2];
 
                 // 1. Grid Map is now a full square (no radius clipping for cells)
                 const pointsInside = points.filter(p => 

@@ -2,9 +2,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import DeckGL from '@deck.gl/react';
 import { Map } from 'react-map-gl/maplibre';
 import { HeatmapLayer } from '@deck.gl/aggregation-layers';
+import { fetchOSMFeatures } from '../utils/osmClient';
 
-// UTM Johor Bahru, Malaysia
+// --- CONFIG ---
 const MAP_CENTER = { longitude: 101.6841, latitude: 3.1319 };
+const MAPTILER_KEY = 'SAX29oYdDKXlxm4RKRBu'; // API key
 
 export interface HeatmapPoint {
     id: string;
@@ -16,57 +18,22 @@ export interface HeatmapPoint {
 
 // Map OSM tags to baseline survival probabilities
 const getProbabilityFromTags = (tags: any): number => {
-    // Default low probability for unknown structures
     let prob = 0.2;
-
     if (!tags) return prob;
 
     const building = tags.building || '';
     const amenity = tags.amenity || '';
     const leisure = tags.leisure || '';
 
-    // Residential / Hostels -> High Probability (0.8 - 1.0)
-    if (
-        building === 'dormitory' ||
-        building === 'residential' ||
-        building === 'apartments' ||
-        building === 'house'
-    ) {
+    if (['dormitory', 'residential', 'apartments', 'house'].includes(building)) {
         prob = 0.8 + Math.random() * 0.2;
-    }
-    // Academic Buildings -> Medium Probability (0.5 - 0.7)
-    else if (
-        building === 'university' ||
-        building === 'college' ||
-        building === 'school' ||
-        amenity === 'university' ||
-        amenity === 'library' ||
-        amenity === 'research_institute'
-    ) {
+    } else if (['university', 'college', 'school'].includes(building) || ['university', 'library', 'research_institute'].includes(amenity)) {
         prob = 0.5 + Math.random() * 0.2;
-    }
-    // Administrative / General -> Medium-Low (0.3 - 0.5)
-    else if (
-        building === 'commercial' ||
-        building === 'office' ||
-        amenity === 'clinic' ||
-        amenity === 'hospital' ||
-        amenity === 'food_court' ||
-        amenity === 'restaurant'
-    ) {
+    } else if (['commercial', 'office'].includes(building) || ['clinic', 'hospital', 'food_court', 'restaurant'].includes(amenity)) {
         prob = 0.3 + Math.random() * 0.2;
-    }
-    // Open areas / Sports fields -> Very Low (0.05 - 0.2)
-    else if (
-        leisure === 'pitch' ||
-        leisure === 'stadium' ||
-        leisure === 'park' ||
-        building === 'roof' ||
-        building === 'garage'
-    ) {
+    } else if (['pitch', 'stadium', 'park'].includes(leisure) || ['roof', 'garage'].includes(building)) {
         prob = 0.05 + Math.random() * 0.15;
     }
-
     return prob;
 };
 
@@ -74,67 +41,27 @@ const ProbabilityMap3D: React.FC = () => {
     const [data, setData] = useState<HeatmapPoint[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
 
-    // Fetch building footprints and extract centroids from Overpass API
+    // Fetch building footprints and extract centroids
     const fetchOSMData = async () => {
         setLoading(true);
-
-        // Define bounding box around MAP_CENTER (~1km radius)
-        // south, west, north, east
         const offset = 0.009;
         const bbox = `${(MAP_CENTER.latitude - offset).toFixed(4)},${(MAP_CENTER.longitude - offset).toFixed(4)},${(MAP_CENTER.latitude + offset).toFixed(4)},${(MAP_CENTER.longitude + offset).toFixed(4)}`;
 
-        // Overpass QL query:
-        // [out:json];
-        // (
-        //   way["building"](1.5400,103.6200,1.5750,103.6550);
-        //   way["leisure"="pitch"](1.5400,103.6200,1.5750,103.6550);
-        // );
-        // out center;
-        const query = `
-            [out:json][timeout:25];
-            (
-              way["building"](${bbox});
-              way["leisure"="pitch"](${bbox});
-            );
-            out center;
-        `;
-
         try {
-            const url = `https://overpass-api.de/api/interpreter`;
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                },
-                body: "data=" + encodeURIComponent(query)
+            // Use the robust mirror-rotating client (now with built-in caching)
+            const features = await fetchOSMFeatures(bbox);
+
+            const points: HeatmapPoint[] = features.map((f) => {
+                const type = f.tags?.building || f.tags?.leisure || 'unknown';
+                const name = f.tags?.name || `Building ${f.id}`;
+                return {
+                    id: f.id,
+                    position: [f.center.lon, f.center.lat],
+                    weight: getProbabilityFromTags(f.tags),
+                    type,
+                    name
+                };
             });
-
-            if (!response.ok) {
-                throw new Error(`Overpass API returned ${response.status}: ${response.statusText}`);
-            }
-
-            const json = await response.json();
-
-            const points: HeatmapPoint[] = [];
-
-            if (json.elements && json.elements.length > 0) {
-                json.elements.forEach((el: any) => {
-                    // Overpass 'out center' provides the calculated center of the way in 'center'
-                    if (el.center && el.center.lat && el.center.lon) {
-                        const weight = getProbabilityFromTags(el.tags);
-                        const type = el.tags?.building || el.tags?.leisure || 'unknown';
-                        const name = el.tags?.name || `Building ${el.id}`;
-
-                        points.push({
-                            id: el.id.toString(),
-                            position: [el.center.lon, el.center.lat],
-                            weight,
-                            type,
-                            name
-                        });
-                    }
-                });
-            }
 
             setData(points);
         } catch (err: any) {
@@ -249,33 +176,8 @@ const ProbabilityMap3D: React.FC = () => {
                     onClick={handleMapClick}
                     getCursor={() => 'crosshair'}
                 >
-                    {/* CARTO Dark Matter Raster Tiles */}
                     <Map
-                        mapStyle={{
-                            version: 8,
-                            sources: {
-                                'carto-dark': {
-                                    type: 'raster',
-                                    tiles: [
-                                        'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-                                        'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-                                        'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-                                        'https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'
-                                    ],
-                                    tileSize: 256,
-                                    attribution: '&copy; OpenStreetMap Contributors &copy; CARTO'
-                                }
-                            },
-                            layers: [
-                                {
-                                    id: 'carto-dark-tiles',
-                                    type: 'raster',
-                                    source: 'carto-dark',
-                                    minzoom: 0,
-                                    maxzoom: 19
-                                }
-                            ]
-                        }}
+                        mapStyle={`https://api.maptiler.com/maps/dataviz-dark/style.json?key=${MAPTILER_KEY}`}
                         reuseMaps
                     />
                 </DeckGL>

@@ -29,6 +29,8 @@ const SOURCE_PRIORITY: Record<GridSource, number> = { prediction: 1, scan: 2 };
 export type TerrainType = 'Open Field' | 'Road' | 'Shelter' | 'Collapsed Area';
 export type TerrainGrid = TerrainType[][];
 
+import { fetchOSMFeatures } from '../utils/osmClient';
+
 // ── OSM config (same constants as MapSimulator) ─────────────────────────────
 const MAP_CENTER = { longitude: 101.6841, latitude: 3.1319 };
 const BBOX_OFFSET = 0.009;
@@ -101,19 +103,9 @@ class GridDataService {
     private async fetchOSMTerrain() {
         try {
             const bbox = `${(MAP_CENTER.latitude - BBOX_OFFSET).toFixed(4)},${(MAP_CENTER.longitude - BBOX_OFFSET).toFixed(4)},${(MAP_CENTER.latitude + BBOX_OFFSET).toFixed(4)},${(MAP_CENTER.longitude + BBOX_OFFSET).toFixed(4)}`;
-            const query = `[out:json][timeout:25];\n(way["building"](${bbox}); way["leisure"="pitch"](${bbox}););\nout center;`;
-            const response = await fetch('https://overpass-api.de/api/interpreter', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: 'data=' + encodeURIComponent(query)
-            });
-            if (!response.ok) throw new Error(`Overpass ${response.status}`);
-            const json = await response.json();
-
-            const elements: { center?: { lon: number; lat: number }; tags?: any }[] = json.elements || [];
-            const points = elements.filter(el => el.center).map(el => ({
-                lon: el.center!.lon, lat: el.center!.lat, tags: el.tags
-            }));
+            
+            // Use the robust mirror-rotating client
+            const points = await fetchOSMFeatures(bbox);
 
             const terrain: TerrainGrid = Array.from({ length: 20 }, () =>
                 new Array<TerrainType>(20).fill('Open Field')
@@ -131,8 +123,8 @@ class GridDataService {
                     const lonMin = startLon + c * DEG_STEP;
 
                     const inside = points.filter(p =>
-                        p.lat >= latMin && p.lat < latMin + DEG_STEP &&
-                        p.lon >= lonMin && p.lon < lonMin + DEG_STEP
+                        p.center.lat >= latMin && p.center.lat < latMin + DEG_STEP &&
+                        p.center.lon >= lonMin && p.center.lon < lonMin + DEG_STEP
                     );
 
                     // Row mapping: r=0 is south (bottom), grid index 0 = top
@@ -143,7 +135,10 @@ class GridDataService {
                         const counts: Record<TerrainType, number> = {
                             'Open Field': 0, 'Road': 0, 'Shelter': 0, 'Collapsed Area': 0
                         };
-                        inside.forEach(p => { counts[getTerrainFromTags(p.tags)]++; });
+                        inside.forEach(p => { 
+                            const type = getTerrainFromTags(p.tags);
+                            counts[type]++; 
+                        });
                         const best = (Object.entries(counts) as [TerrainType, number][])
                             .sort((a, b) => b[1] - a[1])[0][0];
                         terrain[gridRow][c] = best;
