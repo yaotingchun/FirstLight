@@ -219,12 +219,6 @@ Swarm Execution & Feedback → Next Cycle Begins
     npm run dev  # Or npm start
     ```
 
-3.  **Run the AI Orchestrator** (Optional):
-    ```bash
-    # Run a continuous decision loop
-    npm run orchestrator:loop
-    ```
-
 ---
 
 
