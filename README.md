@@ -149,9 +149,21 @@ Swarm Execution & Feedback → Next Cycle Begins
   
 ---
 
+## 🛠️ Technologies Used
+
+-   **AI & Orchestration Engine**: **Google Vertex AI (vertexai)** running state-of-the-art LLMs (**Gemini 2.5**) to act as the cognitive engine for autonomous mission planning and multi-agent coordination.
+-   **Protocol & Backend Services**: **Node.js + Express + TypeScript** functioning as the **FirstLight MCP Server**. This acts as the bridge that standardizes communication between the AI orchestrator and the simulated drone components.
+-   **Mission MCP Tools Modules**: Specialized MCP tools modules for drone control, scan intelligence, communication mesh status, relay operations, and orchestration policies.
+-   **Frontend Simulation & Dashboard**: **React + TypeScript + Vite**, with interactive mission UI and operator chat/control panels.
+-   **Geospatial & 3D Visualization**: **CesiumJS** (3D globe simulation), **Deck.gl** (Data overlays), **MapLibre-gl** (Mapping engine) and **Three.js** (Drone & FPV rendering) are deeply integrated for rendering a realistic 3D simulation map and providing dynamic FPV (First-Person View) Drone Cams.
+
+---
+
 ## 📊 Performance Analytics
 
 To evaluate the effectiveness of our AI-driven search strategies, we monitored two key metrics across 100 simulation cycles: **Repeat Rate** and **Search Duration**.
+
+> **Note on Time Scaling:** In our simulation engine, time is accelerated. **1 minute of system search duration is equivalent to 10 minutes of real-world search duration.**
 
 ### 📋 Summary Statistics
 
@@ -179,14 +191,22 @@ The **Repeat Rate** shows a steady downward trend over time. This indicates that
 
 ---
 
+## 🏗️ System Feasibility
 
-## 🛠️ Technologies Used
+### 1. Technological Feasibility (Hardware Agnosticism)
+**Proved by: The Model Context Protocol (MCP)**
 
--   **AI & Orchestration Engine**: **Google Vertex AI (vertexai)** running state-of-the-art LLMs (**Gemini 2.5**) to act as the cognitive engine for autonomous mission planning and multi-agent coordination.
--   **Protocol & Backend Services**: **Node.js + Express + TypeScript** functioning as the **FirstLight MCP Server**. This acts as the bridge that standardizes communication between the AI orchestrator and the simulated drone components.
--   **Mission MCP Tools Modules**: Specialized MCP tools modules for drone control, scan intelligence, communication mesh status, relay operations, and orchestration policies.
--   **Frontend Simulation & Dashboard**: **React + TypeScript + Vite**, with interactive mission UI and operator chat/control panels.
--   **Geospatial & 3D Visualization**: **CesiumJS** (3D globe simulation), **Deck.gl** (Data overlays), **MapLibre-gl** (Mapping engine) and **Three.js** (Drone & FPV rendering) are deeply integrated for rendering a realistic 3D simulation map and providing dynamic FPV (First-Person View) Drone Cams.
+Traditional drone swarms are heavily coupled to proprietary manufacturer software. FirstLight deliberately bypasses this lock-in by utilizing the emerging **Model Context Protocol (MCP)**. By defining generic drone capabilities as standardized JSON-RPC "Tools", the FirstLight Orchestrator acts as a universal bridge. As long as a commercial drone's API can be wrapped in a basic client script, an Orchestrator LLM can command it, proving it can be deployed today using a mix of cheap COTS (Commercial Off-The-Shelf) drones.
+
+### 2. Bandwidth & Operational Feasibility
+**Proved by: Low-Footprint LLM Intent vs. Video Steaming**
+
+In a massive disaster zone (The "72-Hour Blackout"), high-bandwidth 5G/4G infrastructure is destroyed. The FirstLight architecture actively prevents this bandwidth choke through **Semantic Summarization**. Instead of sending live video, drones process their raw sensor feeds locally at the edge, transmitting extremely compressed JSON telemetry. Because the AI Orchestrator requires only tiny JSON state summaries to analyze the entire grid every 5000ms, the swarm can operate reliably over extremely low-bandwidth RF mesh networks (like LoRa or Zigbee) that are trivial to deploy natively.
+
+### 3. Economic Validation Feasibility
+**Proved by: The CesiumJS + React Digital Twin Sandbox**
+
+Convincing stakeholders to greenlight an AI-driven drone swarm is typically a multi-million-dollar fiscal risk. FirstLight encompasses a robust, high-fidelity 3D digital-twin simulation out of the box. This provides a completely risk-free Sandbox to rigorously validate the AI Orchestrator's behavior, battery-drain equations, and statistical heatmaps. This simulation architecture explicitly proves that the core intelligence can be tested and statistically proven millions of times before a single cent is spent on physical drone deployment.
 
 ---
 
