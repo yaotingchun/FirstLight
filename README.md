@@ -10,7 +10,8 @@ Powered by **Google Gemini (Vertex AI)** and built on the **Model Context Protoc
 <sub>*(Click above to watch the project presentation and demo)*</sub>
 
 ### 📂 Presentation Slides
-👉 **[FirstLight Project Slides (PDF/Link)](./public/assets/presentation_slides.pdf)**
+👉 **[FirstLight Project Slides](./public/assets/FirstLightPresentationSlides.pdf)**
+
 
 ### 📝 AI Logic Chain Documentation
 Detailed documentation on the AI decision-making loop and chain-of-thought orchestration can be found here:<br>
