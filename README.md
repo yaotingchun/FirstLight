@@ -4,6 +4,16 @@
 **FirstLight** is an AI-powered platform for decentralized drone swarm coordination in disaster scenarios.  
 Powered by **Google Gemini (Vertex AI)** and built on the **Model Context Protocol (MCP)**, it enables intelligent, autonomous search and rescue in environments where communication is limited or unavailable.
 
+### 🎥 Presentation Video
+![FirstLight Demo Video](https://www.youtube.com/watch?v=YOUR_VIDEO_ID)
+<br/>
+<sub>*(Click above to watch the project presentation and demo)*</sub>
+
+
+### 📝 AI Logic Chain Documentation
+Detailed documentation on the AI decision-making loop and chain-of-thought orchestration can be found here:<br>
+👉 **[AI Logic Chain (Full Documentation)](./AI_LOGIC_CHAIN.md)**
+
 ---
 
 ## 👥 Our Team
@@ -126,6 +136,36 @@ Swarm Execution & Feedback → Next Cycle Begins
 -   **Autonomous Relay Rotation**: A backup relay at base replaces a low-battery relay in the field without dropping connectivity for a single tick.
 -   **Centroid-Based Optimization**: If drones are almost losing connection, the relay **moves toward the centroid** of the swarm to maximize coverage.
 -   **Offline Buffer Strategy**: Drones continue scanning and store data in a local **Offline Buffer** during signal loss, which is "flushed" to the base the moment a connection is restored for **zero data loss**.
+
+---
+
+## 📊 Performance Analytics
+
+To evaluate the effectiveness of our AI-driven search strategies, we monitored two key metrics across 100 simulation cycles: **Repeat Rate** and **Search Duration**.
+
+### 📋 Summary Statistics
+
+| Metric | Mean | Standard Deviation |
+| :--- | :--- | :--- |
+| **Search Duration (mm:ss)** | 2:27 | 0:33 |
+| **Repeat Rate (%)** | 30.76% | 10.56% |
+
+> [!TIP]
+> **Detailed Data**: For the full raw data and calculations, you can download the [Performance Analysis Excel File](./public/assets/Performance_Analytics.xlsx).
+
+### 📉 Repeat Rate Analysis
+<div align="center">
+  <img src="./public/assets/repeat_rate.svg" width="70%" />
+</div>
+
+The **Repeat Rate** shows a steady downward trend over time. This indicates that as the AI orchestrator learns the environment, it optimizes drone trajectories to prioritize unscanned sectors, significantly reducing redundant coverage and maximizing battery efficiency.
+
+### ⏱️ Search Duration Analysis
+<div align="center">
+  <img src="./public/assets/search_duration.svg" width="70%" />
+</div>
+
+**Search Duration** remains stabilized around an average of **2:24 minutes**. Periodic peaks correspond to the activation of **"Micro Scan"** mode, where drones perform high-precision investigative loops upon detecting potential survivor signals, demonstrating the system's balance between rapid wide-area scanning and thorough localized search.
 
 ---
 
