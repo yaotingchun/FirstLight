@@ -10,7 +10,7 @@ Powered by **Google Gemini (Vertex AI)** and built on the **Model Context Protoc
 
 We are a team passionate about building AI-powered drone systems to transform disaster response. By integrating advanced AI orchestration with autonomous swarms, we aim to provide first responders with **"FirstLight"** — a reliable eye in the sky that operates tirelessly, autonomously, and safely in environments where human access is limited.
 
-![MCP Architecture Diagram](public/assets/our team.png)
+![Our Team](./public/assets/ourteam.png)
 
 | Member | Role | Responsibility |
 | :--- | :--- | :--- |
