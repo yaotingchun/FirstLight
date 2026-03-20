@@ -42,7 +42,7 @@ FirstLight moves the "brain" of the operation to the disaster zone itself:
 
 ## 🔌 MCP Architecture
 
-![MCP Architecture Diagram](./public/assets/mcp_architecture.drawio.png)
+![MCP Architecture Diagram](./public/assets/mcp_architecture.drawio.svg)
 
 ### Functional Layers
 - **Strategic Planning (LLM)**: The high-level mission "Brain" (Gemini) that processes swarm state to develop search strategies and operational intent.
