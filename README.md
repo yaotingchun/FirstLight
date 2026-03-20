@@ -5,10 +5,12 @@
 Powered by **Google Gemini (Vertex AI)** and built on the **Model Context Protocol (MCP)**, it enables intelligent, autonomous search and rescue in environments where communication is limited or unavailable.
 
 ### 🎥 Presentation Video
-![FirstLight Demo Video](https://www.youtube.com/watch?v=YOUR_VIDEO_ID)
+![FirstLight Demo Video](https://github.com/yaotingchun/FirstLight/blob/c77e20667ab72b91e95d4a9152116f1588efb601/public/assets/FirstLight%20Presentation%20Slides.pdf)
 <br/>
 <sub>*(Click above to watch the project presentation and demo)*</sub>
 
+### 📂 Presentation Slides
+👉 **[FirstLight Project Slides (PDF/Link)](./public/assets/presentation_slides.pdf)**
 
 ### 📝 AI Logic Chain Documentation
 Detailed documentation on the AI decision-making loop and chain-of-thought orchestration can be found here:<br>
@@ -139,6 +141,11 @@ Swarm Execution & Feedback → Next Cycle Begins
 -   **Centroid-Based Optimization**: If drones are almost losing connection, the relay **moves toward the centroid** of the swarm to maximize coverage.
 -   **Offline Buffer Strategy**: Drones continue scanning and store data in a local **Offline Buffer** during signal loss, which is "flushed" to the base the moment a connection is restored for **zero data loss**.
 
+### 🤖 Real-Time Drone Discovery & Adaptation
+-   **Dynamic Discovery**: Instead of hard-coded IDs, the system uses a centralized `droneStore` and the `getDroneDiscoveryList` tool to enumerate the active fleet in real-time.
+-   **Fleet-Agnostic Orchestration**: The AI orchestrator "sees" the currently synced fleet via `buildStateSummary`, ensuring it only issues commands to active, healthy drones without reinventing IDs.
+-   **Autonomous Scaling**: The `executeRegionBootstrap` logic dynamically partitions the search grid (Region Centers) based on the current drone count—automatically scaling the strategy if the fleet grows or shrinks.
+  
 ---
 
 ## 📊 Performance Analytics
