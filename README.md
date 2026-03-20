@@ -5,19 +5,19 @@
 Powered by **Google Gemini (Vertex AI)** and built on the **Model Context Protocol (MCP)**, it enables intelligent, autonomous search and rescue in environments where communication is limited or unavailable.
 
 ### 🎥 Presentation Video
-![FirstLight Demo Video](https://github.com/yaotingchun/FirstLight/blob/c77e20667ab72b91e95d4a9152116f1588efb601/public/assets/FirstLight%20Presentation%20Slides.pdf)
+![FirstLight Demo Video](https://youtu.be/i3pIPkwDmmo?si=ycniyABR2BYM9WXx)
 <br/>
 <sub>*(Click above to watch the project presentation and demo)*</sub>
 
 ### 📂 Presentation Slides
-👉 **[FirstLight Project Slides](./public/assets/FirstLight_Slides.zip)**
+👉 [FirstLight Project Slides](./public/assets/FirstLight_Slides.zip)
 
 
 ### 📝 AI Logic Chain Documentation
 Detailed documentation on the AI decision-making loop and chain-of-thought orchestration can be found here:<br>
-👉 **[AI Logic Chain (Full Documentation)](./AI_LOGIC_CHAIN.md)** <br>
+👉 [AI Logic Chain (Full Documentation)](./AI_LOGIC_CHAIN.md) <br>
 
-👉 **[AI Logic Chain (Demo Video)](https://drive.google.com/file/d/1D_WHpD9I6JZl3VmFjgsQrfZWHRI4QB2h/view?usp=sharing)**
+👉 [AI Logic Chain (Demo Video)](https://drive.google.com/file/d/1D_WHpD9I6JZl3VmFjgsQrfZWHRI4QB2h/view?usp=sharing)
 
 ---
 
