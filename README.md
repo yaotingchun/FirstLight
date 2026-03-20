@@ -42,7 +42,9 @@ FirstLight moves the "brain" of the operation to the disaster zone itself:
 
 ## 🔌 MCP Architecture
 
-![MCP Architecture Diagram](./public/assets/mcp_architecture.drawio.svg)
+<div align="center">
+  <img src="./public/assets/mcp_architecture.drawio.svg" alt="MCP Architecture Diagram" width="80%" />
+</div>
 
 ### Functional Layers
 - **Strategic Planning (LLM)**: The high-level mission "Brain" (Gemini) that processes swarm state to develop search strategies and operational intent.
@@ -218,6 +220,11 @@ Swarm Execution & Feedback → Next Cycle Begins
     cd server
     npm run dev  # Or npm start
     ```
+
+### 🌐 Live Demo
+**https://firstlight-dashboard-494194863681.us-central1.run.app**
+
+> **Note:** The AI Orchestrator may not function as expected in the live demo due to Google Cloud Run limitations. For the full orchestrator capabilities, running the simulation locally is recommended.
 
 ---
 
