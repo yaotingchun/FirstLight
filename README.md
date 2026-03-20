@@ -12,7 +12,9 @@ Powered by **Google Gemini (Vertex AI)** and built on the **Model Context Protoc
 
 ### 📝 AI Logic Chain Documentation
 Detailed documentation on the AI decision-making loop and chain-of-thought orchestration can be found here:<br>
-👉 **[AI Logic Chain (Full Documentation)](./AI_LOGIC_CHAIN.md)**
+👉 **[AI Logic Chain (Full Documentation)](./AI_LOGIC_CHAIN.md)** <br>
+
+👉 **[AI Logic Chain (Demo Video)](https://drive.google.com/file/d/1D_WHpD9I6JZl3VmFjgsQrfZWHRI4QB2h/view?usp=sharing)**
 
 ---
 
