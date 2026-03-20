@@ -250,12 +250,19 @@ The **Repeat Rate** shows a steady downward trend over time. This indicates that
     cd ..
     ```
 
-3.  **Configure environment variables**:
-    Create a `.env` file in the root and `server` folders (refer to `.env.example`).
+3.  **Configure environments and credentials**:
+    -   Create a `.env` file in the root folder using `.env.example` as a template.
+    -   Download your Google Cloud Service Account JSON key, name it `google.json`, and place it inside a `credentials` folder at the root of the project.
     ```env
-    GOOGLE_VERTEX_PROJECT=your-project-id
+    # Google Vertex AI Credentials
+    GOOGLE_APPLICATION_CREDENTIALS=./credentials/google.json
     GOOGLE_VERTEX_LOCATION=us-central1
-    VITE_MAPBOX_TOKEN=your-mapbox-token
+    GOOGLE_VERTEX_PROJECT=your-project-id
+    
+    # Orchestrator settings
+    ORCHESTRATOR_GRID_SIZE=20
+    ORCHESTRATOR_TICK_INTERVAL_MS=5000
+    ORCHESTRATOR_MODEL=gemini-2.5-flash
     ```
 
 ### Running the Simulation

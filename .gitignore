@@ -16,6 +16,7 @@ dist-ssr
 # Environment & credentials
 .env
 .env.*
+!.env.example
 credentials/
 
 # Editor directories and files
