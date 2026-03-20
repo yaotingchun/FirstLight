@@ -10,9 +10,11 @@ Powered by **Google Gemini (Vertex AI)** and built on the **Model Context Protoc
 
 We are a team passionate about building AI-powered drone systems to transform disaster response. By integrating advanced AI orchestration with autonomous swarms, we aim to provide first responders with **"FirstLight"** — a reliable eye in the sky that operates tirelessly, autonomously, and safely in environments where human access is limited.
 
+![MCP Architecture Diagram](public/assets/our team.png)
+
 | Member | Role | Responsibility |
 | :--- | :--- | :--- |
-| **Angela Ngu** | Leader | **AI Orchestration**: Managing the Gemini decision loop, prompt engineering, and tactical intent generation. |
+| **Angela Ngu Xin Yi** | Leader | **AI Orchestration**: Managing the Gemini decision loop, prompt engineering, and tactical intent generation. |
 | **Chun Yao Ting** | Member | **MCP Infrastructure**: Developing the MCP server, defining tool schemas, and ensuring robust state synchronization. |
 | **Teoh Xin Yee** | Member | **Simulation Logic**: Implementing drone autonomous algorithms, heatmap probability modeling, and swarm coordination. |
 | **Evelyn Ang** | Member | **Visualization & UI**: Developing Geospatial 3D views (Cesium/MapLibre), real-time telemetry overlays, and tactical interface styling. |
@@ -38,13 +40,18 @@ FirstLight moves the "brain" of the operation to the disaster zone itself:
 
 ---
 
-## 🏗️ System Architecture
-*(Section to be added)*
-
----
-
 ## 🔌 MCP Architecture
-*(Section to be added)*
+
+![MCP Architecture Diagram](./public/assets/mcp_architecture.drawio.png)
+
+### Functional Layers
+- **Strategic Planning (LLM)**: The high-level mission "Brain" (Gemini) that processes swarm state to develop search strategies and operational intent.
+- **Mission Orchestrator (Relay Drone)**: Responsible for executing high-level tactical commands (e.g., `assignHotspotBatch`, `getRecommendedActions`) derived from the LLM strategy.
+- **MCP Client (Transmission Bridge)**: The secure interface that links the **Cognition Engine** to the **MCP Server**, translating strategic intent into standardized JSON-RPC tool requests.
+- **MCP Server (Tool Registry)**:
+    - **High-Level Tools**: Strategic tools for mission-wide monitoring and tactical batching.
+    - **Low-Level Tools**: Operational tools for individual drone perspective and maneuvers.
+    - **Comm & Relay Tools**: Manage the mesh network status and positioning of relay drones.
 
 ---
 
@@ -89,31 +96,78 @@ Swarm Execution & Feedback → Next Cycle Begins
 
 ---
 
-## 🌟 Key Features
+## 🚀 Innovations
 
-### 🧠 AI-Powered Orchestration
-*   **Gemini Engine**: Uses `gemini-2.0-flash` to analyze real-time simulation snapshots.
-*   **Strategic Decision Making**: Dynamic pathfinding, battery management, and task allocation.
-*   **Adaptive Search**: Intelligent hotspot detection based on probability heatmaps and terrain data.
+### 🌍 Geospatial Predictive Nature
+-   **Initial Probability Fusion**: Survivor probability is calculated by fusing **Building Density**, **Residential Factors**, and **Road Access**.
+-   **Prioritized Searching**: Instead of starting with a blank map, the model focuses early search efforts on **high-density residential areas** to speed up the localization process.
 
-### 🔌 MCP Integration
-*   **Tool-Augmented Intelligence**: Exposes simulation controls (targeting, sensor queries, mission resets) as MCP tools.
-*   **Unified Interface**: Seamless communication between the AI "Brain" and the simulation "Reality."
+### 🛰️ Blanket Search (Dual-Mode)
+-   **Wide Scan**: The default mode, which detects initial signs of survivors for **rapid area coverage**.
+-   **Micro Scan**: Automatically activated when a drone detects a high signal probability, performing repeated, high-precision scans to **investigate the signal**.
 
-### 🗺️ Multi-Resolution Visualization
-*   **Geospatial Fidelity**: Built with **CesiumJS**, **MapLibre**, and **Deck.gl** for high-performance 2D/3D mapping.
-*   **Live Telemetry**: Real-time tracking of drone status, battery levels, and communication link health.
-*   **Survivor Detection**: Visual indicators for found survivors and high-probability search zones.
+### 🎛️ Collaborative & Adaptive Sensors
+-   **Multi-Sensor Fusion**: Integrates various sensors (Mobile, Thermal, Wi-Fi, Sound) to compute accurate arrival probabilities.
+-   **Confidence Building**: In Micro Scan mode, drone sensors' confidence **builds up over time** to eliminate noise-based false positives.
+-   **Dynamic Weighting**: As survivors are found, the AI **"learns"** which sensors are most reliable and **adjusts their weights** in real-time.
+
+### 🧠 Global Perspective of Orchestrator
+-   **Semantic Summarization**: Raw telemetry is compressed into a **Natural Language Summary**, allowing the AI to read the battlefield and make strategic decisions like a human commander.
+-   **Exact State Understanding**: Every 10 ticks, the entire grid and drone status are passed to the AI, ensuring it understands the **exact battery level, position, and scanned state** of every cell.
+
+### 🔋 Resource & Time Management
+-   **Battery Forecasting**: Before assignment, the system runs a **Battery Forecast** to ensure drones have enough energy to return to base to charge.
+-   **Task Handoff**: When a drone's battery is low, it **negotiates a handoff** with the nearest drone, passing its high-probability coordinates so the investigation continues without interruption.
+-   **Information Decay (TTL)**: Confidence levels in previous negative results **decay over time**, triggering **re-verification** of areas to account for a changing disaster environment.
+
+### 🛡️ Self-Healing & Connectivity
+-   **Autonomous Relay Rotation**: A backup relay at base replaces a low-battery relay in the field without dropping connectivity for a single tick.
+-   **Centroid-Based Optimization**: If drones are almost losing connection, the relay **moves toward the centroid** of the swarm to maximize coverage.
+-   **Offline Buffer Strategy**: Drones continue scanning and store data in a local **Offline Buffer** during signal loss, which is "flushed" to the base the moment a connection is restored for **zero data loss**.
 
 ---
 
+
 ## 🛠️ Technologies Used
 
--   **AI & Orchestration Engine**: **Google Vertex AI (Gemini 2.5)** acts as the cognitive engine for autonomous mission planning and multi-agent coordination.
--   **Protocol & Backend Services**: **Node.js + Express + TypeScript** functioning as the **FirstLight MCP Server**. This bridge standardizes communication between the AI orchestrator and simulated drone components.
--   **Frontend Simulation & Dashboard**: **React + TypeScript + Vite**, featuring an interactive mission UI and real-time operator chat/control panels.
--   **Geospatial & 3D Visualization**: **CesiumJS** (3D globe), **Deck.gl** (Data overlays), **MapLibre-gl** (Mapping engine), and **Three.js** (Drone & FPV rendering) are integrated to provide a realistic 3D simulation map and dynamic FPV (First-Person View) Drone Cams.
--   **Mission Logic Modules**: Specialized TypeScript modules for drone control, scan intelligence, communication mesh status, relay operations, and orchestration policies.
+-   **AI & Orchestration Engine**: **Google Vertex AI (vertexai)** running state-of-the-art LLMs (**Gemini 2.5**) to act as the cognitive engine for autonomous mission planning and multi-agent coordination.
+-   **Protocol & Backend Services**: **Node.js + Express + TypeScript** functioning as the **FirstLight MCP Server**. This acts as the bridge that standardizes communication between the AI orchestrator and the simulated drone components.
+-   **Mission MCP Tools Modules**: Specialized MCP tools modules for drone control, scan intelligence, communication mesh status, relay operations, and orchestration policies.
+-   **Frontend Simulation & Dashboard**: **React + TypeScript + Vite**, with interactive mission UI and operator chat/control panels.
+-   **Geospatial & 3D Visualization**: **CesiumJS** (3D globe simulation), **Deck.gl** (Data overlays), **MapLibre-gl** (Mapping engine) and **Three.js** (Drone & FPV rendering) are deeply integrated for rendering a realistic 3D simulation map and providing dynamic FPV (First-Person View) Drone Cams.
+
+---
+
+## 💰 Business & Impact
+
+### 1. Business Model
+
+#### **GOVERNMENT & PUBLIC SAFETY (B2G LICENSING)**
+-   **Annual Platform Licenses**: Tiered access for National Disaster Agencies (e.g., FEMA, ASEAN AHA Centre) and Civil Defense units.
+-   **SOP Integration & Onboarding**: One-time setup fees for country-specific hazard mapping, language localization, and local agency protocol integration.
+-   **Simulation as a Service**: Recurring subscriptions for AI-driven preparedness drills and digital-twin disaster scenarios.
+
+#### **ENTERPRISE & INDUSTRIAL RESILIENCE (B2B)**
+-   **Infrastructure Resilience Modules**: Emergency response AI designed to handle power grid failures and industrial accidents, ensuring continuous operations and business continuity.
+-   **PaaS (Platform as a Service)**: A subscription tier for private responders and NGOs providing real-time probability heatmap APIs and updated MCP tool endpoints.
+-   **Systems Integration**: Customizing the FirstLight MCP server to interface with bespoke legacy drone fleets or existing monitoring systems.
+
+### 2. Market Segments
+
+| Segment | Use Case | Standout Point |
+| :--- | :--- | :--- |
+| **Public Sector** (Govt, NGOs) | Rapid area scanning and survivor localization in the "Golden 72 Hours" post-disaster. | 10x faster than manual teams; real-time probability heatmaps for fast decision-making. |
+| **Private Sector** (S&R Providers) | Missing persons in remote terrain and reconnaissance for industrial collapses or hazardous sites. | AI-driven prioritization significantly reduces operational risks for human rescuers. |
+| **Humanitarian** (Aid Groups) | Urban S&R following airstrikes or infrastructure failure in GPS-denied/hostile environments. | Decentralized autonomy makes the system robust against jamming and signal loss. |
+
+### 3. Competitor Analysis
+
+| Solution | Strengths | Gaps |
+| :--- | :--- | :--- |
+| **Traditional Drone Systems** | Reliable hardware; mature ecosystem. | Human-dependent; requires continuous comms; limited blackout autonomy. |
+| **Autonomous Drone Software** | Advanced navigation & perception; high autonomy. | Limited multi-agent coordination; weak decentralized orchestration. |
+| **Defense-Grade Platforms** | Highly advanced; robust; high-end capabilities. | Extremely high cost; not scalable for developing regions. |
+| **FirstLight** | **AI decision-making; battery & relay aware; self-healing; cost-effective.** | *N/A (Targeting gaps in existing solutions)* |
 
 ---
 
