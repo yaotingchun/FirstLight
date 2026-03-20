@@ -5,7 +5,7 @@
 Powered by **Google Gemini (Vertex AI)** and built on the **Model Context Protocol (MCP)**, it enables intelligent, autonomous search and rescue in environments where communication is limited or unavailable.
 
 ### 🎥 Presentation Video
-[FirstLight Demo Video](https://youtu.be/i3pIPkwDmmo?si=ycniyABR2BYM9WXx)
+[FirstLight Demo Video](https://youtu.be/PZZi9-1bCK4?si=SAJaKxSruFuxnAjv)
 <br/>
 <sub>*(Click above to watch the project presentation and demo)*</sub>
 
