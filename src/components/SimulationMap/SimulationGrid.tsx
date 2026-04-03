@@ -1,9 +1,13 @@
 import React from 'react';
 import { Radio, MapPin, X } from 'lucide-react';
+import { Map } from 'react-map-gl/maplibre';
+import 'maplibre-gl/dist/maplibre-gl.css';
 import {
     GRID_W, GRID_H, CELL_SIZE, BASE_STATION, COMM_RANGE_BASE, COMM_RANGE_RELAY
 } from '../../types/simulation';
 import type { Sector, Drone, CommEdge, HiddenSurvivor, FoundPin } from '../../types/simulation';
+
+const MAPTILER_KEY = 'SAX29oYdDKXlxm4RKRBu';
 
 interface SimulationGridProps {
     grid: Sector[][];
@@ -22,6 +26,7 @@ interface SimulationGridProps {
     time: number;
     aiDisconnectedRef: React.MutableRefObject<Set<string>>;
     aiReconnectedUntilTickRef: React.MutableRefObject<Map<string, number>>;
+    showActualMap: boolean;
 }
 
 export const getDroneThemeColor = (id?: string) => {
@@ -39,11 +44,34 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
     grid, drones, commLinks, survivors, pins,
     selectedPin, setSelectedPin, showSensors, 
     showTrails, setShowTrails, selectedTrailDroneId, setSelectedTrailDroneId,
-    getSectorProbability, time, aiDisconnectedRef, aiReconnectedUntilTickRef
+    getSectorProbability, time, aiDisconnectedRef, aiReconnectedUntilTickRef,
+    showActualMap
 }) => {
     return (
         <div className="hud-panel" style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg width={GRID_W * CELL_SIZE} height={GRID_H * CELL_SIZE} style={{ border: '1px dashed rgba(0,255,204,0.2)', backgroundColor: '#050a10' }}>
+            {showActualMap && (
+                <div style={{ position: 'absolute', width: GRID_W * CELL_SIZE, height: GRID_H * CELL_SIZE, overflow: 'hidden', pointerEvents: 'none' }}>
+                    <Map
+                        initialViewState={{
+                            longitude: 101.6841,
+                            latitude: 3.1319,
+                            zoom: 15.55
+                        }}
+                        style={{ width: '100%', height: '100%', opacity: 0.5 }}
+                        mapStyle={`https://api.maptiler.com/maps/hybrid/style.json?key=${MAPTILER_KEY}`}
+                        attributionControl={false}
+                    />
+                </div>
+            )}
+            <svg 
+                width={GRID_W * CELL_SIZE} 
+                height={GRID_H * CELL_SIZE} 
+                style={{ 
+                    border: '1px dashed rgba(0,255,204,0.2)', 
+                    backgroundColor: showActualMap ? 'transparent' : '#050a10',
+                    zIndex: 1
+                }}
+            >
                 {/* Grid & Heatmap */}
                 {grid.map((row, y) =>
                     row.map((cell, x) => (
@@ -53,7 +81,7 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                                 y={y * CELL_SIZE}
                                 width={CELL_SIZE}
                                 height={CELL_SIZE}
-                                fill={!showTrails && cell.scanned 
+                                fill={!showTrails && cell.scanned && !showActualMap
                                     ? `rgba(255, 68, 68, ${0.05 + getSectorProbability(x, y) * 0.75})` 
                                     : 'transparent'}
                                 stroke="rgba(0, 255, 204, 0.05)"
@@ -177,8 +205,8 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                     </g>
                 )}
 
-                {/* Terrain Overlays */}
-                {!showTrails && grid.map((row, y) => row.map((cell, x) => {
+                {/* Terrain Overlays - Hidden in Map View per user request */}
+                {!showTrails && !showActualMap && grid.map((row, y) => row.map((cell, x) => {
                     if (cell.terrain === 'Road') {
                         return <line key={`road-${x}-${y}`} x1={x * CELL_SIZE} y1={y * CELL_SIZE + CELL_SIZE / 2} x2={x * CELL_SIZE + CELL_SIZE} y2={y * CELL_SIZE + CELL_SIZE / 2} stroke="rgba(255,255,255,0.1)" strokeWidth="2" strokeDasharray="4" />
                     }

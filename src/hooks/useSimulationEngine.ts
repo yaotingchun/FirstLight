@@ -31,6 +31,7 @@ export const useSimulationEngine = (
     const [showSensors, setShowSensors] = useState(false);
     const [showTrails, setShowTrails] = useState(false);
     const [selectedTrailDroneId, setSelectedTrailDroneId] = useState<string | 'all'>('all');
+    const [showActualMap, setShowActualMap] = useState(false);
 
     const initialSurvivors = createSurvivors();
     const gridRef = useRef<Sector[][]>(createGrid(initialSurvivors));
@@ -1066,6 +1067,7 @@ export const useSimulationEngine = (
         showTrails, setShowTrails,
         selectedTrailDroneId, setSelectedTrailDroneId,
         randomizeBattery, setRandomizeBattery,
+        showActualMap, setShowActualMap,
 
         // Refs
         gridRef,

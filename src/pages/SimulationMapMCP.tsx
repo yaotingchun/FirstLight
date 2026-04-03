@@ -1,5 +1,5 @@
 import React, { useRef, useCallback } from 'react';
-import { Play, Pause, FileText } from 'lucide-react';
+import { Play, Pause, FileText, Globe } from 'lucide-react';
 
 import { useSharedSimulation } from '../context/SimulationContext';
 import { useSimulationMCP } from '../hooks/useSimulationMCP';
@@ -25,7 +25,8 @@ const SimulationMapMCP: React.FC = () => {
         metricsRef,
         toggleRunning, resetSim,
         getSectorProbability, performTickCore,
-        randomizeBattery, setRandomizeBattery
+        randomizeBattery, setRandomizeBattery,
+        showActualMap, setShowActualMap
     } = useSharedSimulation();
 
     const {
@@ -87,6 +88,21 @@ const SimulationMapMCP: React.FC = () => {
                         {running ? <Pause size={14} /> : <Play size={14} />} {running ? 'PAUSE' : 'START SCAN'}
                     </button>
                     <button
+                        onClick={() => setShowActualMap(!showActualMap)}
+                        className={`hud-btn ${showActualMap ? 'glow-text' : ''}`}
+                        style={{
+                            padding: '6px 12px',
+                            fontSize: '0.75rem',
+                            display: 'flex',
+                            gap: '6px',
+                            alignItems: 'center',
+                            cursor: 'pointer',
+                            borderColor: showActualMap ? 'var(--accent-primary)' : ''
+                        }}
+                    >
+                        <Globe size={14} /> {showActualMap ? 'GRID VIEW' : 'MAP VIEW'}
+                    </button>
+                    <button
                         onClick={() => setChatOpen(!chatOpen)}
                         className={`hud-btn ${chatOpen ? 'glow-text' : ''}`}
                         style={{
@@ -122,6 +138,7 @@ const SimulationMapMCP: React.FC = () => {
                     time={timeRef.current}
                     aiDisconnectedRef={aiDisconnectedRef}
                     aiReconnectedUntilTickRef={aiReconnectedUntilTickRef}
+                    showActualMap={showActualMap}
                 />
 
                 <SimulationDashboard
