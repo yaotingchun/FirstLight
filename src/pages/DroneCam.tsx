@@ -31,8 +31,8 @@ const DroneCam: React.FC = () => {
     const markersRef = useRef<Record<string, Cesium.Entity>>({});
     const commsLinesRef = useRef<Record<string, Cesium.Entity>>({});
 
-    const { 
-        running, timeRef, dronesRef, sensorWeightsRef, commLinksRef 
+    const {
+        running, timeRef, dronesRef, sensorWeightsRef, commLinksRef
     } = useSharedSimulation();
 
     const [activeDrone, setActiveDrone] = useState('DRN-Alpha');
@@ -89,7 +89,7 @@ const DroneCam: React.FC = () => {
 
                 const buildings = await Cesium.createOsmBuildingsAsync();
                 if (isMounted && viewer) viewer.scene.primitives.add(buildings);
-                
+
                 // Add epicenter as an entity
                 if (isMounted && viewer) {
                     viewer.entities.add({
@@ -127,7 +127,7 @@ const DroneCam: React.FC = () => {
     // ── Per-frame map sync ──────────────────────────────────────────
     useEffect(() => {
         if (!isActivePage) return;
-        
+
         let animId: number;
         let heading = 0; // Cesium uses radians
 
@@ -182,8 +182,8 @@ const DroneCam: React.FC = () => {
                 const getCoord = (id: string): Cesium.Cartesian3 => {
                     let lng, lat, alt = 300;
                     if (id === BASE_STATION.id) {
-                         [lng, lat] = gridToLngLat(BASE_STATION.x, BASE_STATION.y);
-                         alt = 50;
+                        [lng, lat] = gridToLngLat(BASE_STATION.x, BASE_STATION.y);
+                        alt = 50;
                     } else {
                         const dd = drones.find(dr => dr.id === id);
                         if (dd) {
@@ -195,7 +195,7 @@ const DroneCam: React.FC = () => {
                     }
                     return Cesium.Cartesian3.fromDegrees(lng, lat, alt);
                 };
-                
+
                 const color = link.active ? Cesium.Color.YELLOW : Cesium.Color.AQUAMARINE.withAlpha(0.25);
                 const width = link.active ? 3 : 1;
 
@@ -227,7 +227,7 @@ const DroneCam: React.FC = () => {
             if (active) {
                 const [aLng, aLat] = gridToLngLat(active.x, active.y);
                 const aAlt = active.mode === 'Micro' ? 80 : active.mode === 'Charging' ? 5 : 300;
-                
+
                 // Calculate bearing towards target
                 const dx = active.tx - active.x;
                 const dy = -(active.ty - active.y); // Negative because geographic Y grows downward
@@ -235,7 +235,7 @@ const DroneCam: React.FC = () => {
                 if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
                     targetHeading = Math.atan2(dx, dy);
                 }
-                
+
                 // Smooth heading interpolation
                 let diff = targetHeading - heading;
                 while (diff > Math.PI) diff -= 2 * Math.PI;
@@ -297,7 +297,7 @@ const DroneCam: React.FC = () => {
                     </div>
 
                     <div className="drone-side-panel" style={{ display: 'flex', flexDirection: 'column', gap: '16px', height: '100%' }}>
-                        
+
                         <div className="hud-panel" style={{ padding: '16px', flexShrink: 0 }}>
                             <h4 className="hud-text" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <Target size={16} /> SELECT ACTIVE ASSET

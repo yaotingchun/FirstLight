@@ -22,6 +22,8 @@ interface SimulationGridProps {
     time: number;
     aiDisconnectedRef: React.MutableRefObject<Set<string>>;
     aiReconnectedUntilTickRef: React.MutableRefObject<Map<string, number>>;
+    cameraPopupDroneId: string | null;
+    setCameraPopupDroneId: (id: string | null) => void;
 }
 
 export const getDroneThemeColor = (id?: string) => {
@@ -39,11 +41,26 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
     grid, drones, commLinks, survivors, pins,
     selectedPin, setSelectedPin, showSensors, 
     showTrails, setShowTrails, selectedTrailDroneId, setSelectedTrailDroneId,
-    getSectorProbability, time, aiDisconnectedRef, aiReconnectedUntilTickRef
+    getSectorProbability, time, aiDisconnectedRef, aiReconnectedUntilTickRef,
+    cameraPopupDroneId, setCameraPopupDroneId
 }) => {
+    const handleDroneClick = (droneId: string) => {
+        if (cameraPopupDroneId === droneId) {
+            setCameraPopupDroneId(null);
+        } else {
+            setCameraPopupDroneId(droneId);
+        }
+    };
+
+    const activeDroneForPopup = drones.find(d => d.id === cameraPopupDroneId);
     return (
         <div className="hud-panel" style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg width={GRID_W * CELL_SIZE} height={GRID_H * CELL_SIZE} style={{ border: '1px dashed rgba(0,255,204,0.2)', backgroundColor: '#050a10' }}>
+            <svg 
+                width={GRID_W * CELL_SIZE} 
+                height={GRID_H * CELL_SIZE} 
+                style={{ border: '1px dashed rgba(0,255,204,0.2)', backgroundColor: '#050a10', cursor: cameraPopupDroneId ? 'pointer' : 'default' }}
+                onClick={() => setCameraPopupDroneId(null)}
+            >
                 {/* Grid & Heatmap */}
                 {grid.map((row, y) =>
                     row.map((cell, x) => (
@@ -247,7 +264,15 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                 {drones.map(d => {
                     if (showTrails) return null;
                     return (
-                    <g key={d.id} transform={`translate(${d.x * CELL_SIZE + CELL_SIZE / 2}, ${d.y * CELL_SIZE + CELL_SIZE / 2})`}>
+                    <g 
+                        key={d.id} 
+                        transform={`translate(${d.x * CELL_SIZE + CELL_SIZE / 2}, ${d.y * CELL_SIZE + CELL_SIZE / 2})`}
+                        style={{ cursor: 'pointer' }}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleDroneClick(d.id);
+                        }}
+                    >
                         {(() => {
                             const isAiDisconnected = aiDisconnectedRef.current.has(d.id);
                             const isRecentlyReconnected = (aiReconnectedUntilTickRef.current.get(d.id) ?? -1) > time;
@@ -272,7 +297,7 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                                             strokeWidth="1"
                                             strokeDasharray="4"
                                             className="spin-xs"
-                                            style={{ opacity: 0.5, animation: 'spin 4s linear infinite' }}
+                                            style={{ opacity: 0.5, animation: 'spin 4s linear infinite', pointerEvents: 'none' }}
                                         />
                                     )}
                                     {d.mode === 'Relay' && (
@@ -282,9 +307,12 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                                             stroke="#0077ff"
                                             strokeWidth="1"
                                             strokeDasharray="8"
-                                            style={{ opacity: 0.2, animation: 'spin 8s linear infinite reverse' }}
+                                            style={{ opacity: 0.2, animation: 'spin 8s linear infinite reverse', pointerEvents: 'none' }}
                                         />
                                     )}
+                                    {/* Hit Area (Invisible but clickable) */}
+                                    <circle r="16" fill="rgba(0,0,0,0)" style={{ cursor: 'pointer' }} />
+
                                     {/* Drone blip */}
                                     <circle r="4" fill={droneColor} />
                                     <polygon points="0,-6 6,4 -6,4" fill={droneColor} />
@@ -476,6 +504,197 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                     </div>
                 </div>
             )}
+
+            {/* Drone Camera Popup */}
+            {activeDroneForPopup && (
+                <DroneCameraPopup 
+                    drone={activeDroneForPopup} 
+                    grid={grid}
+                />
+            )}
+        </div>
+    );
+};
+
+const DroneCameraPopup: React.FC<{ drone: Drone, grid: Sector[][] }> = ({ drone, grid }) => {
+    const canvasRef = React.useRef<HTMLCanvasElement>(null);
+    const [status, setStatus] = React.useState<'LIVE' | 'SEARCHING' | 'WAITING'>('WAITING');
+
+    // Simulated feed fallback
+    const sx = Math.max(0, Math.min(GRID_W - 1, Math.round(drone.x)));
+    const sy = Math.max(0, Math.min(GRID_H - 1, Math.round(drone.y)));
+    const currentSector = grid[sy]?.[sx];
+    const simulatedFeed = currentSector?.disasterImage;
+
+    React.useEffect(() => {
+        let animId: number;
+        const copyFrame = () => {
+            const sourceCanvas = document.querySelector('#hidden-popup-engine canvas') as HTMLCanvasElement | null;
+            const targetCanvas = canvasRef.current;
+            
+            if (sourceCanvas && targetCanvas) {
+                const ctx = targetCanvas.getContext('2d');
+                if (ctx) {
+                    // Optimized mirror using GPU-backed drawImage
+                    ctx.drawImage(sourceCanvas, 0, 0, targetCanvas.width, targetCanvas.height);
+                    if (status !== 'LIVE') setStatus('LIVE');
+                }
+            } else if (simulatedFeed) {
+                if (status !== 'LIVE') setStatus('LIVE');
+            } else {
+                if (status !== 'SEARCHING') setStatus('SEARCHING');
+            }
+            
+            animId = requestAnimationFrame(copyFrame);
+        };
+        
+        animId = requestAnimationFrame(copyFrame);
+        return () => cancelAnimationFrame(animId);
+    }, [drone.id, simulatedFeed, status]);
+
+    const isLive = status === 'LIVE';
+
+    function frameSourceExists() {
+        return !!document.querySelector('#hidden-popup-engine canvas');
+    }
+    
+    // Popup dimensions
+    const POPUP_W = 240;
+    const POPUP_H = 180;
+    const OFFSET = 20;
+
+    // Grid to screen
+    const screenX = drone.x * CELL_SIZE + CELL_SIZE / 2;
+    const screenY = drone.y * CELL_SIZE + CELL_SIZE / 2;
+
+    // Boundaries (700x700)
+    let left = screenX + OFFSET;
+    let top = screenY - POPUP_H - OFFSET;
+
+    if (left + POPUP_W > 700) {
+        left = screenX - POPUP_W - OFFSET;
+    }
+    if (top < 0) {
+        top = screenY + OFFSET;
+    }
+
+    return (
+        <div style={{
+            position: 'absolute',
+            left,
+            top,
+            width: POPUP_W,
+            height: POPUP_H,
+            background: 'rgba(5, 10, 16, 0.95)',
+            border: '1px solid #00ffcc',
+            boxShadow: '0 0 20px rgba(0, 255, 204, 0.3)',
+            zIndex: 100,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            pointerEvents: 'auto',
+            transition: 'left 0.1s linear, top 0.1s linear' // Smooth follow
+        }}
+        onClick={(e) => e.stopPropagation()}
+        >
+            {/* Title Bar */}
+            <div style={{
+                background: 'rgba(0, 255, 204, 0.15)',
+                padding: '4px 8px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                borderBottom: '1px solid rgba(0, 255, 204, 0.3)',
+                flexShrink: 0
+            }}>
+                <div style={{ fontSize: '0.65rem', color: '#00ffcc', fontWeight: 'bold', fontFamily: 'var(--font-mono)', letterSpacing: '1px' }}>
+                    OPTICS: {drone.id}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: isLive ? '#00ffcc' : '#ff4444', boxShadow: isLive ? '0 0 4px #00ffcc' : 'none' }} />
+                    <span style={{ fontSize: '0.5rem', color: isLive ? '#00ffcc' : '#ff4444', fontFamily: 'var(--font-mono)' }}>
+                        {isLive ? 'LIVE MIRROR' : 'OFFLINE'}
+                    </span>
+                </div>
+            </div>
+
+            {/* Video Feed */}
+            <div style={{ flex: 1, background: '#000', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                {/* Primary: Direct Canvas Mirror */}
+                <canvas 
+                    ref={canvasRef} 
+                    width={240} 
+                    height={180} 
+                    style={{ 
+                        width: '100%', 
+                        height: '100%', 
+                        objectFit: 'cover', 
+                        display: frameSourceExists() ? 'block' : 'none' 
+                    }} 
+                />
+
+                {/* Secondary: Simulated Terrestrial Feed */}
+                {!frameSourceExists() && simulatedFeed && (
+                    <img 
+                        src={simulatedFeed} 
+                        alt="Simulated Feed" 
+                        style={{ 
+                            width: '100%', 
+                            height: '100%', 
+                            objectFit: 'cover', 
+                            filter: 'grayscale(1) contrast(1.5) brightness(0.8)' 
+                        }} 
+                    />
+                )}
+
+                {/* Tertiary: Scanning State */}
+                {!frameSourceExists() && !simulatedFeed && (
+                    <div style={{ textAlign: 'center', padding: '20px' }}>
+                        <div className="animate-pulse" style={{ marginBottom: '12px' }}>
+                            <Radio size={32} color="rgba(0, 255, 204, 0.4)" />
+                        </div>
+                        <div style={{ fontSize: '0.6rem', color: 'rgba(0, 255, 204, 0.6)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                            {currentSector?.scanned ? 'UPLINK REQUIRED...' : 'LINKING ASSET...'}
+                        </div>
+                        <div style={{ fontSize: '0.5rem', color: 'rgba(0, 255, 204, 0.3)', marginTop: '4px', fontFamily: 'var(--font-mono)' }}>
+                            INITIALIZING INDEPENDENT UPLINK...
+                        </div>
+                        <div style={{ width: '100px', height: '2px', background: 'rgba(0, 255, 204, 0.1)', marginTop: '8px', marginInline: 'auto', position: 'relative', overflow: 'hidden' }}>
+                            <div style={{ position: 'absolute', width: '30%', height: '100%', background: '#00ffcc', animation: 'scan-line 1.5s infinite linear' }} />
+                        </div>
+                    </div>
+                )}
+                
+                {/* HUD Overlay */}
+                <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', border: '1px solid rgba(0, 255, 204, 0.1)', boxSizing: 'border-box' }}>
+                    <div style={{ position: 'absolute', top: 4, left: 4, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <div style={{ fontSize: '0.5rem', color: '#00ffcc', fontFamily: 'var(--font-mono)', textShadow: '1px 1px 1px #000' }}>BAT: {Math.floor(drone.battery)}%</div>
+                        <div style={{ fontSize: '0.5rem', color: '#00ffcc', fontFamily: 'var(--font-mono)', textShadow: '1px 1px 1px #000' }}>ALT: {drone.mode === 'Micro' ? '80m' : '300m'}</div>
+                    </div>
+                    <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.3 }}>
+                        <svg width="40" height="40" viewBox="0 0 40 40">
+                            <line x1="20" y1="0" x2="20" y2="10" stroke="#00ffcc" strokeWidth="0.5" />
+                            <line x1="20" y1="30" x2="20" y2="40" stroke="#00ffcc" strokeWidth="0.5" />
+                            <line x1="0" y1="20" x2="10" y2="20" stroke="#00ffcc" strokeWidth="0.5" />
+                            <line x1="30" y1="20" x2="40" y2="20" stroke="#00ffcc" strokeWidth="0.5" />
+                            <circle cx="20" cy="20" r="15" fill="none" stroke="#00ffcc" strokeWidth="0.5" strokeDasharray="2 1" />
+                        </svg>
+                    </div>
+                </div>
+            </div>
+
+            {/* CRT Lines Effect */}
+            <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                background: 'linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03))',
+                backgroundSize: '100% 2px, 3px 100%',
+                pointerEvents: 'none',
+                opacity: 0.4
+            }} />
         </div>
     );
 };
