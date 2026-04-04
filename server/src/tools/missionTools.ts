@@ -17,6 +17,7 @@
  */
 
 import { droneStore, GRID_W, GRID_H, gridToLabel } from '../droneStore.js';
+import { appendOrchestratorRecord } from '../orchestratorChat.js';
 import type { 
     SwarmStatus,
     MissionStats, 
@@ -272,6 +273,55 @@ export async function setSimulationRunning(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// TOOL: setMicroScanOnly
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface SetMicroScanOnlyParams {
+    enabled: boolean;
+}
+
+/**
+ * Toggle the global "Micro Scan Only" mode.
+ * 
+ * When enabled, the local autonomy engine will force all drones evaluating hotspots
+ * to use 'Micro' scan mode, regardless of the cell's probability.
+ */
+export async function setMicroScanOnly(
+    params: SetMicroScanOnlyParams
+): Promise<MCPToolResult<{ message: string; enabled: boolean }>> {
+    const current = droneStore.isMicroScanOnly();
+    if (current !== params.enabled) {
+        droneStore.setMicroScanOnly(params.enabled);
+        appendOrchestratorRecord(
+            'system',
+            `**DIRECTIVE OVERRIDE:** Micro Scan Only mode ${params.enabled ? 'ENABLED' : 'DISABLED'} by operator.`
+        );
+
+        if (params.enabled) {
+            const drones = droneStore.getAllDrones();
+            for (const d of drones) {
+                if (d.isActive && !d.id.startsWith('RLY-') && d.mode !== 'Charging' && d.mode !== 'Relay') {
+                    appendOrchestratorRecord(
+                        'action',
+                        `Acknowledged global directive. Engaging Micro scan mode immediately.`,
+                        d.id
+                    );
+                }
+            }
+        }
+    }
+
+    return {
+        success: true,
+        data: {
+            enabled: params.enabled,
+            message: `Micro Scan Only mode ${params.enabled ? 'enabled' : 'disabled'}.`
+        },
+        timestamp: Date.now()
+    };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // TOOL: getMissionBriefing
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -461,5 +511,6 @@ export const missionTools = {
     resetMission,
     getMissionBriefing,
     getSectorAssignments,
-    setSimulationRunning
+    setSimulationRunning,
+    setMicroScanOnly
 };

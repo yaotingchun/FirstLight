@@ -91,6 +91,9 @@ interface DroneStateStore {
 
     // Aggregated swarm knowledge (updated by relays even when offline)
     swarmKnowledge: SwarmKnowledge;
+
+    // Global configuration
+    microScanOnly: boolean;
 }
 
 export type CommandType = 
@@ -149,6 +152,7 @@ export class DroneStore {
             sensorDetections: [],
             lastUpdated: 0,
         },
+        microScanOnly: false,
     };
     
     private listeners: Set<(state: DroneStateStore) => void> = new Set();
@@ -262,6 +266,7 @@ export class DroneStore {
                 sensorDetections: [],
                 lastUpdated: 0,
             },
+            microScanOnly: false,
         };
         this.notify();
     }
@@ -272,6 +277,15 @@ export class DroneStore {
 
     getAutoRecallThreshold(droneId: string): number | undefined {
         return this.state.autoRecallThresholds.get(droneId);
+    }
+
+    setMicroScanOnly(enabled: boolean): void {
+        this.state.microScanOnly = enabled;
+        this.notify();
+    }
+
+    isMicroScanOnly(): boolean {
+        return this.state.microScanOnly;
     }
 
     // ─────────────────────────────────────────────────────────────────────

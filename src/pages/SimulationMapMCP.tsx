@@ -6,6 +6,7 @@ import { useSimulationMCP } from '../hooks/useSimulationMCP';
 import { SimulationGrid } from '../components/SimulationMap/SimulationGrid';
 import { SimulationDashboard } from '../components/SimulationMap/SimulationDashboard';
 import { MCPChatPanel } from '../components/SimulationMap/MCPChatPanel';
+import * as mcpClient from '../services/mcpClient';
 
 const SimulationMapMCP: React.FC = () => {
     const aiBusyRef = useRef(false);
@@ -25,7 +26,8 @@ const SimulationMapMCP: React.FC = () => {
         metricsRef,
         toggleRunning, resetSim,
         getSectorProbability, performTickCore,
-        randomizeBattery, setRandomizeBattery
+        randomizeBattery, setRandomizeBattery,
+        microScanOnly, toggleMicroScanOnly
     } = useSharedSimulation();
 
     const {
@@ -41,7 +43,7 @@ const SimulationMapMCP: React.FC = () => {
         chatDragRef,
         chatSize, setChatSize,
         chatResizeRef,
-        chatMessages,
+        chatMessages, setChatMessages,
         chatScrollRef,
 
         syncToMcp,
@@ -134,6 +136,18 @@ const SimulationMapMCP: React.FC = () => {
                     randomizeBattery={randomizeBattery}
                     setRandomizeBattery={setRandomizeBattery}
                     running={running}
+                    microScanOnly={microScanOnly}
+                    onToggleMicroScanOnly={() => {
+                        const nextState = !microScanOnly;
+                        toggleMicroScanOnly(nextState);
+                        setChatMessages(prev => [...prev, { role: 'system', text: `[OVERRIDE] Micro Scan Only mode ${nextState ? 'ENABLED' : 'DISABLED'} by operator.` }]);
+                        // Send command to MCP server
+                        mcpClient.mcpTools.setMicroScanOnly(nextState).catch(err => {
+                            console.error('Failed to set microScanOnly:', err);
+                            // Revert on failure
+                            toggleMicroScanOnly(!nextState);
+                        });
+                    }}
                 />
             </div>
 
