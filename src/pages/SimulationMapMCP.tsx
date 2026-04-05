@@ -1,4 +1,4 @@
-import React, { useRef, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import { Play, Pause, FileText, Globe } from 'lucide-react';
 
 import { useSharedSimulation } from '../context/SimulationContext';
@@ -8,8 +8,6 @@ import { SimulationDashboard } from '../components/SimulationMap/SimulationDashb
 import { MCPChatPanel } from '../components/SimulationMap/MCPChatPanel';
 
 const SimulationMapMCP: React.FC = () => {
-    const aiBusyRef = useRef(false);
-
     const {
         running, setRunning,
         speed,
@@ -26,7 +24,10 @@ const SimulationMapMCP: React.FC = () => {
         toggleRunning, resetSim,
         getSectorProbability, performTickCore,
         randomizeBattery, setRandomizeBattery,
-        showActualMap, setShowActualMap
+        showActualMap, setShowActualMap,
+        timeLimit, setTimeLimit,
+        useTimeLimit, setUseTimeLimit,
+        aiBusyRef
     } = useSharedSimulation();
 
     const {
@@ -51,7 +52,7 @@ const SimulationMapMCP: React.FC = () => {
     } = useSimulationMCP(
         timeRef, running, setRunning, dronesRef, gridRef, pinsRef,
         autoRecallThresholdsRef, relayTakeoverTargetRef, sensorWeightsRef, metricsRef,
-        resetSim, aiBusyRef, survivorsRef
+        resetSim, aiBusyRef, survivorsRef, timeLimit, useTimeLimit
     );
 
     // The core tick loop wrapped to pass the MCP sync functions
@@ -83,7 +84,47 @@ const SimulationMapMCP: React.FC = () => {
                     </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '8px', background: 'var(--panel-bg)', padding: '6px 12px', border: '1px solid var(--panel-border)', borderRadius: '4px', marginBottom: '4px' }}>
+                <div style={{ display: 'flex', gap: '8px', background: 'var(--panel-bg)', padding: '6px 12px', border: '1px solid var(--panel-border)', borderRadius: '4px', marginBottom: '4px', alignItems: 'center' }}>
+                    {/* Time Budget Controls */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingRight: '12px', borderRight: '1px solid rgba(255, 255, 255, 0.1)', marginRight: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <input
+                                type="checkbox"
+                                id="use-time-limit"
+                                checked={useTimeLimit}
+                                onChange={(e) => setUseTimeLimit(e.target.checked)}
+                                disabled={running}
+                                style={{ cursor: 'pointer', accentColor: '#00ffcc' }}
+                            />
+                            <label htmlFor="use-time-limit" style={{ fontSize: '0.65rem', color: useTimeLimit ? '#00ffcc' : '#6b8a8b', cursor: 'pointer', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                                TIME BUDGET
+                            </label>
+                        </div>
+
+                        {useTimeLimit && (
+                            <div style={{ position: 'relative', width: '80px' }}>
+                                <input
+                                    type="number"
+                                    value={timeLimit}
+                                    onChange={(e) => setTimeLimit(parseInt(e.target.value) || 0)}
+                                    disabled={running}
+                                    style={{
+                                        width: '100%',
+                                        background: 'rgba(0,0,0,0.4)',
+                                        border: '1px solid rgba(0, 255, 204, 0.3)',
+                                        color: '#00ffcc',
+                                        padding: '4px 8px',
+                                        fontSize: '0.75rem',
+                                        fontFamily: 'monospace',
+                                        outline: 'none',
+                                        textAlign: 'right'
+                                    }}
+                                />
+                                <span style={{ position: 'absolute', left: '4px', top: '50%', transform: 'translateY(-50%)', fontSize: '0.5rem', color: '#6b8a8b' }}>SEC</span>
+                            </div>
+                        )}
+                    </div>
+
                     <button onClick={toggleRunning} className="hud-btn" style={{ padding: '6px 12px', fontSize: '0.75rem', display: 'flex', gap: '6px', alignItems: 'center', cursor: 'pointer' }}>
                         {running ? <Pause size={14} /> : <Play size={14} />} {running ? 'PAUSE' : 'START SCAN'}
                     </button>

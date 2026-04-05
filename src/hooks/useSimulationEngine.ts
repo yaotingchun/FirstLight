@@ -32,6 +32,8 @@ export const useSimulationEngine = (
     const [showTrails, setShowTrails] = useState(false);
     const [selectedTrailDroneId, setSelectedTrailDroneId] = useState<string | 'all'>('all');
     const [showActualMap, setShowActualMap] = useState(false);
+    const [timeLimit, setTimeLimit] = useState<number>(300);
+    const [useTimeLimit, setUseTimeLimit] = useState<boolean>(true);
 
     const initialSurvivors = createSurvivors();
     const gridRef = useRef<Sector[][]>(createGrid(initialSurvivors));
@@ -42,7 +44,7 @@ export const useSimulationEngine = (
     const commLinksRef = useRef<CommEdge[]>([]);
     const swarmMessagesRef = useRef<SwarmMessage[]>([]);
     const sensorWeightsRef = useRef(gridDataService.getSensorWeights());
-    
+
     const autoRecallThresholdsRef = useRef<Map<string, number>>(new Map());
     const failureEventsRef = useRef<FailureEvent[]>([]);
     const aiDisconnectedRef = useRef<Set<string>>(new Set());
@@ -57,6 +59,7 @@ export const useSimulationEngine = (
 
     const zonesRef = useRef<SearchZone[]>([]);
     const searchMemoryRef = useRef<SearchMemory>(createSearchMemory());
+    const aiBusyRef = useRef(false);
     const activeMissionsRef = useRef<DroneMission[]>([]);
     const metricsRef = useRef({
         repeatedScanRate: 0,
@@ -191,18 +194,18 @@ export const useSimulationEngine = (
         relayTakeoverTargetRef.current = { ...RELAY_DEFAULT_TARGET };
         relaySwapCooldownUntilTickRef.current = 0;
         lastFieldRelayIdRef.current = 'RLY-Prime';
-        
+
         zonesRef.current = [];
         searchMemoryRef.current = createSearchMemory();
         activeMissionsRef.current = [];
         metricsRef.current = {
-            repeatedScanRate: 0, 
-            averageZoneCoverage: 0, 
+            repeatedScanRate: 0,
+            averageZoneCoverage: 0,
             missionTimeSec: 0,
-            meanProbabilityScanned: 0, 
-            totalScans: 0, 
+            meanProbabilityScanned: 0,
+            totalScans: 0,
             totalUniqueScans: 0,
-            totalRepeatScans: 0, 
+            totalRepeatScans: 0,
             uniqueProbSum: 0,
         };
         setSelectedPin(null);
@@ -267,7 +270,7 @@ export const useSimulationEngine = (
         const totalCells = GRID_W * GRID_H;
         const scannedCells = grid.reduce((sum, row) => sum + row.filter(sec => sec.scanned).length, 0);
         const scanProgress = totalCells > 0 ? (scannedCells / totalCells) * 100 : 0;
-        
+
         // Sync mission coverage metric in real-time
         metricsRef.current.averageZoneCoverage = scanProgress;
 
@@ -494,7 +497,7 @@ export const useSimulationEngine = (
                 d.battery = Math.min(100, d.battery + 0.5);
                 if (d.battery >= 100) {
                     if (d.id.startsWith('RLY')) {
-                        return; 
+                        return;
                     }
 
                     d.battery = 100;
@@ -566,9 +569,9 @@ export const useSimulationEngine = (
             }
 
             if (d.mode === 'Relay') {
-                d.battery = Math.max(0, d.battery - 0.035); 
+                d.battery = Math.max(0, d.battery - 0.035);
                 const relayDistToTarget = Math.sqrt(Math.pow(d.tx - d.x, 2) + Math.pow(d.ty - d.y, 2));
-                
+
                 if (relayDistToTarget < 0.3 && d.tx === BASE_X && d.ty === BASE_Y) {
                     d.x = BASE_X;
                     d.y = BASE_Y;
@@ -605,11 +608,11 @@ export const useSimulationEngine = (
                     d.ty = BASE_STATION.y;
                 }
             }
-            
+
             const distToBase = Math.sqrt(Math.pow(BASE_X - d.x, 2) + Math.pow(BASE_Y - d.y, 2));
             const batteryReqForReturn = distToBase * 0.3;
-            const criticalBattery = Math.max(5, batteryReqForReturn + 2); 
-            const lowBattery = Math.max(20, criticalBattery + 15);        
+            const criticalBattery = Math.max(5, batteryReqForReturn + 2);
+            const lowBattery = Math.max(20, criticalBattery + 15);
             const distTargetToBase = Math.sqrt(Math.pow(BASE_X - d.tx, 2) + Math.pow(BASE_Y - d.ty, 2));
 
             if (d.battery < lowBattery && d.tx !== BASE_X && d.ty !== BASE_Y) {
@@ -695,23 +698,23 @@ export const useSimulationEngine = (
 
             // ── Opportunistic Scanning (Phase 12) ───────────────────────
             if ((d.mode as string) !== 'Charging' && (isNewCell || isPeriodicMicroScan)) {
-                    // Surgical Skip: if this EXACT cell is a Pin, only scan if it was UNSCANNED
-                    const isPinned = pinsRef.current.some(p => Math.round(p.x) === sx && Math.round(p.y) === sy);
-                    const shouldScan = !(isPinned && sector.scanned && d.mode !== 'Micro');
+                // Surgical Skip: if this EXACT cell is a Pin, only scan if it was UNSCANNED
+                const isPinned = pinsRef.current.some(p => Math.round(p.x) === sx && Math.round(p.y) === sy);
+                const shouldScan = !(isPinned && sector.scanned && d.mode !== 'Micro');
 
-                    if (shouldScan) {
-                        d.lastScannedX = sx;
-                        d.lastScannedY = sy;
+                if (shouldScan) {
+                    d.lastScannedX = sx;
+                    d.lastScannedY = sy;
 
                     const isFirstScan = !sector.scanned;
                     sector.scanned = true;
                     sector.lastScanned = timeRef.current;
-                    
+
                     const jitter = (Math.random() * 0.04) - 0.02;
                     const rawProb = Math.max(0, Math.min(1.0, getSectorProbability(sx, sy) + jitter));
                     let newProb = rawProb;
                     const survivorAtSector = survivors.find(s => s.x === sx && s.y === sy && !s.found);
-                    
+
                     if (!isPinned && survivorAtSector && rawProb >= THRESHOLD_FOUND) {
                         newProb = 0.79 + (Math.floor(Math.random() * 8) / 100);
                     }
@@ -723,7 +726,7 @@ export const useSimulationEngine = (
                             sx, sy, timeRef.current, newProb > THRESHOLD_MICRO
                         );
                     }
-                    
+
                     if (isFirstScan) {
                         metricsRef.current.totalUniqueScans++;
                         metricsRef.current.uniqueProbSum += newProb;
@@ -775,90 +778,90 @@ export const useSimulationEngine = (
                 }
             }
 
-                // ── Target Arrival / Routing Logic ────────────────────────
-                if (distToTarget < 0.5) {
-                    if (d.tx === BASE_X && d.ty === BASE_Y) {
-                        if (d.battery <= 50 || missionComplete || scanProgress >= 100) {
-                            d.mode = 'Charging';
-                            return;
-                        }
+            // ── Target Arrival / Routing Logic ────────────────────────
+            if (distToTarget < 0.5) {
+                if (d.tx === BASE_X && d.ty === BASE_Y) {
+                    if (d.battery <= 50 || missionComplete || scanProgress >= 100) {
+                        d.mode = 'Charging';
+                        return;
                     }
+                }
 
-                    if (d.mode === 'Wide') {
-                        const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, -1], [-1, 1], [1, -1]];
-                        let options = dirs
-                            .map(dir => ({ x: sx + dir[0], y: sy + dir[1] }))
-                            .filter(pos => pos.x >= 0 && pos.x < GRID_W && pos.y >= 0 && pos.y < GRID_H)
-                            .filter(pos => {
-                                const s = grid[pos.y][pos.x];
-                                const isPinned = pinsRef.current.some(p => Math.abs(p.x - pos.x) <= 1.5 && Math.abs(p.y - pos.y) <= 1.5);
-                                if (isPinned) return false;
-                                const isHighProbHotspot = s.prob > 0.6 && (timeRef.current - s.lastVisitedTick) > 10;
-                                const isNotOvercrowded = s.currentDrones < 2;
-                                return (!s.scanned || isHighProbHotspot) && isNotOvercrowded;
-                            });
-
-                        const filtered = options.filter(opt => {
-                            return !drones.some(other => other.id !== d.id && Math.round(other.tx) === opt.x && Math.round(other.ty) === opt.y);
+                if (d.mode === 'Wide') {
+                    const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, -1], [-1, 1], [1, -1]];
+                    let options = dirs
+                        .map(dir => ({ x: sx + dir[0], y: sy + dir[1] }))
+                        .filter(pos => pos.x >= 0 && pos.x < GRID_W && pos.y >= 0 && pos.y < GRID_H)
+                        .filter(pos => {
+                            const s = grid[pos.y][pos.x];
+                            const isPinned = pinsRef.current.some(p => Math.abs(p.x - pos.x) <= 1.5 && Math.abs(p.y - pos.y) <= 1.5);
+                            if (isPinned) return false;
+                            const isHighProbHotspot = s.prob > 0.6 && (timeRef.current - s.lastVisitedTick) > 10;
+                            const isNotOvercrowded = s.currentDrones < 2;
+                            return (!s.scanned || isHighProbHotspot) && isNotOvercrowded;
                         });
-                        if (filtered.length > 0) options = filtered;
 
-                        if (options.length > 0) {
-                            options.sort((a, b) => {
-                                const cellA = grid[a.y][a.x];
-                                const cellB = grid[b.y][b.x];
-                                const unscannedBonusA = cellA.scanned ? 0 : 0.5;
-                                const unscannedBonusB = cellB.scanned ? 0 : 0.5;
-                                const scoreA = cellA.prob + unscannedBonusA + (cellA.pheromone * 0.1);
-                                const scoreB = cellB.prob + unscannedBonusB + (cellB.pheromone * 0.1);
-                                return scoreB - scoreA;
-                            });
-                            setDroneTarget(d, options[0].x, options[0].y);
-                        } else if (zonesRef.current.length > 0) {
-                            const availZone = zonesRef.current.find(z =>
-                                z.unscannedCount > 0 && z.assignedDroneIds.length < 2
-                            );
-                            if (availZone) {
-                                setDroneTarget(d, availZone.centroid.x, availZone.centroid.y);
-                            }
+                    const filtered = options.filter(opt => {
+                        return !drones.some(other => other.id !== d.id && Math.round(other.tx) === opt.x && Math.round(other.ty) === opt.y);
+                    });
+                    if (filtered.length > 0) options = filtered;
+
+                    if (options.length > 0) {
+                        options.sort((a, b) => {
+                            const cellA = grid[a.y][a.x];
+                            const cellB = grid[b.y][b.x];
+                            const unscannedBonusA = cellA.scanned ? 0 : 0.5;
+                            const unscannedBonusB = cellB.scanned ? 0 : 0.5;
+                            const scoreA = cellA.prob + unscannedBonusA + (cellA.pheromone * 0.1);
+                            const scoreB = cellB.prob + unscannedBonusB + (cellB.pheromone * 0.1);
+                            return scoreB - scoreA;
+                        });
+                        setDroneTarget(d, options[0].x, options[0].y);
+                    } else if (zonesRef.current.length > 0) {
+                        const availZone = zonesRef.current.find(z =>
+                            z.unscannedCount > 0 && z.assignedDroneIds.length < 2
+                        );
+                        if (availZone) {
+                            setDroneTarget(d, availZone.centroid.x, availZone.centroid.y);
                         }
                     }
+                }
 
-                    if (d.mode === 'Micro') {
-                        const jitterProb = Math.max(0, Math.min(1.0, getSectorProbability(sx, sy)));
-                        if (jitterProb < THRESHOLD_MICRO || d.battery < lowBattery) {
-                            d.mode = 'Wide';
-                            d.lockTarget = false;
-                            d.preventReassignment = false;
-                        } else {
-                            const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, -1], [-1, 1], [1, -1]];
-                            let validDirs = dirs.filter(dir => {
-                                const nx = sx + dir[0]; const ny = sy + dir[1];
-                                return nx >= 0 && nx < GRID_W && ny >= 0 && ny < GRID_H;
-                            });
+                if (d.mode === 'Micro') {
+                    const jitterProb = Math.max(0, Math.min(1.0, getSectorProbability(sx, sy)));
+                    if (jitterProb < THRESHOLD_MICRO || d.battery < lowBattery) {
+                        d.mode = 'Wide';
+                        d.lockTarget = false;
+                        d.preventReassignment = false;
+                    } else {
+                        const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, -1], [-1, 1], [1, -1]];
+                        let validDirs = dirs.filter(dir => {
+                            const nx = sx + dir[0]; const ny = sy + dir[1];
+                            return nx >= 0 && nx < GRID_W && ny >= 0 && ny < GRID_H;
+                        });
 
-                            const filteredDirs = validDirs.filter(dir => {
-                                const nx = sx + dir[0]; const ny = sy + dir[1];
-                                return !drones.some(other => other.id !== d.id && other.mode === 'Micro' && Math.round(other.tx) === nx && Math.round(other.ty) === ny);
-                            });
-                            if (filteredDirs.length > 0) validDirs = filteredDirs;
+                        const filteredDirs = validDirs.filter(dir => {
+                            const nx = sx + dir[0]; const ny = sy + dir[1];
+                            return !drones.some(other => other.id !== d.id && other.mode === 'Micro' && Math.round(other.tx) === nx && Math.round(other.ty) === ny);
+                        });
+                        if (filteredDirs.length > 0) validDirs = filteredDirs;
 
-                            validDirs.sort((a, b) => {
-                                const probA = grid[sy + a[1]][sx + a[0]].prob;
-                                const probB = grid[sy + b[1]][sx + b[0]].prob;
-                                const noiseA = Math.random() * 0.02;
-                                const noiseB = Math.random() * 0.02;
-                                return (probB + noiseB) - (probA + noiseA);
-                            });
+                        validDirs.sort((a, b) => {
+                            const probA = grid[sy + a[1]][sx + a[0]].prob;
+                            const probB = grid[sy + b[1]][sx + b[0]].prob;
+                            const noiseA = Math.random() * 0.02;
+                            const noiseB = Math.random() * 0.02;
+                            return (probB + noiseB) - (probA + noiseA);
+                        });
 
-                            if (validDirs.length > 0) {
-                                const move = validDirs[0];
-                                setDroneTarget(d, sx + move[0], sy + move[1]);
-                            }
+                        if (validDirs.length > 0) {
+                            const move = validDirs[0];
+                            setDroneTarget(d, sx + move[0], sy + move[1]);
                         }
                     }
-                } else {
-                    // ── Physical Movement Logic ─────────────────────────
+                }
+            } else {
+                // ── Physical Movement Logic ─────────────────────────
                 const moveSpeed = d.mode === 'Wide' ? 0.3 : 0.075;
                 let totalMove = Math.min(moveSpeed, distToTarget);
                 let angle = Math.atan2(d.ty - d.y, d.tx - d.x);
@@ -993,14 +996,14 @@ export const useSimulationEngine = (
                 if (drone.battery < lowBattery) continue;
 
                 const distToTarget = Math.sqrt(Math.pow(drone.tx - drone.x, 2) + Math.pow(drone.ty - drone.y, 2));
-                
+
                 const isDivertable = distToTarget < 0.5 || drone.mode === 'Wide' || distToTarget > 3.0;
 
                 if (isDivertable && !drone.preventReassignment) {
                     setDroneTarget(drone, mission.targetX, mission.targetY);
 
                     const distToNewTarget = Math.sqrt(Math.pow(drone.tx - drone.x, 2) + Math.pow(drone.ty - drone.y, 2));
-                    
+
                     if (mission.action === 'micro_scan') {
                         if (distToNewTarget < 1.5) {
                             drone.mode = 'Micro';
@@ -1068,6 +1071,8 @@ export const useSimulationEngine = (
         selectedTrailDroneId, setSelectedTrailDroneId,
         randomizeBattery, setRandomizeBattery,
         showActualMap, setShowActualMap,
+        timeLimit, setTimeLimit,
+        useTimeLimit, setUseTimeLimit,
 
         // Refs
         gridRef,
@@ -1090,6 +1095,7 @@ export const useSimulationEngine = (
         searchMemoryRef,
         activeMissionsRef,
         metricsRef,
+        aiBusyRef,
 
         // Handlers
         toggleRunning,

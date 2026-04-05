@@ -261,6 +261,7 @@ function buildStateSummary(): string {
         `avgBattery=${stats.averageBattery.toFixed(1)}%`,
         `meanProbabilityScanned=${stats.meanProbabilityScanned?.toFixed(3) || 0}`,
         `imageScannedCells=${grid.flat().filter(c => c.scanned && !!c.disasterImage).length}`,
+        `missionTimeRemaining=${stats.missionTimeRemaining !== null ? stats.missionTimeRemaining + 's' : 'N/A'} (Limit: ${stats.missionTimeLimit !== null ? stats.missionTimeLimit + 's' : 'none'})`,
         '',
         'DRONES:',
         droneSummary || '(none synced yet)',
@@ -283,7 +284,26 @@ function parseDecision(raw: string): ParsedDecision | null {
     try {
         // Extract the <Thinking> block
         const thinkingMatch = raw.match(/<Thinking>\s*([\s\S]*?)\s*<\/Thinking>/i);
-        const reasoning = thinkingMatch ? thinkingMatch[1].trim() : '';
+        let reasoning = thinkingMatch ? thinkingMatch[1].trim() : '';
+
+        // Fallback: If no <Thinking> tags, try to take everything before the <Action> block
+        if (!reasoning) {
+            const actionStartIndex = raw.toLowerCase().indexOf('<action>');
+            if (actionStartIndex !== -1) {
+                reasoning = raw.substring(0, actionStartIndex).trim();
+            } else if (!raw.toLowerCase().includes('</action>')) {
+                // If NO tags at all, the whole thing might be reasoning
+                reasoning = raw.trim();
+            }
+        }
+
+        // Clean stray tags from reasoning if they were captured by the fallback
+        if (reasoning) {
+            reasoning = reasoning
+                .replace(/<\/?thinking>/gi, '')
+                .replace(/<\/?action>/gi, '')
+                .trim();
+        }
 
         // Extract the <Action> block
         const actionMatch = raw.match(/<Action>\s*([\s\S]*?)\s*<\/Action>/i);
@@ -635,7 +655,7 @@ export async function processOrchestratorChat(message: string): Promise<{
 
         const systemPrompt = `You are FirstLight rescue orchestrator AI.
 
-You MUST respond using the following strict format consisting of a <Thinking> block followed by an <Action> block.
+You MUST ALWAYS respond using the following strict format consisting of a <Thinking> block followed by an <Action> block. DO NOT omit these tags.
 
 <Thinking>
 - Output your internal analysis here. Evaluate zones, coverage, drone states, and explicit visual analysis of captured images.
@@ -675,6 +695,12 @@ Critical rules:
   2. If scanProgress >= 100% and ANY drone is still in "Micro" mode, wait and let them finish (no_action, or move them closer to signals). DO NOT recall them.
   3. If scanProgress >= 100% and NO drones are in "Micro" mode, check positions. If any drone is NOT at base (dist > 1 from 10,19), issue \`recall_drone\` ONLY for those drones.
   4. If scanProgress >= 100% and ALL drones are safe at base (near 10,19 or battery=100 or mode=Charging), issue \`set_simulation_state\` with \`"running": false\` to successfully end the mission.
+- EMERGENCY SEARCH RULES (Apply ONLY if missionTimeLimit is NOT null):
+  1. If missionTimeLimit is null: ignore these rules and focus on systematic coverage.
+  2. TREAT AS EMERGENCY: The time budget indicates a life-critical emergency. Maximize drone functionality and sensor coverage at all costs.
+  3. NO RTB ON TIMEOUT: Search drones are NOT required to return to base when missionTimeRemaining reaches 0. They must continue their assigned tasks (searching or micro-scanning) to maximize discovery until the mission is manually stopped or battery is CRITICAL (< 10%).
+  4. If missionTimeRemaining < 60s: ACCELERATE. Prioritize highest probability zones (p > 0.6) and ignore low-priority areas. Switch search drones to 'Wide' mode to cover vast areas quickly if they aren't already on a signal.
+  5. If missionTimeRemaining < 20s: FINAL PUSH. Prioritize any remaining hotspots (p > 0.8) regardless of distance. Keep drones in 'Micro' mode if they have a signal to ensure detection. DO NOT issue recall_drone unless battery is < 10%.
 - Use no_action only when the simulation is paused and there is nothing to do, or all drones are already optimally placed.`;
 
         const userPrompt = `STATE:\n${stateSummary}\n\nUSER:\n${message}`;

@@ -54,21 +54,21 @@ export function labelToGrid(label: string): { x: number; y: number } {
 interface DroneStateStore {
     // Drone states
     drones: Map<string, DroneStatus>;
-    
+
     // Grid state
     grid: SectorScanResult[][];
-    
+
     // Communication network
     commLinks: CommLink[];
-    
+
     // Mission data
     survivors: Map<string, SurvivorInfo>;
     foundSurvivors: SurvivorInfo[];
-    
+
     // Simulation state
     currentTick: number;
     isRunning: boolean;
-    
+
     // Advanced Mission Analytics
     averageZoneCoverage: number;
     meanProbabilityScanned: number;
@@ -76,7 +76,8 @@ interface DroneStateStore {
     missionTimeSec: number;
     sensorWeights: SensorWeightsSnapshot;
     totalEstimatedSurvivors: number;
-    
+    missionTimeLimit: number;
+
     // Pending commands (to be picked up by frontend)
     pendingCommands: PendingCommand[];
 
@@ -93,7 +94,7 @@ interface DroneStateStore {
     swarmKnowledge: SwarmKnowledge;
 }
 
-export type CommandType = 
+export type CommandType =
     | 'SET_TARGET'
     | 'SET_MODE'
     | 'RECALL_TO_BASE'
@@ -137,6 +138,7 @@ export class DroneStore {
             wifi: { base: 0.1, conf: 0.8, color: '#ff00ff' },
         },
         totalEstimatedSurvivors: 3,
+        missionTimeLimit: 300, // Default 5 minutes
         pendingCommands: [],
         autoRecallThresholds: new Map(),
         relayStates: new Map(),
@@ -150,7 +152,7 @@ export class DroneStore {
             lastUpdated: 0,
         },
     };
-    
+
     private listeners: Set<(state: DroneStateStore) => void> = new Set();
 
     private initializeGrid(): SectorScanResult[][] {
@@ -226,7 +228,7 @@ export class DroneStore {
         if (stats.repeatedScanRate !== undefined) this.state.repeatedScanRate = stats.repeatedScanRate;
         if (stats.missionTimeSec !== undefined) this.state.missionTimeSec = stats.missionTimeSec;
         if (stats.sensorWeights !== undefined) this.state.sensorWeights = stats.sensorWeights;
-        if (stats.totalEstimatedSurvivors !== undefined) this.state.totalEstimatedSurvivors = stats.totalEstimatedSurvivors;
+        if (stats.missionTimeLimit !== undefined) this.state.missionTimeLimit = stats.missionTimeLimit;
         this.notify();
     }
 
@@ -250,6 +252,7 @@ export class DroneStore {
                 wifi: { base: 0.1, conf: 0.8, color: '#ff00ff' },
             },
             totalEstimatedSurvivors: 3,
+            missionTimeLimit: 300,
             pendingCommands: [],
             autoRecallThresholds: new Map(),
             relayStates: new Map(),
@@ -383,6 +386,10 @@ export class DroneStore {
             meanProbabilityScanned: this.state.meanProbabilityScanned,
             repeatedScanRate: this.state.repeatedScanRate,
             missionTimeSec: this.state.missionTimeSec,
+            missionTimeLimit: this.state.missionTimeLimit || null,
+            missionTimeRemaining: (this.state.missionTimeLimit && this.state.missionTimeLimit > 0)
+                ? Math.max(0, this.state.missionTimeLimit - this.state.missionTimeSec)
+                : null,
             sensorWeights: this.state.sensorWeights
         };
     }

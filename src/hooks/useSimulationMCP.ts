@@ -18,7 +18,9 @@ export const useSimulationMCP = (
     metricsRef: MutableRefObject<any>,
     resetSim: () => void,
     aiBusyRef: MutableRefObject<boolean>,
-    survivorsRef: MutableRefObject<any[]>
+    survivorsRef: MutableRefObject<any[]>,
+    timeLimit: number,
+    useTimeLimit: boolean
 ) => {
     const [mcpConnected, setMcpConnected] = useState(false);
     const [mcpPanelOpen, setMcpPanelOpen] = useState(false);
@@ -26,7 +28,7 @@ export const useSimulationMCP = (
     const [mcpSelectedTool, setMcpSelectedTool] = useState<string>('getSwarmStatus');
     const [mcpToolParams, setMcpToolParams] = useState<string>('{}');
     const [chatOpen, setChatOpen] = useState(false);
-    
+
     // Chat UI state
     const [chatPos, setChatPos] = useState({ x: 0, y: 0 });
     const chatDragRef = useRef({ isDragging: false, startX: 0, startY: 0, startPosX: 0, startPosY: 0 });
@@ -35,7 +37,7 @@ export const useSimulationMCP = (
     const [chatInput, setChatInput] = useState('');
     const [chatSending, setChatSending] = useState(false);
     const chatScrollRef = useRef<HTMLDivElement | null>(null);
-    const processMcpCommandsRef = useRef<() => Promise<void>>(async () => {});
+    const processMcpCommandsRef = useRef<() => Promise<void>>(async () => { });
     const syncedSurvivorIdsRef = useRef<Set<string>>(new Set());
     const bootstrappedServerStateRef = useRef(false);
     const [chatMessages, setChatMessages] = useState<OrchestratorChatMessage[]>([
@@ -100,7 +102,7 @@ export const useSimulationMCP = (
                 .replace(/\b[Tt]he user has requested\b/g, 'Mission context indicates')
                 .replace(/\b[Tt]he user requested\b/g, 'Mission context indicates')
                 .replace(/\b[Ii] will\b/g, 'AI will');
-                
+
             const actionSummary = actions
                 .map((a) => {
                     const type = String(a.type ?? 'unknown');
@@ -255,10 +257,11 @@ export const useSimulationMCP = (
                 meanProbabilityScanned: metricsRef.current.meanProbabilityScanned,
                 repeatedScanRate: metricsRef.current.repeatedScanRate,
                 sensorWeights: sensorWeightsRef.current,
-                totalEstimatedSurvivors: survivorsRef.current.length
+                totalEstimatedSurvivors: survivorsRef.current.length,
+                missionTimeLimit: useTimeLimit ? timeLimit : null
             });
         }
-    }, [mcpConnected, running, dronesRef, gridRef, sensorWeightsRef, metricsRef, timeRef, survivorsRef]);
+    }, [mcpConnected, running, dronesRef, gridRef, sensorWeightsRef, metricsRef, timeRef, survivorsRef, timeLimit, useTimeLimit]);
 
     const processMcpCommands = useCallback(async () => {
         const commands = await mcpClient.getPendingCommands();
@@ -299,7 +302,7 @@ export const useSimulationMCP = (
                                 break;
                             }
                         }
-                        
+
                         drone.mode = newMode;
                     }
                     break;
@@ -333,7 +336,7 @@ export const useSimulationMCP = (
                     const { oldRelayId, newRelayId, targetX, targetY } = cmd.params;
                     const oldRelay = drones.find(d => d.id === oldRelayId);
                     const newRelay = drones.find(d => d.id === newRelayId);
-                    
+
                     if (oldRelay && newRelay) {
                         relayTakeoverTargetRef.current = {
                             x: targetX as number,
@@ -342,7 +345,7 @@ export const useSimulationMCP = (
                         newRelay.mode = 'Relay';
                         newRelay.tx = targetX as number;
                         newRelay.ty = targetY as number;
-                        
+
                         oldRelay.tx = BASE_STATION.x;
                         oldRelay.ty = BASE_STATION.y;
                     }
@@ -399,7 +402,7 @@ export const useSimulationMCP = (
                 case 'BROADCAST_SWARM': {
                     const command = cmd.params.command as string;
                     const reachableDrones = cmd.params.reachableDrones as string[] || [];
-                    
+
                     if (command === 'RTB_ALL') {
                         reachableDrones.forEach(id => {
                             const d = drones.find(dr => dr.id === id);
@@ -422,8 +425,8 @@ export const useSimulationMCP = (
                             }
                         });
                     } else if (command === 'RECRUIT' && cmd.params.targetArea) {
-                         const { x, y } = cmd.params.targetArea as any;
-                         reachableDrones.forEach(id => {
+                        const { x, y } = cmd.params.targetArea as any;
+                        reachableDrones.forEach(id => {
                             const d = drones.find(dr => dr.id === id);
                             if (d && d.mode !== 'Charging' && d.mode !== 'Relay') {
                                 d.tx = x;
@@ -484,7 +487,7 @@ export const useSimulationMCP = (
 
         const pollInterval = setInterval(() => {
             processMcpCommands();
-        }, 500); 
+        }, 500);
 
         return () => clearInterval(pollInterval);
     }, [mcpConnected, processMcpCommands]);

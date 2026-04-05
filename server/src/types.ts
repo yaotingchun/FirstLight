@@ -226,6 +226,8 @@ export interface MissionStats {
     meanProbabilityScanned?: number;
     repeatedScanRate?: number;
     missionTimeSec?: number;
+    missionTimeLimit: number | null;
+    missionTimeRemaining: number | null;
     sensorWeights?: SensorWeightsSnapshot;
 }
 
