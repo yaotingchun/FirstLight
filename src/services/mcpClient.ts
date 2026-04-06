@@ -391,6 +391,7 @@ export const mcpTools = {
     getMissionBriefing: () => executeTool('getMissionBriefing'),
     getSectorAssignments: () => executeTool('getSectorAssignments'),
     setSimulationRunning: (running: boolean) => executeTool('setSimulationRunning', { running }),
+    setMicroScanOnly: (enabled: boolean) => executeTool('setMicroScanOnly', { enabled }),
 
     // Swarm intelligence tools
     getExplorationGradient: () => executeTool('getExplorationGradient'),

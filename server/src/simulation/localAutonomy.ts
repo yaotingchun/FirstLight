@@ -28,6 +28,7 @@ class LocalAutonomyEngine {
     private lastTargetByDrone = new Map<string, LastTarget>();
     private lastRelayMoveTick = new Map<string, number>();
     private lastRelayReplaceTick = new Map<string, number>();
+    private peerTargets = new Map<string, string>();
 
     setEnabled(enabled: boolean): void {
         this.enabled = enabled;
@@ -47,6 +48,17 @@ class LocalAutonomyEngine {
         const grid = droneStore.getGrid();
 
         this.updateConnectivityStreaks(drones);
+
+        this.peerTargets.clear();
+        for (const d of drones) {
+            if (d.isActive && d.target) {
+                // Determine if they are close enough to arriving or actively heading there
+                const dist = this.distance(d.position.x, d.position.y, d.target.x, d.target.y);
+                if (dist > 0.3) {
+                    this.peerTargets.set(`${Math.round(d.target.x)},${Math.round(d.target.y)}`, d.id);
+                }
+            }
+        }
 
         for (const drone of drones) {
             if (!drone.isActive) continue;
@@ -131,7 +143,8 @@ class LocalAutonomyEngine {
             return;
         }
 
-        const desiredMode: DroneStatus['mode'] = targetCell.probability >= 0.65 ? 'Micro' : 'Wide';
+        const isMicroOnly = droneStore.isMicroScanOnly();
+        const desiredMode: DroneStatus['mode'] = isMicroOnly ? 'Micro' : (targetCell.probability >= 0.65 ? 'Micro' : 'Wide');
         if (desiredMode !== drone.mode) {
             droneStore.enqueueCommand('SET_MODE', {
                 droneId: drone.id,
@@ -140,7 +153,9 @@ class LocalAutonomyEngine {
             actions.push({
                 droneId: drone.id,
                 type: 'SET_MODE',
-                reason: `I am switching scan mode based on local target ${targetCell.gridCell} (estimated probability ${targetCell.probability.toFixed(2)}).`,
+                reason: isMicroOnly 
+                    ? `Switching to Micro scan mode because the global Micro Scan Only directive is active.`
+                    : `I am switching scan mode based on local target ${targetCell.gridCell} (estimated probability ${targetCell.probability.toFixed(2)}).`,
             });
         }
 
@@ -222,34 +237,55 @@ class LocalAutonomyEngine {
     }
 
     private findBestLocalTarget(drone: DroneStatus, grid: SectorScanResult[][]): SectorScanResult | null {
+        const isBlanketSearch = droneStore.isMicroScanOnly();
         const region = drone.assignedRegion;
-        const radius = 6;
+        const radius = isBlanketSearch ? Infinity : 6;
+        
+        // Generate a deterministic but pseudo-random offset based on drone ID
+        // so that if two drones are at the exact same distance, they prefer slightly different cells
+        // e.g. "DRN-1" -> 1
+        const idNumMatch = drone.id.match(/\d+$/);
+        const droneNum = idNumMatch ? parseInt(idNumMatch[0], 10) : 0;
 
         let best: SectorScanResult | null = null;
+        let bestScore = -Infinity;
 
         for (let y = 0; y < GRID_H; y++) {
             for (let x = 0; x < GRID_W; x++) {
                 const cell = grid[y]?.[x];
                 if (!cell || cell.scanned) continue;
 
-                if (region) {
+                const dist = this.distance(drone.position.x, drone.position.y, x, y);
+
+                if (region && !isBlanketSearch) {
                     const inRegion = x >= region.xMin && x <= region.xMax && y >= region.yMin && y <= region.yMax;
                     if (!inRegion) continue;
-                } else {
-                    const d = this.distance(drone.position.x, drone.position.y, x, y);
-                    if (d > radius) continue;
-                }
-
-                const dist = this.distance(drone.position.x, drone.position.y, x, y);
-                const score = cell.probability * 1.6 + (1 - Math.min(dist / 10, 1)) * 0.4 - cell.pheromone * 0.3;
-                if (!best) {
-                    best = cell;
+                } else if (dist > radius) {
                     continue;
                 }
 
-                const bestDist = this.distance(drone.position.x, drone.position.y, best.x, best.y);
-                const bestScore = best.probability * 1.6 + (1 - Math.min(bestDist / 10, 1)) * 0.4 - best.pheromone * 0.3;
+                const checkKey = `${x},${y}`;
+                const targetedByPeer = this.peerTargets.get(checkKey);
+                
+                // If another drone is already targeting this cell, apply a heavy penalty
+                const peerPenalty = (targetedByPeer && targetedByPeer !== drone.id) ? 30.0 : 0;
+                
+                // Deterministic tie-breaker offset (keeps them from moving in identical lockstep)
+                const tieBreaker = ((x * 13 + y * 7 + droneNum * 11) % 100) / 1000.0;
+                
+                let score = 0;
+                
+                if (isBlanketSearch) {
+                    // Blanket Sweep: Focus on probability across the entire grid, but with strong peer/pheromone avoidance
+                    // so the swarm spreads out evenly while still tracking heatmaps
+                    score = (cell.probability * 3.0) - (dist * 0.1) - (cell.pheromone * 2.0) - peerPenalty + tieBreaker;
+                } else {
+                    // Adaptive Mode: High probability first, avoiding pheromones
+                    score = cell.probability * 1.6 + (1 - Math.min(dist / 10, 1)) * 0.4 - cell.pheromone * 0.3;
+                }
+
                 if (score > bestScore) {
+                    bestScore = score;
                     best = cell;
                 }
             }

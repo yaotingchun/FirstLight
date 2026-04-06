@@ -26,6 +26,7 @@ export const useSimulationEngine = (
     const [running, setRunning] = useState(false);
     const [speed, setSpeed] = useState(1);
     const [randomizeBattery, setRandomizeBatteryState] = useState(true);
+    const [microScanOnly, setMicroScanOnly] = useState(false);
     const [, setTickFlip] = useState(0);
     const [selectedPin, setSelectedPin] = useState<FoundPin | null>(null);
     const [showSensors, setShowSensors] = useState(false);
@@ -53,6 +54,7 @@ export const useSimulationEngine = (
     const relayTakeoverTargetRef = useRef<{ x: number; y: number }>({ ...RELAY_DEFAULT_TARGET });
     const relaySwapCooldownUntilTickRef = useRef<number>(0);
     const lastFieldRelayIdRef = useRef<string>('RLY-Prime');
+    const microScanOnlyRef = useRef<boolean>(false);
 
     const missionReturnTriggeredRef = useRef(false);
     const missionStopHandledRef = useRef(false);
@@ -101,6 +103,11 @@ export const useSimulationEngine = (
         setRunning(nextRunning);
         onSimRunningToggle(nextRunning, timeRef.current);
     }, [running, onSimRunningToggle]);
+
+    const toggleMicroScanOnly = useCallback((val: boolean) => {
+        setMicroScanOnly(val);
+        microScanOnlyRef.current = val;
+    }, []);
 
     useEffect(() => {
         if (gridDataService.isTerrainReady()) {
@@ -503,42 +510,60 @@ export const useSimulationEngine = (
                     d.battery = 100;
                     d.mode = 'Wide';
 
-                    let newTarget: { x: number, y: number } | null = null;
-                    const highProbSectors: Sector[] = [];
-                    grid.forEach(row => row.forEach(sec => {
-                        if (sec.scanned && sec.prob > THRESHOLD_MICRO) highProbSectors.push(sec);
-                    }));
+                    let targetAssigned = false;
 
-                    for (const sec of highProbSectors) {
-                        const isOccupied = drones.some(other => other.id !== d.id && Math.round(other.tx) === sec.x && Math.round(other.ty) === sec.y);
-                        if (!isOccupied) {
-                            newTarget = { x: sec.x, y: sec.y };
-                            break;
+                    if (microScanOnlyRef.current) {
+                        let bestSector: Sector | null = null;
+                        let minScore = Infinity;
+
+                        grid.forEach(row => row.forEach(sec => {
+                            const isSurvivor = pinsRef.current.some(p => p.x === sec.x && p.y === sec.y);
+                            if (!sec.scanned && !isSurvivor) {
+                                const isOccupied = drones.some(other => other.id !== d.id && Math.round(other.tx) === sec.x && Math.round(other.ty) === sec.y);
+                                if (!isOccupied) {
+                                    const dist = Math.sqrt(Math.pow(sec.x - d.x, 2) + Math.pow(sec.y - d.y, 2));
+                                    const score = dist + (sec.y * 0.1) + (sec.x * 0.01);
+                                    if (score < minScore) {
+                                        minScore = score;
+                                        bestSector = sec;
+                                    }
+                                }
+                            }
+                        }));
+
+                        if (bestSector !== null) {
+                            d.tx = (bestSector as Sector).x;
+                            d.ty = (bestSector as Sector).y;
+                            targetAssigned = true;
                         }
-                    }
-
-                    if (newTarget) {
-                        d.tx = newTarget.x;
-                        d.ty = newTarget.y;
-                        const distToT = Math.sqrt(Math.pow(d.tx - d.x, 2) + Math.pow(d.ty - d.y, 2));
-                        d.mode = distToT < 1.5 ? 'Micro' : 'Wide';
-                    } else if (d.savedTx !== undefined && d.savedTy !== undefined) {
-                        d.tx = d.savedTx;
-                        d.ty = d.savedTy;
                     } else {
-                        let assigned = false;
-                        if (zonesRef.current.length > 0) {
+                        const highProbSectors: Sector[] = [];
+                        grid.forEach(row => row.forEach(sec => {
+                            if (sec.scanned && sec.prob > THRESHOLD_MICRO) highProbSectors.push(sec);
+                        }));
+
+                        for (const sec of highProbSectors) {
+                            const isOccupied = drones.some(other => other.id !== d.id && Math.round(other.tx) === sec.x && Math.round(other.ty) === sec.y);
+                            if (!isOccupied) {
+                                d.tx = sec.x;
+                                d.ty = sec.y;
+                                targetAssigned = true;
+                                break;
+                            }
+                        }
+
+                        if (!targetAssigned && zonesRef.current.length > 0) {
                             const availZone = zonesRef.current.find(z =>
                                 z.unscannedCount > 0 && z.assignedDroneIds.length < 2
                             );
                             if (availZone) {
                                 d.tx = availZone.centroid.x;
                                 d.ty = availZone.centroid.y;
-                                assigned = true;
+                                targetAssigned = true;
                             }
                         }
 
-                        if (!assigned) {
+                        if (!targetAssigned) {
                             let bestSector: Sector | null = null;
                             let maxProb = -1;
                             grid.forEach(row => row.forEach(sec => {
@@ -555,11 +580,20 @@ export const useSimulationEngine = (
                             if (bestSector !== null) {
                                 d.tx = (bestSector as Sector).x;
                                 d.ty = (bestSector as Sector).y;
-                            } else {
-                                d.tx = BASE_X;
-                                d.ty = BASE_Y;
+                                targetAssigned = true;
                             }
                         }
+                    }
+
+                    if (targetAssigned) {
+                        const distToT = Math.sqrt(Math.pow(d.tx - d.x, 2) + Math.pow(d.ty - d.y, 2));
+                        d.mode = distToT < 1.5 ? 'Micro' : 'Wide';
+                    } else if (d.savedTx !== undefined && d.savedTy !== undefined) {
+                        d.tx = d.savedTx;
+                        d.ty = d.savedTy;
+                    } else {
+                        d.tx = BASE_X;
+                        d.ty = BASE_Y;
                     }
 
                     d.savedTx = undefined;
@@ -949,6 +983,16 @@ export const useSimulationEngine = (
             }
         });
 
+        // Force Micro Mode if microScanOnly is active globally
+        if (microScanOnlyRef.current) {
+            drones.forEach(d => {
+                if (!d.id.startsWith('RLY-') && d.mode !== 'Charging') {
+                    d.mode = 'Micro';
+                    d.preventReassignment = true; 
+                }
+            });
+        }
+
         if (timeRef.current > 0 && timeRef.current % 100 === 0) {
             const connected = drones.filter(d => d.isConnected && d.mode !== 'Relay');
             if (connected.length > 0) {
@@ -1102,6 +1146,8 @@ export const useSimulationEngine = (
         resetSim,
         triggerFailureEvent,
         getSectorProbability,
-        performTickCore
+        performTickCore,
+        microScanOnly,
+        toggleMicroScanOnly
     };
 };

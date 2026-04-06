@@ -48,6 +48,7 @@ const TOOL_DOCSTRINGS: Record<string, string> = {
     setSurvivorPin: 'Action. Mark a survivor at x,y by droneId with optional message. Queues SET_SURVIVOR_PIN for frontend handling.',
     resetMission: 'Action. Queue full mission reset (state, drones, scan data, survivors).',
     setSimulationRunning: 'Action. Start or pause simulation loop (running=true|false).',
+    setMicroScanOnly: 'Action. Toggle the global Micro Scan Only mode. When true, all drones use Micro mode regardless of probability.',
     getMissionBriefing: 'Observe mission phase and recommendations. Returns objectives, constraints, current phase, and strategic guidance.',
     getSectorAssignments: 'Observe sector reservation map inferred from active drone targets, including reserved/free counts and probability/pheromone context.',
 
@@ -407,6 +408,20 @@ export const toolSchemas = {
             required: ['running']
         }
     },
+    setMicroScanOnly: {
+        name: 'setMicroScanOnly',
+        description: 'Toggle the global Micro Scan Only mode. When true, the local autonomy engine forces all scanning drones into Micro mode.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                enabled: {
+                    type: 'boolean',
+                    description: 'Whether Micro Scan Only should be enabled'
+                }
+            },
+            required: ['enabled']
+        }
+    },
     getMissionBriefing: {
         name: 'getMissionBriefing',
         description: 'Get mission briefing with objectives, constraints, and AI recommendations',
@@ -650,6 +665,7 @@ export const toolHandlers: Record<string, Function> = {
     setSurvivorPin: missionTools.setSurvivorPin,
     resetMission: missionTools.resetMission,
     setSimulationRunning: missionTools.setSimulationRunning,
+    setMicroScanOnly: missionTools.setMicroScanOnly,
     getMissionBriefing: missionTools.getMissionBriefing,
     getSectorAssignments: missionTools.getSectorAssignments,
 

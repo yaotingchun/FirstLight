@@ -22,11 +22,14 @@ interface SimulationDashboardProps {
     randomizeBattery: boolean;
     setRandomizeBattery: (val: boolean) => void;
     running: boolean;
+    microScanOnly: boolean;
+    onToggleMicroScanOnly: () => void;
 }
 
 export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
     drones, time, aiDisconnectedRef, aiReconnectedUntilTickRef,
-    metrics, sensorWeights, randomizeBattery, setRandomizeBattery, running
+    metrics, sensorWeights, randomizeBattery, setRandomizeBattery, running,
+    microScanOnly, onToggleMicroScanOnly
 }) => {
     const TOTAL_CELLS = GRID_W * GRID_H;
 
@@ -177,6 +180,34 @@ export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
                 <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: '1px solid rgba(0, 255, 204, 0.1)', fontSize: '0.7rem', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', display: 'flex', justifyContent: 'space-between' }}>
                     <span>TOTAL SCANS:</span>
                     <span style={{ color: 'var(--text-primary)' }}>{metrics.totalScans.toLocaleString()}</span>
+                </div>
+            </div>
+
+            {/* Drone Overrides HUD */}
+            <div className="hud-panel" style={{ padding: '16px', background: 'rgba(255, 204, 0, 0.05)', border: '1px solid var(--panel-border)' }}>
+                <h4 className="hud-text" style={{ fontSize: '0.85rem', color: 'var(--accent-secondary, #ffb84d)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', letterSpacing: '1px' }}>
+                    DIRECTIVE OVERRIDES
+                </h4>
+                
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>BLANKET MICRO SCAN</div>
+                    <button
+                        onClick={onToggleMicroScanOnly}
+                        style={{
+                            background: microScanOnly ? '#ff4444' : 'rgba(0,0,0,0.4)',
+                            color: microScanOnly ? '#fff' : 'var(--text-secondary)',
+                            border: `1px solid ${microScanOnly ? '#ff4444' : 'var(--panel-border)'}`,
+                            borderRadius: '4px',
+                            padding: '6px 12px',
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: '0.7rem',
+                            cursor: 'pointer',
+                            fontWeight: microScanOnly ? 700 : 400,
+                            letterSpacing: '0.5px'
+                        }}
+                    >
+                        {microScanOnly ? 'ACTIVE' : 'INACTIVE'}
+                    </button>
                 </div>
             </div>
 

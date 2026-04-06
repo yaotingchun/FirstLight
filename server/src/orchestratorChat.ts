@@ -257,6 +257,7 @@ function buildStateSummary(): string {
         `tick=${stats.currentTick}`,
         `running=${stats.simulationRunning}`,
         `scanProgress=${stats.scanProgress.toFixed(1)}%`,
+        `microScanOnly=${droneStore.isMicroScanOnly()}`,
         `survivorsFound=${stats.survivorsFound}`,
         `avgBattery=${stats.averageBattery.toFixed(1)}%`,
         `meanProbabilityScanned=${stats.meanProbabilityScanned?.toFixed(3) || 0}`,
@@ -690,6 +691,7 @@ Critical rules:
 - MODE LOCK (Strict Role Separation): 
     1. NEVER use set_drone_mode on 'RLY-' drones to change them to 'Wide' or 'Micro'. Relay drones stay in Relay/Charging.
     2. NEVER use set_drone_mode on search drones ('DRN-Alpha','DRN-Beta','DRN-Gamma','DRN-Delta') to change them to 'Relay'. Search drones stay in Wide/Micro/Charging.
+- MICRO SCAN ONLY: If \`microScanOnly=true\` in STATE, do NOT issue any \`set_drone_mode\` to 'Wide'. The simulation local autonomy engine strictly enforces 'Micro' mode for search drones.
 - MISSION COMPLETION RULES:
   1. If scanProgress < 100%, continue searching normally.
   2. If scanProgress >= 100% and ANY drone is still in "Micro" mode, wait and let them finish (no_action, or move them closer to signals). DO NOT recall them.
