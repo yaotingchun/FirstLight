@@ -39,7 +39,7 @@ export const getDroneThemeColor = (id?: string) => {
 
 export const SimulationGrid: React.FC<SimulationGridProps> = ({
     grid, drones, commLinks, survivors, pins,
-    selectedPin, setSelectedPin, showSensors, 
+    selectedPin, setSelectedPin, showSensors,
     showTrails, setShowTrails, selectedTrailDroneId, setSelectedTrailDroneId,
     getSectorProbability, time, aiDisconnectedRef, aiReconnectedUntilTickRef,
     cameraPopupDroneId, setCameraPopupDroneId
@@ -47,6 +47,12 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
     const [is3D, setIs3D] = useState(false);
     const [scanlineActive, setScanlineActive] = useState(false);
     const scanlineTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const [angleX, setAngleX] = useState(55);
+    const [angleZ, setAngleZ] = useState(45);
+    const [isDraggingMap, setIsDraggingMap] = useState(false);
+    const lastMousePosRef = useRef({ x: 0, y: 0 });
+    const dragStartPosRef = useRef({ x: 0, y: 0 });
 
     // Trigger scanline effect on view transition
     const triggerScanline = useCallback(() => {
@@ -72,6 +78,8 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
             // Open popup and tilt to 3D
             setCameraPopupDroneId(droneId);
             if (!is3D) {
+                setAngleX(55);
+                setAngleZ(45);
                 setIs3D(true);
                 triggerScanline();
             }
@@ -102,8 +110,8 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
         <div className="hud-panel" style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             {/* ── Perspective Container ── */}
             <div style={{
-                perspective: '1400px',
-                perspectiveOrigin: '50% 60%',
+                perspective: '800px',
+                perspectiveOrigin: '50% 50%',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -111,589 +119,698 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                 height: '100%',
                 position: 'relative',
             }}>
-            {/* ── 3D Atmospheric Vignette ── */}
-            {is3D && (
-                <div style={{
-                    position: 'absolute',
-                    inset: 0,
-                    pointerEvents: 'none',
-                    zIndex: 1,
-                    background: 'radial-gradient(ellipse at 50% 80%, transparent 30%, rgba(0,10,6,0.7) 70%, rgba(0,5,3,0.95) 100%)',
-                    transition: 'opacity 1s ease',
-                }} />
-            )}
-            {/* ── CRT Scanlines Overlay in 3D ── */}
-            {is3D && (
-                <div style={{
-                    position: 'absolute',
-                    inset: 0,
-                    pointerEvents: 'none',
-                    zIndex: 2,
-                    background: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,255,159,0.015) 2px, rgba(0,255,159,0.015) 4px)',
-                    mixBlendMode: 'screen',
-                }} />
-            )}
-            <svg 
-                width={SVG_W} 
-                height={SVG_H} 
-                style={{
-                    border: is3D ? '1px solid rgba(0,255,204,0.3)' : '1px dashed rgba(0,255,204,0.2)',
-                    backgroundColor: '#050a10',
-                    cursor: cameraPopupDroneId ? 'pointer' : 'default',
-                    transform: is3D ? 'rotateX(50deg) scale(0.78)' : 'rotateX(0deg) scale(1)',
-                    transformOrigin: '50% 100%',
-                    transition: 'transform 1s cubic-bezier(0.4, 0, 0.2, 1), border 0.5s ease, box-shadow 1s ease',
-                    transformStyle: 'preserve-3d',
-                    willChange: 'transform',
-                    boxShadow: is3D ? '0 40px 80px rgba(0,0,0,0.6), 0 0 60px rgba(0,255,204,0.08), inset 0 0 120px rgba(0,255,204,0.02)' : 'none',
-                    filter: is3D ? 'saturate(1.2) contrast(1.05)' : 'none',
-                }}
-                onClick={(e) => {
-                    if (cameraPopupDroneId) {
-                        setCameraPopupDroneId(null);
-                    }
-                }}
-                onDoubleClick={handleEmptyDoubleClick}
-            >
-                {/* ── SVG Filter Definitions ── */}
-                <defs>
-                    <filter id="glow-green" x="-50%" y="-50%" width="200%" height="200%">
-                        <feGaussianBlur stdDeviation="3" result="blur" />
-                        <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                    </filter>
-                    <filter id="glow-strong" x="-100%" y="-100%" width="300%" height="300%">
-                        <feGaussianBlur stdDeviation="6" result="blur" />
-                        <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                    </filter>
-                    <filter id="bloom" x="-50%" y="-50%" width="200%" height="200%">
-                        <feGaussianBlur stdDeviation="4" result="blur" />
-                        <feMerge>
-                            <feMergeNode in="blur" />
-                            <feMergeNode in="blur" />
-                            <feMergeNode in="SourceGraphic" />
-                        </feMerge>
-                    </filter>
-                    <filter id="heat-glow" x="-20%" y="-20%" width="140%" height="140%">
-                        <feGaussianBlur stdDeviation="2" result="blur" />
-                        <feMerge>
-                            <feMergeNode in="blur" />
-                            <feMergeNode in="SourceGraphic" />
-                        </feMerge>
-                    </filter>
-                    <radialGradient id="drone-aura" cx="50%" cy="50%" r="50%">
-                        <stop offset="0%" stopColor="#00ffcc" stopOpacity="0.3" />
-                        <stop offset="100%" stopColor="#00ffcc" stopOpacity="0" />
-                    </radialGradient>
-                    <linearGradient id="beam-grad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#00ffcc" stopOpacity="0" />
-                        <stop offset="50%" stopColor="#00ffcc" stopOpacity="0.4" />
-                        <stop offset="100%" stopColor="#00ffcc" stopOpacity="0" />
-                    </linearGradient>
-                    {/* Edge glow gradient for tilted map */}
-                    <linearGradient id="edge-glow-top" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#00ffcc" stopOpacity="0.15" />
-                        <stop offset="100%" stopColor="#00ffcc" stopOpacity="0" />
-                    </linearGradient>
-                </defs>
-                {/* Grid & Heatmap */}
-                {grid.map((row, y) =>
-                    row.map((cell, x) => {
-                        const prob = getSectorProbability(x, y);
-                        const isHot = prob > 0.3;
-                        return (
-                        <React.Fragment key={`cell-group-${x}-${y}`}>
-                            <rect
-                                x={x * CELL_SIZE}
-                                y={y * CELL_SIZE}
-                                width={CELL_SIZE}
-                                height={CELL_SIZE}
-                                fill={!showTrails && cell.scanned 
-                                    ? `rgba(255, 68, 68, ${0.05 + prob * 0.75})` 
-                                    : 'transparent'}
-                                stroke={is3D ? 'rgba(0, 255, 204, 0.08)' : 'rgba(0, 255, 204, 0.05)'}
-                                strokeWidth="1"
-                                filter={is3D && isHot && cell.scanned ? 'url(#heat-glow)' : undefined}
-                            />
+                {/* ── 3D Atmospheric Vignette ── */}
+                {is3D && (
+                    <div style={{
+                        position: 'absolute',
+                        inset: 0,
+                        pointerEvents: 'none',
+                        zIndex: 1,
+                        background: 'radial-gradient(ellipse at 50% 80%, transparent 30%, rgba(0,10,6,0.7) 70%, rgba(0,5,3,0.95) 100%)',
+                        transition: 'opacity 1s ease',
+                    }} />
+                )}
+                {/* ── CRT Scanlines Overlay in 3D ── */}
+                {is3D && (
+                    <div style={{
+                        position: 'absolute',
+                        inset: 0,
+                        pointerEvents: 'none',
+                        zIndex: 2,
+                        background: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,255,159,0.015) 2px, rgba(0,255,159,0.015) 4px)',
+                        mixBlendMode: 'screen',
+                    }} />
+                )}
+                {/* ── Unified Grid + Overlay Container ── */}
+                <div
+                    style={{
+                        position: 'relative',
+                        width: SVG_W,
+                        height: SVG_H,
+                        flexShrink: 0,
+                        transform: is3D ? `rotateX(${angleX}deg) rotateZ(${angleZ}deg) scale(0.65)` : 'rotateX(0deg) rotateZ(0deg) scale(1)',
+                        transformOrigin: '50% 50%',
+                        transition: isDraggingMap ? 'none' : 'transform 1s cubic-bezier(0.4, 0, 0.2, 1), border 0.5s ease, box-shadow 1s ease',
+                        transformStyle: 'preserve-3d',
+                        willChange: 'transform',
+                        boxShadow: is3D ? '0 40px 80px rgba(0,0,0,0.6), 0 0 60px rgba(0,255,204,0.08), inset 0 0 120px rgba(0,255,204,0.02)' : 'none',
+                        cursor: is3D ? (isDraggingMap ? 'grabbing' : 'grab') : (cameraPopupDroneId ? 'pointer' : 'default'),
+                    }}
+                    onPointerDown={(e) => {
+                        if (is3D) {
+                            setIsDraggingMap(true);
+                            lastMousePosRef.current = { x: e.clientX, y: e.clientY };
+                            dragStartPosRef.current = { x: e.clientX, y: e.clientY };
+                            (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                        }
+                    }}
+                    onPointerMove={(e) => {
+                        if (isDraggingMap && is3D) {
+                            const dx = e.clientX - lastMousePosRef.current.x;
+                            const dy = e.clientY - lastMousePosRef.current.y;
+                            setAngleZ(prev => prev - dx * 0.5);
+                            setAngleX(prev => Math.min(85, Math.max(0, prev + dy * 0.5)));
+                            lastMousePosRef.current = { x: e.clientX, y: e.clientY };
+                        }
+                    }}
+                    onPointerUp={(e) => {
+                        if (isDraggingMap) {
+                            setIsDraggingMap(false);
+                            (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+                        }
+                    }}
+                    onPointerCancel={(e) => {
+                        if (isDraggingMap) {
+                            setIsDraggingMap(false);
+                            (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+                        }
+                    }}
+                    onClick={(e) => {
+                        if (is3D) {
+                            const dx = e.clientX - dragStartPosRef.current.x;
+                            const dy = e.clientY - dragStartPosRef.current.y;
+                            if (Math.abs(dx) > 5 || Math.abs(dy) > 5) return;
+                        }
+                        if (cameraPopupDroneId) {
+                            setCameraPopupDroneId(null);
+                        }
+                    }}
+                    onDoubleClick={handleEmptyDoubleClick}
+                >
+                <svg
+                    width={SVG_W}
+                    height={SVG_H}
+                    style={{
+                        position: 'absolute',
+                        left: 0,
+                        top: 0,
+                        border: is3D ? '1px solid rgba(0,255,204,0.3)' : '1px dashed rgba(0,255,204,0.2)',
+                        boxSizing: 'border-box',
+                        backgroundColor: '#050a10',
+                        filter: is3D ? 'saturate(1.2) contrast(1.05)' : 'none',
+                    }}
+                >
+                    {/* ── SVG Filter Definitions ── */}
+                    <defs>
+                        <filter id="glow-green" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur stdDeviation="3" result="blur" />
+                            <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                        </filter>
+                        <filter id="glow-strong" x="-100%" y="-100%" width="300%" height="300%">
+                            <feGaussianBlur stdDeviation="6" result="blur" />
+                            <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                        </filter>
+                        <filter id="bloom" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur stdDeviation="4" result="blur" />
+                            <feMerge>
+                                <feMergeNode in="blur" />
+                                <feMergeNode in="blur" />
+                                <feMergeNode in="SourceGraphic" />
+                            </feMerge>
+                        </filter>
+                        <filter id="heat-glow" x="-20%" y="-20%" width="140%" height="140%">
+                            <feGaussianBlur stdDeviation="2" result="blur" />
+                            <feMerge>
+                                <feMergeNode in="blur" />
+                                <feMergeNode in="SourceGraphic" />
+                            </feMerge>
+                        </filter>
+                        <radialGradient id="drone-aura" cx="50%" cy="50%" r="50%">
+                            <stop offset="0%" stopColor="#00ffcc" stopOpacity="0.3" />
+                            <stop offset="100%" stopColor="#00ffcc" stopOpacity="0" />
+                        </radialGradient>
+                        <linearGradient id="beam-grad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#00ffcc" stopOpacity="0" />
+                            <stop offset="50%" stopColor="#00ffcc" stopOpacity="0.4" />
+                            <stop offset="100%" stopColor="#00ffcc" stopOpacity="0" />
+                        </linearGradient>
+                        {/* Edge glow gradient for tilted map */}
+                        <linearGradient id="edge-glow-top" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#00ffcc" stopOpacity="0.15" />
+                            <stop offset="100%" stopColor="#00ffcc" stopOpacity="0" />
+                        </linearGradient>
+                    </defs>
+                    {/* Grid & Heatmap */}
+                    {grid.map((row, y) =>
+                        row.map((cell, x) => {
+                            const prob = getSectorProbability(x, y);
+                            const isHot = prob > 0.3;
+                            return (
+                                <React.Fragment key={`cell-group-${x}-${y}`}>
+                                    <rect
+                                        x={x * CELL_SIZE}
+                                        y={y * CELL_SIZE}
+                                        width={CELL_SIZE}
+                                        height={CELL_SIZE}
+                                        fill={!showTrails && cell.scanned
+                                            ? `rgba(255, 68, 68, ${0.05 + prob * 0.75})`
+                                            : 'transparent'}
+                                        stroke={is3D ? 'rgba(0, 255, 204, 0.08)' : 'rgba(0, 255, 204, 0.05)'}
+                                        strokeWidth="1"
+                                        filter={is3D && isHot && cell.scanned ? 'url(#heat-glow)' : undefined}
+                                    />
 
-                            {/* Disaster Image Discovery - Visible if scanned OR sensors toggled */}
-                            {!showTrails && (cell.scanned || showSensors) && cell.disasterImage && (
-                                <image
-                                    href={cell.disasterImage}
-                                    x={x * CELL_SIZE + 2}
-                                    y={y * CELL_SIZE + 2}
-                                    width={CELL_SIZE - 4}
-                                    height={CELL_SIZE - 4}
-                                    style={{ opacity: 0.6, pointerEvents: 'none' }}
-                                />
-                            )}
-
-                            {/* Sensor Values Overlay */}
-                            {!showTrails && showSensors && (
-                                <g style={{ pointerEvents: 'none' }}>
-                                    <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 8} fontSize="5" fill="#00ffcc" opacity="0.9" fontFamily="var(--font-mono)">M:{cell.signals.mobile.toFixed(1)}</text>
-                                    <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 15} fontSize="5" fill="#ff4444" opacity="0.9" fontFamily="var(--font-mono)">T:{cell.signals.thermal.toFixed(1)}</text>
-                                    <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 22} fontSize="5" fill="#ffff00" opacity="0.9" fontFamily="var(--font-mono)">S:{cell.signals.sound.toFixed(1)}</text>
-                                    <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 29} fontSize="5" fill="#ff00ff" opacity="0.9" fontFamily="var(--font-mono)">W:{cell.signals.wifi.toFixed(1)}</text>
-
-                                    {/* Survivor Ground Truth Indicator */}
-                                    {survivors.some((s: HiddenSurvivor) => s.x === x && s.y === y) && (
-                                        <text
-                                            x={x * CELL_SIZE + CELL_SIZE - 2}
-                                            y={y * CELL_SIZE + CELL_SIZE - 2}
-                                            fontSize="6"
-                                            fill="#00ffcc"
-                                            textAnchor="end"
-                                            fontWeight="bold"
-                                            fontFamily="var(--font-mono)"
-                                        >
-                                            [S]
-                                        </text>
+                                    {/* Disaster Image Discovery - Visible if scanned OR sensors toggled */}
+                                    {!showTrails && (cell.scanned || showSensors) && cell.disasterImage && (
+                                        <image
+                                            href={cell.disasterImage}
+                                            x={x * CELL_SIZE + 2}
+                                            y={y * CELL_SIZE + 2}
+                                            width={CELL_SIZE - 4}
+                                            height={CELL_SIZE - 4}
+                                            style={{ opacity: 0.6, pointerEvents: 'none' }}
+                                        />
                                     )}
-                                </g>
-                            )}
-                        </React.Fragment>
-                        );
-                    })
-                )}
 
-                {/* ── 3D Grid Lines Overlay ── */}
-                {is3D && !showTrails && (
-                    <g style={{ pointerEvents: 'none' }}>
-                        {/* Horizontal grid lines */}
-                        {Array.from({ length: GRID_H + 1 }, (_, i) => (
-                            <line key={`hline-${i}`} x1={0} y1={i * CELL_SIZE} x2={SVG_W} y2={i * CELL_SIZE}
-                                stroke="rgba(0,255,204,0.06)" strokeWidth="0.5" />
-                        ))}
-                        {/* Vertical grid lines */}
-                        {Array.from({ length: GRID_W + 1 }, (_, i) => (
-                            <line key={`vline-${i}`} x1={i * CELL_SIZE} y1={0} x2={i * CELL_SIZE} y2={SVG_H}
-                                stroke="rgba(0,255,204,0.06)" strokeWidth="0.5" />
-                        ))}
-                        {/* Top edge glow */}
-                        <rect x={0} y={0} width={SVG_W} height={30} fill="url(#edge-glow-top)" />
-                    </g>
-                )}
+                                    {/* Sensor Values Overlay */}
+                                    {!showTrails && showSensors && (
+                                        <g style={{ pointerEvents: 'none' }}>
+                                            <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 8} fontSize="5" fill="#00ffcc" opacity="0.9" fontFamily="var(--font-mono)">M:{cell.signals.mobile.toFixed(1)}</text>
+                                            <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 15} fontSize="5" fill="#ff4444" opacity="0.9" fontFamily="var(--font-mono)">T:{cell.signals.thermal.toFixed(1)}</text>
+                                            <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 22} fontSize="5" fill="#ffff00" opacity="0.9" fontFamily="var(--font-mono)">S:{cell.signals.sound.toFixed(1)}</text>
+                                            <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 29} fontSize="5" fill="#ff00ff" opacity="0.9" fontFamily="var(--font-mono)">W:{cell.signals.wifi.toFixed(1)}</text>
 
-                {/* Comm Network Edges — Arc style in 3D, straight in 2D */}
-                {commLinks.map((link, idx) => {
-                    if (showTrails) return null;
-                    const getCoords = (id: string) => {
-                        if (id === BASE_STATION.id) return { x: BASE_STATION.x, y: BASE_STATION.y };
-                        const d = drones.find((dr: Drone) => dr.id === id);
-                        if (d) return { x: d.x, y: d.y };
-                        return null;
-                    };
-                    const c1 = getCoords(link.source);
-                    const c2 = getCoords(link.target);
-                    if (!c1 || !c2) return null;
-                    const x1 = c1.x * CELL_SIZE + CELL_SIZE / 2;
-                    const y1 = c1.y * CELL_SIZE + CELL_SIZE / 2;
-                    const x2 = c2.x * CELL_SIZE + CELL_SIZE / 2;
-                    const y2 = c2.y * CELL_SIZE + CELL_SIZE / 2;
-
-                    if (is3D) {
-                        // Arc-style bezier curves for 3D mode
-                        const mx = (x1 + x2) / 2;
-                        const my = (y1 + y2) / 2;
-                        const dist = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
-                        const arcHeight = Math.min(dist * 0.3, 40);
-                        // Perpendicular offset for arc
-                        const nx = -(y2 - y1) / dist;
-                        const ny = (x2 - x1) / dist;
-                        const cpx = mx + nx * arcHeight;
-                        const cpy = my + ny * arcHeight;
-                        const pathD = `M ${x1} ${y1} Q ${cpx} ${cpy} ${x2} ${y2}`;
-
-                        return (
-                            <g key={`edge-${idx}`}>
-                                {/* Glow underneath */}
-                                <path d={pathD} fill="none" stroke={link.active ? '#ffff00' : '#00ffaa'}
-                                    strokeWidth={link.active ? 6 : 3} strokeOpacity={0.15}
-                                    filter="url(#glow-green)" />
-                                {/* Main arc */}
-                                <path d={pathD} fill="none" stroke={link.active ? '#ffff00' : '#00ffaa'}
-                                    strokeWidth={link.active ? 2.5 : 1}
-                                    strokeDasharray={link.active ? 'none' : '6 4'}
-                                    strokeOpacity={link.active ? 0.9 : 0.5}
-                                    filter={link.active ? 'url(#bloom)' : undefined} />
-                                {/* Animated pulse dot traveling along path */}
-                                {link.active && (
-                                    <circle r="2.5" fill="#ffff00" filter="url(#glow-green)">
-                                        <animateMotion dur="2s" repeatCount="indefinite" path={pathD} />
-                                    </circle>
-                                )}
-                            </g>
-                        );
-                    }
-
-                    return (
-                        <g key={`edge-${idx}`}>
-                            <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#33ffaa" strokeWidth="1" strokeDasharray="4" style={{ opacity: 0.3 }} />
-                            {link.active && (
-                                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#ffff00" strokeWidth="3" style={{ opacity: 0.8, filter: 'drop-shadow(0 0 4px #ffff00)' }} />
-                            )}
-                        </g>
-                    );
-                })}
-
-                {/* Mesh Network Lines (collision avoidance awareness) */}
-                {drones.map(d => {
-                    if (showTrails) return null;
-                    return (
-                    <g key={`mesh-${d.id}`}>
-                        {Object.entries(d.knownOtherDrones).map(([otherId, knownPos]) => {
-                            if (time - knownPos.lastUpdate < 20) {
-                                const otherDrone = drones.find(od => od.id === otherId);
-                                if (otherDrone) {
-                                    const isPinging = (time - knownPos.lastUpdate <= 1);
-                                    return (
-                                        <g key={`link-group-${d.id}-${otherId}`}>
-                                            <line
-                                                x1={otherDrone.x * CELL_SIZE + CELL_SIZE / 2}
-                                                y1={otherDrone.y * CELL_SIZE + CELL_SIZE / 2}
-                                                x2={d.x * CELL_SIZE + CELL_SIZE / 2}
-                                                y2={d.y * CELL_SIZE + CELL_SIZE / 2}
-                                                strokeWidth="1"
-                                                className="mesh-link-base"
-                                            />
-                                            {isPinging && (
-                                                <line
-                                                    x1={otherDrone.x * CELL_SIZE + CELL_SIZE / 2}
-                                                    y1={otherDrone.y * CELL_SIZE + CELL_SIZE / 2}
-                                                    x2={d.x * CELL_SIZE + CELL_SIZE / 2}
-                                                    y2={d.y * CELL_SIZE + CELL_SIZE / 2}
-                                                    strokeWidth="2"
-                                                    className="mesh-link"
-                                                />
+                                            {/* Survivor Ground Truth Indicator */}
+                                            {survivors.some((s: HiddenSurvivor) => s.x === x && s.y === y) && (
+                                                <text
+                                                    x={x * CELL_SIZE + CELL_SIZE - 2}
+                                                    y={y * CELL_SIZE + CELL_SIZE - 2}
+                                                    fontSize="6"
+                                                    fill="#00ffcc"
+                                                    textAnchor="end"
+                                                    fontWeight="bold"
+                                                    fontFamily="var(--font-mono)"
+                                                >
+                                                    [S]
+                                                </text>
                                             )}
                                         </g>
-                                    );
-                                }
-                            }
-                            return null;
-                        })}
-                    </g>
-                    );
-                })}
+                                    )}
+                                </React.Fragment>
+                            );
+                        })
+                    )}
 
-                {/* Base Station */}
-                {!showTrails && (
-                    <g transform={`translate(${BASE_STATION.x * CELL_SIZE + CELL_SIZE / 2}, ${BASE_STATION.y * CELL_SIZE + CELL_SIZE / 2})`}>
-                        <rect x="-15" y="-15" width="30" height="30" fill="var(--panel-bg)" stroke="#33ffaa" strokeWidth="2" />
-                        <Radio color="#33ffaa" size={20} style={{ transform: 'translate(-10px, -10px)' }} />
-                        <text x="20" y="5" fill="#33ffaa" fontSize="10" fontFamily="var(--font-mono)">BASE</text>
-                        <circle r={COMM_RANGE_BASE * CELL_SIZE} fill="transparent" stroke="#33ffaa" strokeWidth="1" strokeDasharray="10 5" style={{ animation: 'spin 10s linear infinite reverse', opacity: 0.2 }} />
-                    </g>
-                )}
-
-                {/* Terrain Overlays */}
-                {!showTrails && grid.map((row, y) => row.map((cell, x) => {
-                    if (cell.terrain === 'Road') {
-                        return <line key={`road-${x}-${y}`} x1={x * CELL_SIZE} y1={y * CELL_SIZE + CELL_SIZE / 2} x2={x * CELL_SIZE + CELL_SIZE} y2={y * CELL_SIZE + CELL_SIZE / 2} stroke="rgba(255,255,255,0.1)" strokeWidth="2" strokeDasharray="4" />
-                    }
-                    if (cell.terrain === 'Shelter') {
-                        return <rect key={`shelter-${x}-${y}`} x={x * CELL_SIZE + 4} y={y * CELL_SIZE + 4} width={CELL_SIZE - 8} height={CELL_SIZE - 8} fill="rgba(60, 150, 255, 0.1)" stroke="rgba(60, 150, 255, 0.3)" />
-                    }
-                    return null;
-                }))}
-                
-                {/* Breadcrumb Trails */}
-                {showTrails && drones.map(d => {
-                    if (selectedTrailDroneId !== 'all' && selectedTrailDroneId !== d.id) return null;
-                    
-                    return (
-                        <g key={`trail-${d.id}`}>
-                            {d.path.map((p, i) => {
-                                const isScan = p.scanned;
-                                const color = isScan ? "#ffffff" : getDroneThemeColor(d.id);
-                                return (
-                                    <circle
-                                        key={`path-${d.id}-${i}`}
-                                        cx={p.x * CELL_SIZE + CELL_SIZE / 2}
-                                        cy={p.y * CELL_SIZE + CELL_SIZE / 2}
-                                        r={isScan ? 5 : 2}
-                                        fill={color}
-                                        style={{ 
-                                            opacity: 1,
-                                            filter: `drop-shadow(0 0 6px ${color})`
-                                        }}
-                                    />
-                                );
-                            })}
-                            
-                            {/* Start Marker */}
-                            {d.path.length > 0 && (() => {
-                                const color = getDroneThemeColor(d.id);
-                                return (
-                                    <circle
-                                        cx={d.path[0].x * CELL_SIZE + CELL_SIZE / 2}
-                                        cy={d.path[0].y * CELL_SIZE + CELL_SIZE / 2}
-                                        r="4.5"
-                                        fill={color}
-                                        style={{ pointerEvents: 'none', filter: `drop-shadow(0 0 4px ${color})` }}
-                                    />
-                                );
-                            })()}
-
-                            {/* End Marker */}
-                            {d.path.length > 1 && (() => {
-                                const color = getDroneThemeColor(d.id);
-                                return (
-                                    <circle
-                                        cx={d.path[d.path.length - 1].x * CELL_SIZE + CELL_SIZE / 2}
-                                        cy={d.path[d.path.length - 1].y * CELL_SIZE + CELL_SIZE / 2}
-                                        r="4.5"
-                                        fill={color}
-                                        style={{ pointerEvents: 'none', filter: `drop-shadow(0 0 4px ${color})` }}
-                                    />
-                                );
-                            })()}
+                    {/* ── 3D Grid Lines Overlay ── */}
+                    {is3D && !showTrails && (
+                        <g style={{ pointerEvents: 'none' }}>
+                            {/* Horizontal grid lines */}
+                            {Array.from({ length: GRID_H + 1 }, (_, i) => (
+                                <line key={`hline-${i}`} x1={0} y1={i * CELL_SIZE} x2={SVG_W} y2={i * CELL_SIZE}
+                                    stroke="rgba(0,255,204,0.06)" strokeWidth="0.5" />
+                            ))}
+                            {/* Vertical grid lines */}
+                            {Array.from({ length: GRID_W + 1 }, (_, i) => (
+                                <line key={`vline-${i}`} x1={i * CELL_SIZE} y1={0} x2={i * CELL_SIZE} y2={SVG_H}
+                                    stroke="rgba(0,255,204,0.06)" strokeWidth="0.5" />
+                            ))}
+                            {/* Top edge glow */}
+                            <rect x={0} y={0} width={SVG_W} height={30} fill="url(#edge-glow-top)" />
                         </g>
-                    );
-                })}
+                    )}
 
-                {/* Drones */}
-                {drones.map(d => {
-                    if (showTrails) return null;
-                    const cx = d.x * CELL_SIZE + CELL_SIZE / 2;
-                    const cy = d.y * CELL_SIZE + CELL_SIZE / 2;
-                    const isAiDisconnected = aiDisconnectedRef.current.has(d.id);
-                    const isRecentlyReconnected = (aiReconnectedUntilTickRef.current.get(d.id) ?? -1) > time;
-                    const droneColor = isAiDisconnected
-                        ? '#ff4444'
-                        : d.mode === 'Relay'
-                            ? '#0077ff'
-                            : d.mode === 'Wide'
-                                ? '#00ffcc'
-                                : d.mode === 'Charging'
-                                    ? '#ffa500'
-                                    : '#ff4444';
-                    const isSelected = cameraPopupDroneId === d.id;
+                    {/* COMM_LINKS_MOVED */}
 
-                    return (
-                    <g 
-                        key={d.id} 
-                        transform={`translate(${cx}, ${cy})`}
-                        style={{ cursor: 'pointer' }}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            handleDroneClick(d.id);
-                        }}
-                    >
-                        {/* ── 3D Enhanced Drone Rendering ── */}
-                        {is3D ? (
-                            <>
-                                {/* Ground Aura */}
-                                <circle r="18" fill="url(#drone-aura)" style={{ pointerEvents: 'none' }}>
-                                    <animate attributeName="r" values="16;20;16" dur="3s" repeatCount="indefinite" />
-                                </circle>
+                    {/* Mesh Network Lines (collision avoidance awareness) */}
+                    {drones.map(d => {
+                        if (showTrails) return null;
+                        return (
+                            <g key={`mesh-${d.id}`}>
+                                {Object.entries(d.knownOtherDrones).map(([otherId, knownPos]) => {
+                                    if (time - knownPos.lastUpdate < 20) {
+                                        const otherDrone = drones.find(od => od.id === otherId);
+                                        if (otherDrone) {
+                                            const isPinging = (time - knownPos.lastUpdate <= 1);
+                                            return (
+                                                <g key={`link-group-${d.id}-${otherId}`}>
+                                                    <line
+                                                        x1={otherDrone.x * CELL_SIZE + CELL_SIZE / 2}
+                                                        y1={otherDrone.y * CELL_SIZE + CELL_SIZE / 2}
+                                                        x2={d.x * CELL_SIZE + CELL_SIZE / 2}
+                                                        y2={d.y * CELL_SIZE + CELL_SIZE / 2}
+                                                        strokeWidth="1"
+                                                        className="mesh-link-base"
+                                                    />
+                                                    {isPinging && (
+                                                        <line
+                                                            x1={otherDrone.x * CELL_SIZE + CELL_SIZE / 2}
+                                                            y1={otherDrone.y * CELL_SIZE + CELL_SIZE / 2}
+                                                            x2={d.x * CELL_SIZE + CELL_SIZE / 2}
+                                                            y2={d.y * CELL_SIZE + CELL_SIZE / 2}
+                                                            strokeWidth="2"
+                                                            className="mesh-link"
+                                                        />
+                                                    )}
+                                                </g>
+                                            );
+                                        }
+                                    }
+                                    return null;
+                                })}
+                            </g>
+                        );
+                    })}
 
-                                {/* Scan Radius — enlarged glow ring */}
-                                {d.mode !== 'Relay' && d.mode !== 'Charging' && (
-                                    <>
+                    {/* Base Station */}
+                    {!showTrails && (
+                        <g transform={`translate(${BASE_STATION.x * CELL_SIZE + CELL_SIZE / 2}, ${BASE_STATION.y * CELL_SIZE + CELL_SIZE / 2})`}>
+                            <rect x="-15" y="-15" width="30" height="30" fill="var(--panel-bg)" stroke="#33ffaa" strokeWidth="2" />
+                            <Radio color="#33ffaa" size={20} style={{ transform: 'translate(-10px, -10px)' }} />
+                            <text x="20" y="5" fill="#33ffaa" fontSize="10" fontFamily="var(--font-mono)">BASE</text>
+                            <circle r={COMM_RANGE_BASE * CELL_SIZE} fill="transparent" stroke="#33ffaa" strokeWidth="1" strokeDasharray="10 5" style={{ animation: 'spin 10s linear infinite reverse', opacity: 0.2 }} />
+                        </g>
+                    )}
+
+                    {/* Terrain Overlays */}
+                    {!showTrails && grid.map((row, y) => row.map((cell, x) => {
+                        if (cell.terrain === 'Road') {
+                            return <line key={`road-${x}-${y}`} x1={x * CELL_SIZE} y1={y * CELL_SIZE + CELL_SIZE / 2} x2={x * CELL_SIZE + CELL_SIZE} y2={y * CELL_SIZE + CELL_SIZE / 2} stroke="rgba(255,255,255,0.1)" strokeWidth="2" strokeDasharray="4" />
+                        }
+                        if (cell.terrain === 'Shelter') {
+                            return <rect key={`shelter-${x}-${y}`} x={x * CELL_SIZE + 4} y={y * CELL_SIZE + 4} width={CELL_SIZE - 8} height={CELL_SIZE - 8} fill="rgba(60, 150, 255, 0.1)" stroke="rgba(60, 150, 255, 0.3)" />
+                        }
+                        return null;
+                    }))}
+
+                    {/* Breadcrumb Trails */}
+                    {showTrails && drones.map(d => {
+                        if (selectedTrailDroneId !== 'all' && selectedTrailDroneId !== d.id) return null;
+
+                        return (
+                            <g key={`trail-${d.id}`}>
+                                {d.path.map((p, i) => {
+                                    const isScan = p.scanned;
+                                    const color = isScan ? "#ffffff" : getDroneThemeColor(d.id);
+                                    return (
                                         <circle
-                                            r={d.mode === 'Wide' ? CELL_SIZE * 1.5 : CELL_SIZE * 0.75}
-                                            fill="transparent"
-                                            stroke={droneColor}
-                                            strokeWidth="1.5"
-                                            strokeDasharray="6 3"
-                                            filter="url(#glow-green)"
-                                            style={{ opacity: 0.4, animation: 'spin 4s linear infinite', pointerEvents: 'none' }}
+                                            key={`path-${d.id}-${i}`}
+                                            cx={p.x * CELL_SIZE + CELL_SIZE / 2}
+                                            cy={p.y * CELL_SIZE + CELL_SIZE / 2}
+                                            r={isScan ? 5 : 2}
+                                            fill={color}
+                                            style={{
+                                                opacity: 1,
+                                                filter: `drop-shadow(0 0 6px ${color})`
+                                            }}
                                         />
-                                        {/* Second ring for depth */}
+                                    );
+                                })}
+
+                                {/* Start Marker */}
+                                {d.path.length > 0 && (() => {
+                                    const color = getDroneThemeColor(d.id);
+                                    return (
                                         <circle
-                                            r={(d.mode === 'Wide' ? CELL_SIZE * 1.5 : CELL_SIZE * 0.75) - 3}
-                                            fill="transparent"
-                                            stroke={droneColor}
-                                            strokeWidth="0.5"
-                                            strokeDasharray="2 6"
-                                            style={{ opacity: 0.2, animation: 'spin 6s linear infinite reverse', pointerEvents: 'none' }}
+                                            cx={d.path[0].x * CELL_SIZE + CELL_SIZE / 2}
+                                            cy={d.path[0].y * CELL_SIZE + CELL_SIZE / 2}
+                                            r="4.5"
+                                            fill={color}
+                                            style={{ pointerEvents: 'none', filter: `drop-shadow(0 0 4px ${color})` }}
                                         />
-                                    </>
+                                    );
+                                })()}
+
+                                {/* End Marker */}
+                                {d.path.length > 1 && (() => {
+                                    const color = getDroneThemeColor(d.id);
+                                    return (
+                                        <circle
+                                            cx={d.path[d.path.length - 1].x * CELL_SIZE + CELL_SIZE / 2}
+                                            cy={d.path[d.path.length - 1].y * CELL_SIZE + CELL_SIZE / 2}
+                                            r="4.5"
+                                            fill={color}
+                                            style={{ pointerEvents: 'none', filter: `drop-shadow(0 0 4px ${color})` }}
+                                        />
+                                    );
+                                })()}
+                            </g>
+                        );
+                    })}
+
+                    {/* DRONES_MOVED */}{/* PINS_MOVED */}
+
+                </svg>
+                {/* ── Overlay layer for HTML-based elements (drones, pins, comm lines) ── */}
+                <div style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: 0,
+                    width: SVG_W,
+                    height: SVG_H,
+                    transformStyle: 'preserve-3d',
+                    pointerEvents: 'none',
+                }}>
+                    <div style={{
+                        position: 'relative',
+                        width: '100%',
+                        height: '100%',
+                        transformStyle: 'preserve-3d',
+                        pointerEvents: 'auto',
+                    }}>
+                        {/* Comm Network Edges — Arc style in 3D, straight in 2D */}
+                        {commLinks.map((link, idx) => {
+                            if (showTrails) return null;
+                            const getCoords = (id: string) => {
+                                if (id === BASE_STATION.id) return { x: BASE_STATION.x, y: BASE_STATION.y };
+                                const d = drones.find((dr: Drone) => dr.id === id);
+                                if (d) return { x: d.x, y: d.y };
+                                return null;
+                            };
+                            const c1 = getCoords(link.source);
+                            const c2 = getCoords(link.target);
+                            if (!c1 || !c2) return null;
+                            const x1 = c1.x * CELL_SIZE + CELL_SIZE / 2;
+                            const y1 = c1.y * CELL_SIZE + CELL_SIZE / 2;
+                            const x2 = c2.x * CELL_SIZE + CELL_SIZE / 2;
+                            const y2 = c2.y * CELL_SIZE + CELL_SIZE / 2;
+
+                            if (is3D) {
+                                // 3D bell-curve arch: arc plane stands upright above the map
+                                // Path drawn in local coords: x-axis = along the line, y-axis = height above map
+                                const length = Math.hypot(x2 - x1, y2 - y1);
+                                const theta = Math.atan2(y2 - y1, x2 - x1);
+                                const arcH = Math.min(length * 0.4, 80);
+                                // Path from (0,0) to (length,0) with control point arching upward (negative Y = up in SVG)
+                                const pathD = `M 0 0 Q ${length / 2} ${-arcH} ${length} 0`;
+
+                                return (
+                                    <div key={`edge-${idx}`} style={{
+                                        position: 'absolute', left: 0, top: 0,
+                                        width: length, height: arcH,
+                                        pointerEvents: 'none',
+                                        transformOrigin: '0 0',
+                                        transform: `translate3d(${x1}px, ${y1}px, 0px) rotateZ(${theta}rad) rotateX(-90deg)`
+                                    }}>
+                                        <svg width={length} height={arcH} style={{ overflow: 'visible', position: 'absolute', left: 0, top: 0 }}>
+                                            {/* Glow under-layer */}
+                                            <path d={pathD} fill="none" stroke={link.active ? '#ffff00' : '#00ffaa'}
+                                                strokeWidth={link.active ? 6 : 3} strokeOpacity={0.15}
+                                                filter="url(#glow-green)" />
+                                            {/* Main arc */}
+                                            <path d={pathD} fill="none" stroke={link.active ? '#ffff00' : '#00ffaa'}
+                                                strokeWidth={link.active ? 2.5 : 1}
+                                                strokeDasharray={link.active ? 'none' : '6 4'}
+                                                strokeOpacity={link.active ? 0.9 : 0.5}
+                                                filter={link.active ? 'url(#bloom)' : undefined} />
+                                            {/* Animated pulse dot traveling along path */}
+                                            {link.active && (
+                                                <circle r="2.5" fill="#ffff00" filter="url(#glow-green)">
+                                                    <animateMotion dur="2s" repeatCount="indefinite" path={pathD} />
+                                                </circle>
+                                            )}
+                                        </svg>
+                                    </div>
+                                );
+                            }
+
+                            return (
+                                <div key={`edge-${idx}`} style={{ position: 'absolute', left: 0, top: 0 }}>
+                                    <svg width={SVG_W} height={SVG_H} style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none', overflow: 'visible' }}>
+                                        <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#33ffaa" strokeWidth="1" strokeDasharray="4" style={{ opacity: 0.3 }} />
+                                        {link.active && (
+                                            <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#ffff00" strokeWidth="3" style={{ opacity: 0.8, filter: 'drop-shadow(0 0 4px #ffff00)' }} />
+                                        )}
+                                    </svg>
+                                </div>
+                            );
+                        })}
+                        {/* Drones */}
+                        {drones.map(d => {
+                            if (showTrails) return null;
+                            const cx = d.x * CELL_SIZE + CELL_SIZE / 2;
+                            const cy = d.y * CELL_SIZE + CELL_SIZE / 2;
+                            const isAiDisconnected = aiDisconnectedRef.current.has(d.id);
+                            const isRecentlyReconnected = (aiReconnectedUntilTickRef.current.get(d.id) ?? -1) > time;
+                            const droneColor = isAiDisconnected
+                                ? '#ff4444'
+                                : d.mode === 'Relay'
+                                    ? '#0077ff'
+                                    : d.mode === 'Wide'
+                                        ? '#00ffcc'
+                                        : d.mode === 'Charging'
+                                            ? '#ffa500'
+                                            : '#ff4444';
+                            const isSelected = cameraPopupDroneId === d.id;
+
+
+                            return (
+                                <div
+                                    key={d.id}
+                                    style={{
+                                        position: 'absolute', left: cx, top: cy,
+                                        transformStyle: 'preserve-3d',
+                                        cursor: 'pointer',
+                                        transform: 'translateZ(1px)' // Small lift to prevent z-fighting
+                                    }}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDroneClick(d.id);
+                                    }}
+                                >
+                                    {/* ── 3D Enhanced Drone Rendering ── */}
+                                    <svg style={{ position: 'absolute', left: -50, top: -50, width: 100, height: 100, overflow: 'visible' }}>
+                                        <g transform="translate(50, 50)">
+
+                                            {is3D ? (
+                                                <>
+                                                    {/* Ground Aura */}
+                                                    <circle r="18" fill="url(#drone-aura)" style={{ pointerEvents: 'none' }}>
+                                                        <animate attributeName="r" values="16;20;16" dur="3s" repeatCount="indefinite" />
+                                                    </circle>
+
+                                                    {/* Scan Radius — enlarged glow ring */}
+                                                    {d.mode !== 'Relay' && d.mode !== 'Charging' && (
+                                                        <>
+                                                            <circle
+                                                                r={d.mode === 'Wide' ? CELL_SIZE * 1.5 : CELL_SIZE * 0.75}
+                                                                fill="transparent"
+                                                                stroke={droneColor}
+                                                                strokeWidth="1.5"
+                                                                strokeDasharray="6 3"
+                                                                filter="url(#glow-green)"
+                                                                style={{ opacity: 0.4, animation: 'spin 4s linear infinite', pointerEvents: 'none' }}
+                                                            />
+                                                            {/* Second ring for depth */}
+                                                            <circle
+                                                                r={(d.mode === 'Wide' ? CELL_SIZE * 1.5 : CELL_SIZE * 0.75) - 3}
+                                                                fill="transparent"
+                                                                stroke={droneColor}
+                                                                strokeWidth="0.5"
+                                                                strokeDasharray="2 6"
+                                                                style={{ opacity: 0.2, animation: 'spin 6s linear infinite reverse', pointerEvents: 'none' }}
+                                                            />
+                                                        </>
+                                                    )}
+                                                    {d.mode === 'Relay' && (
+                                                        <circle
+                                                            r={COMM_RANGE_RELAY * CELL_SIZE}
+                                                            fill="transparent"
+                                                            stroke="#0077ff"
+                                                            strokeWidth="1.5"
+                                                            strokeDasharray="8 4"
+                                                            filter="url(#glow-green)"
+                                                            style={{ opacity: 0.25, animation: 'spin 8s linear infinite reverse', pointerEvents: 'none' }}
+                                                        />
+                                                    )}
+
+                                                    {/* Hit Area */}
+                                                    <circle r="18" fill="rgba(0,0,0,0)" style={{ cursor: 'pointer' }} />
+
+                                                    {/* Outer glow ring */}
+                                                    <circle r="10" fill="transparent" stroke={droneColor} strokeWidth="0.8" strokeOpacity={0.3}
+                                                        filter="url(#glow-green)">
+                                                        <animate attributeName="r" values="9;12;9" dur="2.5s" repeatCount="indefinite" />
+                                                        <animate attributeName="stroke-opacity" values="0.3;0.1;0.3" dur="2.5s" repeatCount="indefinite" />
+                                                    </circle>
+
+                                                    {/* Inner glow ring */}
+                                                    <circle r="6" fill="transparent" stroke={droneColor} strokeWidth="1.2" strokeOpacity={0.6}
+                                                        filter="url(#bloom)" />
+
+
+                                                    {/* Hit Area */}
+                                                    <circle r="18" fill="rgba(0,0,0,0)" style={{ cursor: 'pointer', pointerEvents: 'all' }} />
+
+
+                                                    {/* Selected highlight */}
+                                                    {isSelected && (
+                                                        <>
+                                                            <circle r="14" fill="transparent" stroke="#fff" strokeWidth="1.5"
+                                                                strokeDasharray="4 2" filter="url(#bloom)">
+                                                                <animate attributeName="r" values="13;16;13" dur="1.5s" repeatCount="indefinite" />
+                                                            </circle>
+                                                            <circle r="22" fill="transparent" stroke={droneColor} strokeWidth="0.5"
+                                                                strokeOpacity={0.3}>
+                                                                <animate attributeName="r" values="20;26;20" dur="2s" repeatCount="indefinite" />
+                                                                <animate attributeName="stroke-opacity" values="0.3;0;0.3" dur="2s" repeatCount="indefinite" />
+                                                            </circle>
+                                                        </>
+                                                    )}
+
+                                                    {isRecentlyReconnected && !isAiDisconnected && (
+                                                        <circle r="9" fill="transparent" stroke="#33ffaa" strokeWidth="1.5"
+                                                            strokeDasharray="3" style={{ opacity: 0.9 }} filter="url(#glow-green)" />
+                                                    )}
+
+                                                    {/* Target line */}
+                                                    {d.mode === 'Micro' && (
+                                                        <line
+                                                            x1={0} y1={0}
+                                                            x2={(d.tx - d.x) * CELL_SIZE} y2={(d.ty - d.y) * CELL_SIZE}
+                                                            stroke="#ff4444" strokeWidth="1" strokeDasharray="3 2"
+                                                            style={{ opacity: 0.5 }} filter="url(#glow-green)"
+                                                        />
+                                                    )}
+                                                </>
+
+                                            ) : (
+                                                <>
+                                                    <circle r="16" fill="rgba(0,0,0,0)" style={{ cursor: 'pointer', pointerEvents: 'all' }} />
+
+
+                                                    {/* Drone blip */}
+                                                    <circle r="4" fill={droneColor} />
+                                                    <polygon points="0,-6 6,4 -6,4" fill={droneColor} />
+                                                    {isRecentlyReconnected && !isAiDisconnected && (
+                                                        <circle r="9" fill="transparent" stroke="#33ffaa" strokeWidth="1.5" strokeDasharray="3" style={{ opacity: 0.9 }} />
+                                                    )}
+                                                    {/* Label */}
+                                                    <rect x="-18" y="-22" width="36" height="12" fill="rgba(0,0,0,0.7)" rx="2" />
+                                                    <text x="0" y="-14" textAnchor="middle" fill="#fff" fontSize="8" fontFamily="var(--font-mono)">
+                                                        {d.id.replace('DRN-', '').replace('RLY-', 'R:')}
+                                                    </text>
+                                                    {isAiDisconnected && <text x="10" y="0" fill="#ff4444" fontSize="8" fontFamily="var(--font-mono)">DISCONNECTED</text>}
+                                                    {isRecentlyReconnected && !isAiDisconnected && <text x="10" y="0" fill="#33ffaa" fontSize="8" fontFamily="var(--font-mono)">REJOIN</text>}
+                                                    {/* Haversine Line visually tracking target */}
+                                                    {d.mode === 'Micro' && (
+                                                        <line
+                                                            x1={0} y1={0}
+                                                            x2={(d.tx - d.x) * CELL_SIZE} y2={(d.ty - d.y) * CELL_SIZE}
+                                                            stroke="#ff4444" strokeWidth="1" strokeDasharray="2" style={{ opacity: 0.4 }}
+                                                        />
+                                                    )}
+                                                </>
+                                            )}
+
+                                        </g>
+                                    </svg>
+
+                                    {is3D && (
+                                        <div style={{ position: 'absolute', left: 0, top: 0, transformStyle: 'preserve-3d', pointerEvents: 'none' }}>
+                                            {/* Plane X */}
+                                            <svg style={{ position: 'absolute', left: -25, top: -50, width: 50, height: 100, overflow: 'visible', transform: 'rotateX(-90deg)' }}>
+                                                <polygon points="25,50 17,32 25,27 33,32" fill={droneColor} fillOpacity={0.8} stroke={droneColor} strokeWidth="0.5" filter="url(#bloom)" />
+                                            </svg>
+                                            {/* Plane Y */}
+                                            <svg style={{ position: 'absolute', left: -25, top: -50, width: 50, height: 100, overflow: 'visible', transform: 'rotateX(-90deg) rotateY(90deg)' }}>
+                                                <polygon points="25,50 17,32 25,27 33,32" fill={droneColor} fillOpacity={0.4} stroke={droneColor} strokeWidth="0.5" filter="url(#bloom)" />
+                                            </svg>
+
+                                            {/* Upright Elements (Billboarded, truly floating in Z space) */}
+                                            <div style={{ position: 'absolute', left: 0, top: 0, transform: `translateZ(25px) rotateZ(${-angleZ}deg) rotateX(${-angleX}deg)` }}>
+                                                <svg style={{ position: 'absolute', left: -50, top: -50, width: 100, height: 100, overflow: 'visible' }}>
+                                                    <g transform="translate(50, 50)">
+                                                        {/* Vertical beam line */}
+                                                        <line x1={0} y1={-18} x2={0} y2={-42} stroke={droneColor} strokeWidth="1"
+                                                            strokeOpacity={0.4} strokeDasharray="2 2" filter="url(#glow-green)">
+                                                            <animate attributeName="stroke-opacity" values="0.2;0.5;0.2" dur="2s" repeatCount="indefinite" />
+                                                        </line>
+
+                                                        {/* Label with background — elevated */}
+                                                        <rect x="-22" y="-56" width="44" height="14" fill="rgba(0,16,12,0.85)"
+                                                            stroke={droneColor} strokeWidth="0.5" rx="2" />
+                                                        <text x="0" y="-46" textAnchor="middle" fill={droneColor} fontSize="8"
+                                                            fontFamily="var(--font-mono)" fontWeight="bold" letterSpacing="1">
+                                                            {d.id.replace('DRN-', '').replace('RLY-', 'R:')}
+                                                        </text>
+
+                                                        {/* Battery micro-bar */}
+                                                        <rect x="-12" y="-40" width="24" height="2" fill="rgba(255,255,255,0.1)" rx="1" />
+                                                        <rect x="-12" y="-40" width={Math.max(0, 24 * d.battery / 100)} height="2"
+                                                            fill={d.battery > 60 ? '#00ffcc' : d.battery > 30 ? '#ffa500' : '#ff4444'} rx="1" />
+
+                                                        {isAiDisconnected && <text x="14" y="-12" fill="#ff4444" fontSize="7" fontFamily="var(--font-mono)" filter="url(#glow-green)">DISCONNECTED</text>}
+                                                        {isRecentlyReconnected && !isAiDisconnected && <text x="14" y="-12" fill="#33ffaa" fontSize="7" fontFamily="var(--font-mono)">REJOIN</text>}
+                                                    </g>
+                                                </svg>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+
+
+
+                        {/* Visible Survivor Pins */}
+                        {!showTrails && pins.map(pin => (
+
+                            <div key={pin.id}
+                                style={{
+                                    position: 'absolute', left: pin.x * CELL_SIZE + CELL_SIZE / 2, top: pin.y * CELL_SIZE + CELL_SIZE / 2,
+                                    transformStyle: 'preserve-3d',
+                                    cursor: 'pointer'
+                                }}
+                                onClick={() => setSelectedPin(pin)}
+                            >
+                                <svg style={{ position: 'absolute', left: -50, top: -50, width: 100, height: 100, overflow: 'visible' }}>
+                                    <g transform="translate(50, 50)">
+
+                                        {is3D ? (
+                                            <>
+                                                <circle r="16" fill="rgba(0, 255, 204, 0.15)" filter="url(#glow-strong)">
+                                                    <animate attributeName="r" values="14;18;14" dur="2s" repeatCount="indefinite" />
+                                                </circle>
+                                                <circle r="8" fill="rgba(0,255,204,0.25)" stroke="#00ffcc" strokeWidth="1" />
+                                                <circle r="3" fill="#00ffcc" filter="url(#bloom)" />
+
+                                                <circle r="16" fill="rgba(0,0,0,0)" style={{ cursor: 'pointer', pointerEvents: 'all' }} />
+
+                                            </>
+                                        ) : (
+                                            <>
+                                                <circle r="12" fill="rgba(0, 255, 204, 0.3)" className="animate-pulse" />
+                                                <circle r="6" fill="#00ffcc" />
+                                                <foreignObject x="-10" y="-10" width="20" height="20">
+                                                    <MapPin size={20} color="#00ffcc" style={{ transform: 'translateY(-18px)' }} />
+                                                </foreignObject>
+                                            </>
+                                        )}
+
+                                    </g>
+                                </svg>
+
+                                {is3D && (
+                                    <div style={{ position: 'absolute', left: 0, top: 0, transformStyle: 'preserve-3d', pointerEvents: 'none' }}>
+                                        <div style={{ position: 'absolute', left: 0, top: 0, transform: `translateZ(25px) rotateZ(${-angleZ}deg) rotateX(${-angleX}deg)` }}>
+                                            <svg style={{ position: 'absolute', left: -50, top: -50, width: 100, height: 100, overflow: 'visible' }}>
+                                                <g transform="translate(50, 50)">
+                                                    <line x1={0} y1={-8} x2={0} y2={-22} stroke="#00ffcc" strokeWidth="1" strokeDasharray="2" strokeOpacity={0.6} />
+                                                    <text x={0} y={-25} textAnchor="middle" fill="#00ffcc" fontSize="6" fontFamily="var(--font-mono)" letterSpacing="1">SOS</text>
+                                                </g>
+                                            </svg>
+                                        </div>
+                                    </div>
                                 )}
-                                {d.mode === 'Relay' && (
-                                    <circle
-                                        r={COMM_RANGE_RELAY * CELL_SIZE}
-                                        fill="transparent"
-                                        stroke="#0077ff"
-                                        strokeWidth="1.5"
-                                        strokeDasharray="8 4"
-                                        filter="url(#glow-green)"
-                                        style={{ opacity: 0.25, animation: 'spin 8s linear infinite reverse', pointerEvents: 'none' }}
-                                    />
-                                )}
-
-                                {/* Hit Area */}
-                                <circle r="18" fill="rgba(0,0,0,0)" style={{ cursor: 'pointer' }} />
-
-                                {/* Outer glow ring */}
-                                <circle r="10" fill="transparent" stroke={droneColor} strokeWidth="0.8" strokeOpacity={0.3}
-                                    filter="url(#glow-green)">
-                                    <animate attributeName="r" values="9;12;9" dur="2.5s" repeatCount="indefinite" />
-                                    <animate attributeName="stroke-opacity" values="0.3;0.1;0.3" dur="2.5s" repeatCount="indefinite" />
-                                </circle>
-
-                                {/* Inner glow ring */}
-                                <circle r="6" fill="transparent" stroke={droneColor} strokeWidth="1.2" strokeOpacity={0.6}
-                                    filter="url(#bloom)" />
-
-                                {/* Diamond marker body */}
-                                <polygon points="0,-7 5,0 0,7 -5,0" fill={droneColor} fillOpacity={0.9}
-                                    stroke={droneColor} strokeWidth="1" filter="url(#bloom)" />
-
-                                {/* Center dot */}
-                                <circle r="2" fill="#fff" fillOpacity={0.9} />
-
-                                {/* Vertical beam line */}
-                                <line x1={0} y1={-7} x2={0} y2={-28} stroke={droneColor} strokeWidth="1"
-                                    strokeOpacity={0.4} strokeDasharray="2 2" filter="url(#glow-green)">
-                                    <animate attributeName="stroke-opacity" values="0.2;0.5;0.2" dur="2s" repeatCount="indefinite" />
-                                </line>
-
-                                {/* Selected highlight */}
-                                {isSelected && (
-                                    <>
-                                        <circle r="14" fill="transparent" stroke="#fff" strokeWidth="1.5"
-                                            strokeDasharray="4 2" filter="url(#bloom)">
-                                            <animate attributeName="r" values="13;16;13" dur="1.5s" repeatCount="indefinite" />
-                                        </circle>
-                                        <circle r="22" fill="transparent" stroke={droneColor} strokeWidth="0.5"
-                                            strokeOpacity={0.3}>
-                                            <animate attributeName="r" values="20;26;20" dur="2s" repeatCount="indefinite" />
-                                            <animate attributeName="stroke-opacity" values="0.3;0;0.3" dur="2s" repeatCount="indefinite" />
-                                        </circle>
-                                    </>
-                                )}
-
-                                {isRecentlyReconnected && !isAiDisconnected && (
-                                    <circle r="9" fill="transparent" stroke="#33ffaa" strokeWidth="1.5"
-                                        strokeDasharray="3" style={{ opacity: 0.9 }} filter="url(#glow-green)" />
-                                )}
-
-                                {/* Label with background — elevated */}
-                                <rect x="-22" y="-40" width="44" height="14" fill="rgba(0,16,12,0.85)"
-                                    stroke={droneColor} strokeWidth="0.5" rx="2" />
-                                <text x="0" y="-30" textAnchor="middle" fill={droneColor} fontSize="8"
-                                    fontFamily="var(--font-mono)" fontWeight="bold" letterSpacing="1">
-                                    {d.id.replace('DRN-', '').replace('RLY-', 'R:')}
-                                </text>
-
-                                {/* Battery micro-bar */}
-                                <rect x="-12" y="-24" width="24" height="2" fill="rgba(255,255,255,0.1)" rx="1" />
-                                <rect x="-12" y="-24" width={Math.max(0, 24 * d.battery / 100)} height="2"
-                                    fill={d.battery > 60 ? '#00ffcc' : d.battery > 30 ? '#ffa500' : '#ff4444'} rx="1" />
-
-                                {isAiDisconnected && <text x="14" y="2" fill="#ff4444" fontSize="7" fontFamily="var(--font-mono)" filter="url(#glow-green)">DISCONNECTED</text>}
-                                {isRecentlyReconnected && !isAiDisconnected && <text x="14" y="2" fill="#33ffaa" fontSize="7" fontFamily="var(--font-mono)">REJOIN</text>}
-
-                                {/* Target line */}
-                                {d.mode === 'Micro' && (
-                                    <line
-                                        x1={0} y1={0}
-                                        x2={(d.tx - d.x) * CELL_SIZE} y2={(d.ty - d.y) * CELL_SIZE}
-                                        stroke="#ff4444" strokeWidth="1" strokeDasharray="3 2"
-                                        style={{ opacity: 0.5 }} filter="url(#glow-green)"
-                                    />
-                                )}
-                            </>
-                        ) : (
-                            /* ── Original 2D Drone Rendering ── */
-                            <>
-                                {/* Scan Radius Indicator */}
-                                {d.mode !== 'Relay' && d.mode !== 'Charging' && (
-                                    <circle
-                                        r={d.mode === 'Wide' ? CELL_SIZE * 1.5 : CELL_SIZE * 0.75}
-                                        fill="transparent"
-                                        stroke={d.mode === 'Wide' ? '#00ffcc' : '#ff4444'}
-                                        strokeWidth="1"
-                                        strokeDasharray="4"
-                                        className="spin-xs"
-                                        style={{ opacity: 0.5, animation: 'spin 4s linear infinite', pointerEvents: 'none' }}
-                                    />
-                                )}
-                                {d.mode === 'Relay' && (
-                                    <circle
-                                        r={COMM_RANGE_RELAY * CELL_SIZE}
-                                        fill="transparent"
-                                        stroke="#0077ff"
-                                        strokeWidth="1"
-                                        strokeDasharray="8"
-                                        style={{ opacity: 0.2, animation: 'spin 8s linear infinite reverse', pointerEvents: 'none' }}
-                                    />
-                                )}
-                                {/* Hit Area (Invisible but clickable) */}
-                                <circle r="16" fill="rgba(0,0,0,0)" style={{ cursor: 'pointer' }} />
-
-                                {/* Drone blip */}
-                                <circle r="4" fill={droneColor} />
-                                <polygon points="0,-6 6,4 -6,4" fill={droneColor} />
-                                {isRecentlyReconnected && !isAiDisconnected && (
-                                    <circle r="9" fill="transparent" stroke="#33ffaa" strokeWidth="1.5" strokeDasharray="3" style={{ opacity: 0.9 }} />
-                                )}
-                                {/* Label */}
-                                <rect x="-18" y="-22" width="36" height="12" fill="rgba(0,0,0,0.7)" rx="2" />
-                                <text x="0" y="-14" textAnchor="middle" fill="#fff" fontSize="8" fontFamily="var(--font-mono)">
-                                    {d.id.replace('DRN-', '').replace('RLY-', 'R:')}
-                                </text>
-                                {isAiDisconnected && <text x="10" y="0" fill="#ff4444" fontSize="8" fontFamily="var(--font-mono)">DISCONNECTED</text>}
-                                {isRecentlyReconnected && !isAiDisconnected && <text x="10" y="0" fill="#33ffaa" fontSize="8" fontFamily="var(--font-mono)">REJOIN</text>}
-                                {/* Haversine Line visually tracking target */}
-                                {d.mode === 'Micro' && (
-                                    <line
-                                        x1={0} y1={0}
-                                        x2={(d.tx - d.x) * CELL_SIZE} y2={(d.ty - d.y) * CELL_SIZE}
-                                        stroke="#ff4444" strokeWidth="1" strokeDasharray="2" style={{ opacity: 0.4 }}
-                                    />
-                                )}
-                            </>
-                        )}
-                    </g>
-                    );
-                })}
-
-                {/* Visible Survivor Pins */}
-                {!showTrails && pins.map(pin => (
-                    <g key={pin.id}
-                        transform={`translate(${pin.x * CELL_SIZE + CELL_SIZE / 2}, ${pin.y * CELL_SIZE + CELL_SIZE / 2})`}
-                        style={{ cursor: 'pointer' }}
-                        onClick={() => setSelectedPin(pin)}
-                    >
-                        {is3D ? (
-                            <>
-                                <circle r="16" fill="rgba(0, 255, 204, 0.15)" filter="url(#glow-strong)">
-                                    <animate attributeName="r" values="14;18;14" dur="2s" repeatCount="indefinite" />
-                                </circle>
-                                <circle r="8" fill="rgba(0,255,204,0.25)" stroke="#00ffcc" strokeWidth="1" />
-                                <circle r="3" fill="#00ffcc" filter="url(#bloom)" />
-                                {/* Upward pin line */}
-                                <line x1={0} y1={-8} x2={0} y2={-22} stroke="#00ffcc" strokeWidth="1" strokeDasharray="2" strokeOpacity={0.6} />
-                                <text x={0} y={-25} textAnchor="middle" fill="#00ffcc" fontSize="6" fontFamily="var(--font-mono)" letterSpacing="1">SOS</text>
-                            </>
-                        ) : (
-                            <>
-                                <circle r="12" fill="rgba(0, 255, 204, 0.3)" className="animate-pulse" />
-                                <circle r="6" fill="#00ffcc" />
-                                <foreignObject x="-10" y="-10" width="20" height="20">
-                                    <MapPin size={20} color="#00ffcc" style={{ transform: 'translateY(-18px)' }} />
-                                </foreignObject>
-                            </>
-                        )}
-                    </g>
-                ))}
-            </svg>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+                </div>{/* end unified container */}
             </div>{/* end perspective container */}
-            
+
+
             {/* Trail Manager Overlay (Red Box area) */}
-            <div style={{ 
-                position: 'absolute', 
-                top: 16, 
-                right: 16, 
+            <div style={{
+                position: 'absolute',
+                top: 16,
+                right: 16,
                 width: '200px',
-                background: 'rgba(5, 10, 16, 0.85)', 
-                border: '1px solid var(--panel-border)', 
-                padding: '12px', 
-                fontFamily: 'var(--font-mono)', 
-                fontSize: '0.75rem', 
+                background: 'rgba(5, 10, 16, 0.85)',
+                border: '1px solid var(--panel-border)',
+                padding: '12px',
+                fontFamily: 'var(--font-mono)',
+                fontSize: '0.75rem',
                 backdropFilter: 'blur(8px)',
                 boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
                 display: 'flex',
@@ -702,25 +819,25 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
             }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(0,255,204,0.2)', paddingBottom: '8px' }}>
                     <span style={{ color: 'var(--accent-primary)', fontWeight: 'bold', letterSpacing: '1px' }}>TRAIL SYSTEMS</span>
-                    <div 
+                    <div
                         onClick={() => setShowTrails(!showTrails)}
-                        style={{ 
-                            width: '32px', 
-                            height: '16px', 
-                            background: showTrails ? 'var(--accent-primary)' : '#333', 
-                            borderRadius: '8px', 
-                            position: 'relative', 
+                        style={{
+                            width: '32px',
+                            height: '16px',
+                            background: showTrails ? 'var(--accent-primary)' : '#333',
+                            borderRadius: '8px',
+                            position: 'relative',
                             cursor: 'pointer',
                             transition: 'all 0.3s ease'
                         }}
                     >
-                        <div style={{ 
-                            width: '12px', 
-                            height: '12px', 
-                            background: '#fff', 
-                            borderRadius: '50%', 
-                            position: 'absolute', 
-                            top: '2px', 
+                        <div style={{
+                            width: '12px',
+                            height: '12px',
+                            background: '#fff',
+                            borderRadius: '50%',
+                            position: 'absolute',
+                            top: '2px',
                             left: showTrails ? '18px' : '2px',
                             transition: 'all 0.3s ease'
                         }} />
@@ -728,12 +845,12 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <div 
+                    <div
                         onClick={() => setSelectedTrailDroneId('all')}
-                        style={{ 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            gap: '8px', 
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
                             cursor: 'pointer',
                             padding: '4px 8px',
                             borderRadius: '2px',
@@ -749,13 +866,13 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                         const color = getDroneThemeColor(d.id);
                         const isSelected = selectedTrailDroneId === d.id;
                         return (
-                            <div 
+                            <div
                                 key={`trail-sel-${d.id}`}
                                 onClick={() => setSelectedTrailDroneId(d.id)}
-                                style={{ 
-                                    display: 'flex', 
-                                    alignItems: 'center', 
-                                    gap: '8px', 
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
                                     cursor: 'pointer',
                                     padding: '4px 8px',
                                     borderRadius: '2px',
@@ -764,10 +881,10 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                                     transition: 'all 0.2s ease'
                                 }}
                             >
-                                <div style={{ 
-                                    width: '8px', 
-                                    height: '8px', 
-                                    borderRadius: '2px', 
+                                <div style={{
+                                    width: '8px',
+                                    height: '8px',
+                                    borderRadius: '2px',
                                     background: color,
                                     boxShadow: isSelected ? `0 0 8px ${color}` : 'none'
                                 }} />
@@ -922,6 +1039,7 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
         </div>
     );
 };
+
 
 /* ── Combined 3D Info + Camera Feed Popup ── */
 const DroneInfoPopup3D: React.FC<{
