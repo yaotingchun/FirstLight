@@ -307,6 +307,8 @@ const SimulationMapMCP: React.FC = () => {
                     randomizeBattery={randomizeBattery}
                     setRandomizeBattery={setRandomizeBattery}
                     running={running}
+                    cameraPopupDroneId={cameraPopupDroneId}
+                    setCameraPopupDroneId={setCameraPopupDroneId}
                 />
             </div>
 

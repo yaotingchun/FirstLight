@@ -22,11 +22,14 @@ interface SimulationDashboardProps {
     randomizeBattery: boolean;
     setRandomizeBattery: (val: boolean) => void;
     running: boolean;
+    cameraPopupDroneId: string | null;
+    setCameraPopupDroneId: (id: string | null) => void;
 }
 
 export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
     drones, time, aiDisconnectedRef, aiReconnectedUntilTickRef,
-    metrics, sensorWeights, randomizeBattery, setRandomizeBattery, running
+    metrics, sensorWeights, randomizeBattery, setRandomizeBattery, running,
+    cameraPopupDroneId, setCameraPopupDroneId
 }) => {
     const TOTAL_CELLS = GRID_W * GRID_H;
 
@@ -94,8 +97,54 @@ export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
                                     : d.mode === 'Charging'
                                         ? '#ffa500'
                                         : '#ff4444';
+                        const isActiveCamera = cameraPopupDroneId === d.id;
                         return (
-                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--panel-border)' }}>
+                            <div
+                                key={i}
+                                onClick={() => {
+                                    if (cameraPopupDroneId === d.id) {
+                                        setCameraPopupDroneId(null);
+                                    } else {
+                                        setCameraPopupDroneId(d.id);
+                                    }
+                                }}
+                                style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    padding: '8px',
+                                    background: isActiveCamera ? 'rgba(0, 255, 204, 0.12)' : 'rgba(255,255,255,0.02)',
+                                    border: isActiveCamera ? '1px solid rgba(0, 255, 204, 0.5)' : '1px solid var(--panel-border)',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s ease',
+                                    position: 'relative',
+                                    overflow: 'hidden',
+                                }}
+                                onMouseEnter={(e) => {
+                                    if (!isActiveCamera) {
+                                        e.currentTarget.style.background = 'rgba(0, 255, 204, 0.06)';
+                                        e.currentTarget.style.borderColor = 'rgba(0, 255, 204, 0.3)';
+                                    }
+                                }}
+                                onMouseLeave={(e) => {
+                                    if (!isActiveCamera) {
+                                        e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
+                                        e.currentTarget.style.borderColor = 'var(--panel-border)';
+                                    }
+                                }}
+                            >
+                                {/* Active camera indicator bar */}
+                                {isActiveCamera && (
+                                    <div style={{
+                                        position: 'absolute',
+                                        left: 0,
+                                        top: 0,
+                                        bottom: 0,
+                                        width: '3px',
+                                        background: '#00ffcc',
+                                        boxShadow: '0 0 8px #00ffcc',
+                                    }} />
+                                )}
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     <span style={{ display: 'flex', alignItems: 'center', padding: 2 }}>
                                         {isAiDisconnected ? <WifiOff size={14} color="#ff4444" /> : <Wifi size={14} color="#00ffcc" />}
