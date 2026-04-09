@@ -6,6 +6,8 @@ import { useSimulationMCP } from '../hooks/useSimulationMCP';
 import { SimulationGrid } from '../components/SimulationMap/SimulationGrid';
 import { SimulationDashboard } from '../components/SimulationMap/SimulationDashboard';
 import { MCPChatPanel } from '../components/SimulationMap/MCPChatPanel';
+import { PersistentCameraEngine } from '../components/SimulationMap/PersistentCameraEngine';
+import { DroneCameraStrip } from '../components/SimulationMap/DroneCameraStrip';
 import * as mcpClient from '../services/mcpClient';
 
 const CITIES = [
@@ -44,6 +46,7 @@ const SimulationMapMCP: React.FC = () => {
     const [latInput, setLatInput] = React.useState(centerLocation.lat.toString());
     const [lngInput, setLngInput] = React.useState(centerLocation.lng.toString());
     const [showCityDropdown, setShowCityDropdown] = React.useState(false);
+    const [cameraCanvases, setCameraCanvases] = React.useState<Record<string, HTMLCanvasElement>>({});
 
     React.useEffect(() => {
         setLatInput(centerLocation.lat.toFixed(4));
@@ -299,7 +302,21 @@ const SimulationMapMCP: React.FC = () => {
                         });
                     }}
                 />
+
+                <DroneCameraStrip 
+                    drones={dronesRef.current.filter(d => !d.id.startsWith('RLY-'))}
+                    canvases={cameraCanvases}
+                    time={timeRef.current}
+                    centerLocation={centerLocation}
+                />
             </div>
+
+            <PersistentCameraEngine 
+                drones={dronesRef.current.filter(d => !d.id.startsWith('RLY-'))}
+                commLinks={commLinksRef.current}
+                centerLocation={centerLocation}
+                onCanvasesReady={setCameraCanvases}
+            />
 
             <MCPChatPanel
                 mcpConnected={mcpConnected}
