@@ -51,7 +51,7 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
     const { centerLocation } = useSharedSimulation();
 
     return (
-        <div className="hud-panel" style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="hud-panel" style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', paddingLeft: '40px' }}>
         <div style={{ position: 'relative', width: GRID_W * CELL_SIZE, height: GRID_H * CELL_SIZE }}>
             {showActualMap && (
                 <div style={{ position: 'absolute', width: '100%', height: '100%', overflow: 'hidden', pointerEvents: 'none' }}>
@@ -496,7 +496,7 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
             </div>
 
             {/* Legend */}
-            <div style={{ position: 'absolute', bottom: 16, left: 16, display: 'flex', gap: '16px' }}>
+            <div style={{ position: 'absolute', bottom: 16, right: 16, display: 'flex', gap: '16px' }}>
                 <div style={{ background: 'rgba(0,0,0,0.8)', border: '1px solid var(--panel-border)', padding: '12px', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', backdropFilter: 'blur(4px)' }}>
                     <div style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>MAP LEGEND</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #00ffcc' }}></div> Wide-Scan Mode</div>
