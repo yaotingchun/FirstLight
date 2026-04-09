@@ -29,3 +29,6 @@ credentials/
 *.njsproj
 *.sln
 *.sw?
+
+# Data
+src/assets/performance_analytics.json
