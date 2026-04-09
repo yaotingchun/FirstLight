@@ -3,9 +3,9 @@ import DeckGL from '@deck.gl/react';
 import { Map } from 'react-map-gl/maplibre';
 import { HeatmapLayer } from '@deck.gl/aggregation-layers';
 import { fetchOSMFeatures } from '../utils/osmClient';
+import { useSharedSimulation } from '../context/SimulationContext';
 
 // --- CONFIG ---
-const MAP_CENTER = { longitude: 101.6841, latitude: 3.1319 };
 const MAPTILER_KEY = 'SAX29oYdDKXlxm4RKRBu'; // API key
 
 export interface HeatmapPoint {
@@ -38,6 +38,7 @@ const getProbabilityFromTags = (tags: any): number => {
 };
 
 const ProbabilityMap3D: React.FC = () => {
+    const { centerLocation } = useSharedSimulation();
     const [data, setData] = useState<HeatmapPoint[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
 
@@ -45,7 +46,7 @@ const ProbabilityMap3D: React.FC = () => {
     const fetchOSMData = async () => {
         setLoading(true);
         const offset = 0.009;
-        const bbox = `${(MAP_CENTER.latitude - offset).toFixed(4)},${(MAP_CENTER.longitude - offset).toFixed(4)},${(MAP_CENTER.latitude + offset).toFixed(4)},${(MAP_CENTER.longitude + offset).toFixed(4)}`;
+        const bbox = `${(centerLocation.lat - offset).toFixed(4)},${(centerLocation.lng - offset).toFixed(4)},${(centerLocation.lat + offset).toFixed(4)},${(centerLocation.lng + offset).toFixed(4)}`;
 
         try {
             // Use the robust mirror-rotating client (now with built-in caching)
@@ -73,11 +74,11 @@ const ProbabilityMap3D: React.FC = () => {
 
     useEffect(() => {
         fetchOSMData();
-    }, []);
+    }, [centerLocation]);
 
     const INITIAL_VIEW_STATE = {
-        longitude: MAP_CENTER.longitude,
-        latitude: MAP_CENTER.latitude,
+        longitude: centerLocation.lng,
+        latitude: centerLocation.lat,
         zoom: 14,
         maxZoom: 18,
         pitch: 0,

@@ -6,6 +6,7 @@ import {
     GRID_W, GRID_H, CELL_SIZE, BASE_STATION, COMM_RANGE_BASE, COMM_RANGE_RELAY
 } from '../../types/simulation';
 import type { Sector, Drone, CommEdge, HiddenSurvivor, FoundPin } from '../../types/simulation';
+import { useSharedSimulation } from '../../context/SimulationContext';
 
 const MAPTILER_KEY = 'SAX29oYdDKXlxm4RKRBu';
 
@@ -47,14 +48,18 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
     getSectorProbability, time, aiDisconnectedRef, aiReconnectedUntilTickRef,
     showActualMap
 }) => {
+    const { centerLocation } = useSharedSimulation();
+
     return (
         <div className="hud-panel" style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ position: 'relative', width: GRID_W * CELL_SIZE, height: GRID_H * CELL_SIZE }}>
             {showActualMap && (
-                <div style={{ position: 'absolute', width: GRID_W * CELL_SIZE, height: GRID_H * CELL_SIZE, overflow: 'hidden', pointerEvents: 'none' }}>
+                <div style={{ position: 'absolute', width: '100%', height: '100%', overflow: 'hidden', pointerEvents: 'none' }}>
                     <Map
+                        key={`map-${centerLocation.lat}-${centerLocation.lng}`}
                         initialViewState={{
-                            longitude: 101.6841,
-                            latitude: 3.1319,
+                            longitude: centerLocation.lng,
+                            latitude: centerLocation.lat,
                             zoom: 15.55
                         }}
                         style={{ width: '100%', height: '100%', opacity: 0.5 }}
@@ -356,6 +361,38 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                     </g>
                 ))}
             </svg>
+
+
+            {/* Map Scale - Positioned exactly below the rightmost grid cell */}
+            <div style={{
+                position: 'absolute',
+                bottom: -32,
+                right: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                pointerEvents: 'none',
+                zIndex: 100,
+                WebkitFontSmoothing: 'antialiased',
+                MozOsxFontSmoothing: 'grayscale'
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', width: CELL_SIZE, justifyContent: 'space-between' }}>
+                    <div style={{ width: 0, height: 0, borderTop: '4px solid transparent', borderBottom: '4px solid transparent', borderRight: '6px solid rgba(255,255,255,0.95)' }} />
+                    <div style={{ flex: 1, height: '1.5px', background: 'rgba(255,255,255,0.95)' }} />
+                    <div style={{ width: 0, height: 0, borderTop: '4px solid transparent', borderBottom: '4px solid transparent', borderLeft: '6px solid rgba(255,255,255,0.95)' }} />
+                </div>
+                <div style={{ 
+                    fontSize: '11px', 
+                    color: '#ffffff', 
+                    fontFamily: 'var(--font-mono)', 
+                    marginTop: '4px',
+                    fontWeight: 'bold',
+                    letterSpacing: '1px'
+                }}>
+                    100m
+                </div>
+            </div>
+        </div>
             
             {/* Trail Manager Overlay (Red Box area) */}
             <div style={{ 
@@ -499,8 +536,8 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                         <span style={{ color: '#ff4444' }}>{selectedPin.info.battery}</span>
                     </div>
                     <div style={{ marginTop: '8px', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                        LAT: {(1.5600 - selectedPin.y * 0.001).toFixed(4)} <br />
-                        LON: {(103.6300 + selectedPin.x * 0.001).toFixed(4)}
+                        LAT: {(centerLocation.lat - (selectedPin.y - 10) * 0.0009).toFixed(4)} <br />
+                        LON: {(centerLocation.lng + (selectedPin.x - 10) * 0.0009).toFixed(4)}
                     </div>
                 </div>
             )}

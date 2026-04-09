@@ -6,19 +6,9 @@ import { Target, Radio, Crosshair, Activity } from 'lucide-react';
 import { useSharedSimulation } from '../context/SimulationContext';
 import { INITIAL_SENSORS } from '../services/gridDataService';
 
-// ── Map constants ──────────────────────────────────────────────────────
-const EPICENTER = { lng: 101.6841, lat: 3.1319 }; // Matches 3D Probability Map
-
 const GRID_W = 20;
 const GRID_H = 20;
 const CELL_DEG = 0.0009; // ~100 m
-const GRID_ORIGIN_LNG = EPICENTER.lng - (GRID_W / 2) * CELL_DEG;
-const GRID_ORIGIN_LAT = EPICENTER.lat + (GRID_H / 2) * CELL_DEG;
-
-const gridToLngLat = (gx: number, gy: number): [number, number] => [
-    GRID_ORIGIN_LNG + gx * CELL_DEG,
-    GRID_ORIGIN_LAT - gy * CELL_DEG
-];
 
 const BASE_STATION = { id: 'BASE', x: 9.5, y: 19 };
 
@@ -32,8 +22,16 @@ const DroneCam: React.FC = () => {
     const commsLinesRef = useRef<Record<string, Cesium.Entity>>({});
 
     const { 
-        running, timeRef, dronesRef, sensorWeightsRef, commLinksRef 
+        running, timeRef, dronesRef, sensorWeightsRef, commLinksRef, centerLocation 
     } = useSharedSimulation();
+
+    const GRID_ORIGIN_LNG = centerLocation.lng - (GRID_W / 2) * CELL_DEG;
+    const GRID_ORIGIN_LAT = centerLocation.lat + (GRID_H / 2) * CELL_DEG;
+
+    const gridToLngLat = useCallback((gx: number, gy: number): [number, number] => [
+        GRID_ORIGIN_LNG + gx * CELL_DEG,
+        GRID_ORIGIN_LAT - gy * CELL_DEG
+    ], [GRID_ORIGIN_LNG, GRID_ORIGIN_LAT]);
 
     const [activeDrone, setActiveDrone] = useState('DRN-Alpha');
     const location = useLocation();
@@ -93,7 +91,7 @@ const DroneCam: React.FC = () => {
                 // Add epicenter as an entity
                 if (isMounted && viewer) {
                     viewer.entities.add({
-                        position: Cesium.Cartesian3.fromDegrees(EPICENTER.lng, EPICENTER.lat, 0),
+                        position: Cesium.Cartesian3.fromDegrees(centerLocation.lng, centerLocation.lat, 0),
                         ellipse: {
                             semiMinorAxis: 200.0,
                             semiMajorAxis: 200.0,
@@ -263,7 +261,7 @@ const DroneCam: React.FC = () => {
     }, [activeDrone, dronesRef, commLinksRef]);
 
     const activeD = dronesRef.current.find(d => d.id === activeDrone);
-    const activeLngLat = activeD ? gridToLngLat(activeD.x, activeD.y) : [EPICENTER.lng, EPICENTER.lat];
+    const activeLngLat = activeD ? gridToLngLat(activeD.x, activeD.y) : [centerLocation.lng, centerLocation.lat];
     const altitudeLabel = activeD ? (activeD.mode === 'Micro' ? '80M' : activeD.mode === 'Charging' ? '0M (DOCKED)' : '300M') : '—';
 
     return (

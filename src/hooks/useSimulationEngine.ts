@@ -35,6 +35,7 @@ export const useSimulationEngine = (
     const [showActualMap, setShowActualMap] = useState(false);
     const [timeLimit, setTimeLimit] = useState<number>(300);
     const [useTimeLimit, setUseTimeLimit] = useState<boolean>(true);
+    const [centerLocation, setCenterLocation] = useState<{ lat: number; lng: number }>({ lat: 3.1319, lng: 101.6841 });
 
     const initialSurvivors = createSurvivors();
     const gridRef = useRef<Sector[][]>(createGrid(initialSurvivors));
@@ -1148,6 +1149,8 @@ export const useSimulationEngine = (
         getSectorProbability,
         performTickCore,
         microScanOnly,
-        toggleMicroScanOnly
+        toggleMicroScanOnly,
+        centerLocation,
+        setCenterLocation
     };
 };
