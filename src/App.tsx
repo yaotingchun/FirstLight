@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import MapSimulator from './pages/MapSimulator';
 import ProbabilityMap3D from './pages/3DMap';
 import SimulationMapMCP from './pages/SimulationMapMCP';
+import Analytics from './pages/Analytics';
 import DroneCam from './pages/DroneCam';
 import LoadingScreen from './components/LoadingScreen';
 import { clearOrchestratorRecords } from './services/mcpClient';
@@ -12,6 +13,7 @@ import { SimulationProvider } from './context/SimulationContext';
 
 const pages = [
   { path: '/dashboard', element: <Dashboard /> },
+  { path: '/analytics', element: <Analytics /> },
   { path: '/3d-map', element: <ProbabilityMap3D /> },
   { path: '/map', element: <MapSimulator /> },
   { path: '/simulation-mcp', element: <SimulationMapMCP /> },
