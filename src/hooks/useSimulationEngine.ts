@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { gridDataService, INITIAL_SENSORS } from '../services/gridDataService';
-import { clusterZones, getZoneForCell } from '../utils/zoneClustering';
+import { clusterZones, clusterCellsIntoZones, getZoneForCell } from '../utils/zoneClustering';
 import type { SearchZone, GridCell } from '../utils/zoneClustering';
 import { scoreZones } from '../utils/zoneScoring';
 import { allocateDrones } from '../utils/zoneAllocator';
 import type { DroneMission } from '../utils/zoneAllocator';
+import { aStarPath, OBSTACLE_SET } from '../utils/swarmRouting';
 import { createSearchMemory, recordCellScan } from '../utils/searchMemory';
 import type { SearchMemory } from '../utils/searchMemory';
 import {
@@ -18,6 +19,7 @@ import {
     BASE_STATION
 } from '../types/simulation';
 import type { Sector, Drone, SwarmMessage, CommEdge, HiddenSurvivor, FoundPin, FailureEvent } from '../types/simulation';
+import { isPointInPolygon, type Point } from '../utils/polygonUtils';
 
 export const useSimulationEngine = (
     onFailureEventTriggered: (eventPayload: { type: string; droneId: string }) => void,
@@ -36,6 +38,15 @@ export const useSimulationEngine = (
     const [timeLimit, setTimeLimit] = useState<number>(300);
     const [useTimeLimit, setUseTimeLimit] = useState<boolean>(true);
     const [centerLocation, setCenterLocation] = useState<{ lat: number; lng: number }>({ lat: 3.1319, lng: 101.6841 });
+    const [searchArea, setSearchAreaState] = useState<Point[]>([]);
+    const searchAreaRef = useRef<Point[]>([]);
+    const [isDrawingMode, setIsDrawingMode] = useState(false);
+    const [selectedCells, setSelectedCells] = useState<Point[]>([]);
+    const selectedCellsRef = useRef<Point[]>([]);
+    const [missionOverride, setMissionOverrideState] = useState(false);
+    const missionOverrideRef = useRef(false);
+    const [searchScanActive, setSearchScanActiveState] = useState(false);
+    const searchScanActiveRef = useRef(false);
 
     const initialSurvivors = createSurvivors();
     const gridRef = useRef<Sector[][]>(createGrid(initialSurvivors));
@@ -55,10 +66,13 @@ export const useSimulationEngine = (
     const relayTakeoverTargetRef = useRef<{ x: number; y: number }>({ ...RELAY_DEFAULT_TARGET });
     const relaySwapCooldownUntilTickRef = useRef<number>(0);
     const lastFieldRelayIdRef = useRef<string>('RLY-Prime');
+    const lastRelayDecisionSignatureRef = useRef<string>('');
+    const lastRelayDecisionTickRef = useRef<number>(-9999);
     const microScanOnlyRef = useRef<boolean>(false);
 
     const missionReturnTriggeredRef = useRef(false);
     const missionStopHandledRef = useRef(false);
+    const missionConclusionPromptedRef = useRef(false);
 
     const zonesRef = useRef<SearchZone[]>([]);
     const searchMemoryRef = useRef<SearchMemory>(createSearchMemory());
@@ -74,6 +88,45 @@ export const useSimulationEngine = (
         totalRepeatScans: 0,
         uniqueProbSum: 0,
     });
+
+    const setSearchArea = useCallback((area: Point[]) => {
+        setSearchAreaState(area);
+        searchAreaRef.current = area;
+    }, []);
+
+    const setSelectedCellsFromArea = useCallback((cells: Point[]) => {
+        setSelectedCells(cells);
+        selectedCellsRef.current = cells;
+    }, []);
+
+    const setMissionOverride = useCallback((val: boolean) => {
+        setMissionOverrideState(val);
+        missionOverrideRef.current = val;
+        missionConclusionPromptedRef.current = false;
+    }, []);
+
+    const setSearchScanActive = useCallback((val: boolean) => {
+        setSearchScanActiveState(val);
+        searchScanActiveRef.current = val;
+    }, []);
+
+    useEffect(() => {
+        if (searchAreaRef.current.length < 3) {
+            setSelectedCellsFromArea([]);
+            return;
+        }
+
+        const cells: Point[] = [];
+        const grid = gridRef.current;
+        for (let y = 0; y < GRID_H; y++) {
+            for (let x = 0; x < GRID_W; x++) {
+                if (isPointInPolygon(x, y, searchAreaRef.current)) {
+                    if (grid[y]?.[x]) cells.push({ x, y });
+                }
+            }
+        }
+        setSelectedCellsFromArea(cells);
+    }, [searchArea]);
 
     const triggerFailureEvent = useCallback((droneId: string) => {
         if (aiDisconnectedRef.current.has(droneId)) return;
@@ -194,6 +247,7 @@ export const useSimulationEngine = (
 
         missionReturnTriggeredRef.current = false;
         missionStopHandledRef.current = false;
+        missionConclusionPromptedRef.current = false;
         autoRecallThresholdsRef.current.clear();
         failureEventsRef.current = [];
         aiDisconnectedRef.current.clear();
@@ -202,6 +256,13 @@ export const useSimulationEngine = (
         relayTakeoverTargetRef.current = { ...RELAY_DEFAULT_TARGET };
         relaySwapCooldownUntilTickRef.current = 0;
         lastFieldRelayIdRef.current = 'RLY-Prime';
+        lastRelayDecisionSignatureRef.current = '';
+        lastRelayDecisionTickRef.current = -9999;
+        searchAreaRef.current = [];
+        setSearchAreaState([]);
+        setSelectedCellsFromArea([]);
+        setMissionOverride(false);
+        setSearchScanActive(false);
 
         zonesRef.current = [];
         searchMemoryRef.current = createSearchMemory();
@@ -275,17 +336,87 @@ export const useSimulationEngine = (
             });
         };
 
+        const hasActiveSearchArea = missionOverrideRef.current && searchAreaRef.current.length >= 3;
+        const isInsideActiveSearchArea = (x: number, y: number): boolean => {
+            if (!hasActiveSearchArea) return true;
+            return isPointInPolygon(Math.round(x), Math.round(y), searchAreaRef.current);
+        };
+
+        const findNearestAreaCellToPoint = (x: number, y: number): Point | null => {
+            if (!hasActiveSearchArea || selectedCellsRef.current.length === 0) return null;
+
+            const sorted = [...selectedCellsRef.current].sort((a, b) => {
+                const da = Math.hypot(a.x - x, a.y - y);
+                const db = Math.hypot(b.x - x, b.y - y);
+                return da - db;
+            });
+
+            return sorted[0] ?? null;
+        };
+
+        const findNearestCellInsideSearchArea = (drone: Drone): Point | null => {
+            if (!hasActiveSearchArea || selectedCellsRef.current.length === 0) return null;
+
+            const sorted = [...selectedCellsRef.current].sort((a, b) => {
+                const da = Math.hypot(a.x - drone.x, a.y - drone.y);
+                const db = Math.hypot(b.x - drone.x, b.y - drone.y);
+                return da - db;
+            });
+
+            for (const cell of sorted) {
+                const path = aStarPath(
+                    { x: Math.round(drone.x), y: Math.round(drone.y) },
+                    { x: cell.x, y: cell.y },
+                    OBSTACLE_SET,
+                    GRID_W,
+                    GRID_H,
+                    undefined,
+                    6,
+                    [],
+                    15,
+                    searchAreaRef.current,
+                );
+                if (path.length > 0) return cell;
+            }
+
+            const centroid = selectedCellsRef.current.reduce(
+                (acc, cell) => ({ x: acc.x + cell.x, y: acc.y + cell.y }),
+                { x: 0, y: 0 }
+            );
+            const avg = {
+                x: Math.round(centroid.x / selectedCellsRef.current.length),
+                y: Math.round(centroid.y / selectedCellsRef.current.length),
+            };
+            const centroidCell = gridRef.current[avg.y]?.[avg.x];
+            return centroidCell ? { x: centroidCell.x, y: centroidCell.y } : sorted[0] ?? null;
+        };
+
+        const getAreaCoverage = (): number => {
+            if (!missionOverrideRef.current || selectedCellsRef.current.length === 0) {
+                return totalCells > 0 ? (scannedCells / totalCells) * 100 : 0;
+            }
+            const scannedInside = selectedCellsRef.current.filter(c => grid[c.y]?.[c.x]?.scanned).length;
+            return (scannedInside / selectedCellsRef.current.length) * 100;
+        };
+
         const totalCells = GRID_W * GRID_H;
         const scannedCells = grid.reduce((sum, row) => sum + row.filter(sec => sec.scanned).length, 0);
         const scanProgress = totalCells > 0 ? (scannedCells / totalCells) * 100 : 0;
 
+        const selectedAreaSurvivors = survivors.filter(s => missionOverrideRef.current && searchAreaRef.current.length >= 3 && isPointInPolygon(s.x, s.y, searchAreaRef.current));
+        const remainingAreaSurvivors = selectedAreaSurvivors.filter(s => !s.found);
+        const areaCoverage = getAreaCoverage();
+
         // Sync mission coverage metric in real-time
-        metricsRef.current.averageZoneCoverage = scanProgress;
+        metricsRef.current.averageZoneCoverage = areaCoverage;
 
         const allSurvivorsFound = survivors.length > 0 && survivors.every(s => s.found);
+        const areaMissionComplete = missionOverrideRef.current
+            ? selectedCellsRef.current.length > 0 && areaCoverage >= 100 && remainingAreaSurvivors.length === 0
+            : false;
         const missionComplete = allSurvivorsFound && scanProgress >= 100;
 
-        if (scanProgress >= 100 && !allSurvivorsFound) {
+        if (!missionOverrideRef.current && scanProgress >= 100 && !allSurvivorsFound) {
             const unresolved = survivors.filter(s => !s.found);
 
             unresolved.forEach(s => {
@@ -314,6 +445,30 @@ export const useSimulationEngine = (
                     reserved.add(nearest.id);
                 }
             });
+        }
+
+        if (areaMissionComplete && !missionConclusionPromptedRef.current) {
+            missionConclusionPromptedRef.current = true;
+
+            missionReturnTriggeredRef.current = true;
+            drones.forEach(d => {
+                setDroneTarget(d, BASE_STATION.x, BASE_STATION.y);
+                if (d.mode !== 'Relay') d.mode = 'Wide';
+                d.lockTarget = false;
+                d.preventReassignment = false;
+            });
+        }
+
+        if (areaMissionComplete && missionReturnTriggeredRef.current && !missionStopHandledRef.current) {
+            const allAtBase = drones.every(d => Math.sqrt(Math.pow(d.x - BASE_STATION.x, 2) + Math.pow(d.y - BASE_STATION.y, 2)) < 0.5);
+            const allCharging = drones.every(d => d.mode === 'Charging' || d.id.startsWith('RLY-'));
+            
+            if (allAtBase && allCharging) {
+                missionStopHandledRef.current = true;
+                setMissionOverride(false);
+                setSearchScanActive(false);
+                setRunning(false);
+            }
         }
 
         if (missionComplete && !missionReturnTriggeredRef.current) {
@@ -392,8 +547,14 @@ export const useSimulationEngine = (
             if (!d.isConnected && d.mode !== 'Relay') disconnectedCount++;
         });
 
+        const suppressRelayOperations =
+            missionReturnTriggeredRef.current ||
+            missionComplete ||
+            areaMissionComplete ||
+            scanProgress >= 100;
+
         const activeRelay = drones.find(d => d.mode === 'Relay' && (d.tx !== BASE_STATION.x || d.ty !== BASE_STATION.y));
-        if (activeRelay && disconnectedCount > 0) {
+        if (!suppressRelayOperations && activeRelay && disconnectedCount > 0) {
             const disconnected = drones.filter(d => !d.isConnected && d.mode !== 'Relay' && d.mode !== 'Charging');
             if (disconnected.length > 0) {
                 let cx = 0, cy = 0;
@@ -403,7 +564,7 @@ export const useSimulationEngine = (
                 activeRelay.tx = (cx + BASE_STATION.x) / 2;
                 activeRelay.ty = (cy + BASE_STATION.y) / 2;
             }
-        } else if (activeRelay && disconnectedCount === 0) {
+        } else if (!suppressRelayOperations && activeRelay && disconnectedCount === 0) {
             activeRelay.tx = GRID_W / 2;
             activeRelay.ty = GRID_H / 2;
         }
@@ -438,7 +599,21 @@ export const useSimulationEngine = (
             lastFieldRelayIdRef.current = activeFieldRelay.id;
         }
 
-        if (timeRef.current >= relaySwapCooldownUntilTickRef.current) {
+            const shouldEmitRelayDecision = (signature: string): boolean => {
+                const RELAY_DECISION_DEBOUNCE_TICKS = 80;
+                const sameDecision = lastRelayDecisionSignatureRef.current === signature;
+                const inDebounceWindow = (timeRef.current - lastRelayDecisionTickRef.current) < RELAY_DECISION_DEBOUNCE_TICKS;
+
+                if (sameDecision && inDebounceWindow) {
+                    return false;
+                }
+
+                lastRelayDecisionSignatureRef.current = signature;
+                lastRelayDecisionTickRef.current = timeRef.current;
+                return true;
+            };
+
+        if (!suppressRelayOperations && timeRef.current >= relaySwapCooldownUntilTickRef.current) {
             const outgoingRelay = relayDrones.find(d => isFieldRelay(d) && d.battery <= RELAY_LOW_BATTERY_THRESHOLD);
 
             if (outgoingRelay) {
@@ -454,15 +629,25 @@ export const useSimulationEngine = (
                     relayTakeoverTargetRef.current = takeoverTarget;
                     relaySwapCooldownUntilTickRef.current = timeRef.current + 20;
 
-                    onRelaySwapDecisionMade(
-                        '',
-                        `Relay handoff decision required. ${outgoingRelay.id} battery is ${outgoingRelay.battery.toFixed(1)}% (<= ${RELAY_LOW_BATTERY_THRESHOLD}%) at target (${takeoverTarget.x.toFixed(1)}, ${takeoverTarget.y.toFixed(1)}). ${standbyRelay.id} is ready at base with ${standbyRelay.battery.toFixed(1)}% battery. Decide now: replace relay if needed, otherwise no_action with reason.`
-                    );
+                    const decisionSignature = [
+                        'relay_handoff',
+                        outgoingRelay.id,
+                        standbyRelay.id,
+                        Math.round(takeoverTarget.x * 10),
+                        Math.round(takeoverTarget.y * 10),
+                    ].join(':');
+
+                    if (shouldEmitRelayDecision(decisionSignature)) {
+                        onRelaySwapDecisionMade(
+                            '',
+                            `Relay handoff decision required. ${outgoingRelay.id} battery is ${outgoingRelay.battery.toFixed(1)}% (<= ${RELAY_LOW_BATTERY_THRESHOLD}%) at target (${takeoverTarget.x.toFixed(1)}, ${takeoverTarget.y.toFixed(1)}). ${standbyRelay.id} is ready at base with ${standbyRelay.battery.toFixed(1)}% battery. Decide now: replace relay if needed, otherwise no_action with reason.`
+                        );
+                    }
                 }
             }
         }
 
-        if (!relayDrones.some(isFieldRelay) && timeRef.current >= relaySwapCooldownUntilTickRef.current) {
+        if (!suppressRelayOperations && !relayDrones.some(isFieldRelay) && timeRef.current >= relaySwapCooldownUntilTickRef.current) {
             const readyRelays = relayDrones.filter(d =>
                 d.mode === 'Charging' &&
                 d.battery >= RELAY_TAKEOVER_MIN_BATTERY &&
@@ -473,10 +658,19 @@ export const useSimulationEngine = (
                 const preferred = readyRelays.find(r => r.id !== lastFieldRelayIdRef.current) ?? readyRelays[0];
                 relaySwapCooldownUntilTickRef.current = timeRef.current + 20;
 
-                onRelaySwapDecisionMade(
+                const decisionSignature = [
+                    'relay_deploy',
                     preferred.id,
-                    `Relay coverage decision required. No active field relay is currently deployed. ${preferred.id} is ready at base (${preferred.battery.toFixed(1)}% battery). Preferred relay target is (${relayTakeoverTargetRef.current.x.toFixed(1)}, ${relayTakeoverTargetRef.current.y.toFixed(1)}). Decide whether to deploy this relay to restore coverage or no_action with reason.`
-                );
+                    Math.round(relayTakeoverTargetRef.current.x * 10),
+                    Math.round(relayTakeoverTargetRef.current.y * 10),
+                ].join(':');
+
+                if (shouldEmitRelayDecision(decisionSignature)) {
+                    onRelaySwapDecisionMade(
+                        preferred.id,
+                        `Relay coverage decision required. No active field relay is currently deployed. ${preferred.id} is ready at base (${preferred.battery.toFixed(1)}% battery). Preferred relay target is (${relayTakeoverTargetRef.current.x.toFixed(1)}, ${relayTakeoverTargetRef.current.y.toFixed(1)}). Decide whether to deploy this relay to restore coverage or no_action with reason.`
+                    );
+                }
             }
         }
 
@@ -501,6 +695,22 @@ export const useSimulationEngine = (
                 d.ty = BASE_Y;
             }
 
+            const headingToBase =
+                Math.round(d.tx) === BASE_STATION.x &&
+                Math.round(d.ty) === BASE_STATION.y;
+
+            if (hasActiveSearchArea && !missionReturnTriggeredRef.current && !headingToBase && d.mode !== 'Relay' && d.mode !== 'Charging') {
+                const droneOutsideArea = !isInsideActiveSearchArea(d.x, d.y);
+                if (droneOutsideArea) {
+                    const areaTarget = findNearestCellInsideSearchArea(d);
+                    if (areaTarget) {
+                        setDroneTarget(d, areaTarget.x, areaTarget.y);
+                        d.lockTarget = false;
+                        d.preventReassignment = false;
+                    }
+                }
+            }
+
             if (d.mode === 'Charging') {
                 d.battery = Math.min(100, d.battery + 0.5);
                 if (d.battery >= 100) {
@@ -508,8 +718,21 @@ export const useSimulationEngine = (
                         return;
                     }
 
+                    if (missionReturnTriggeredRef.current || missionComplete || areaMissionComplete || scanProgress >= 100) {
+                        d.battery = 100;
+                        d.mode = 'Charging';
+                        d.tx = BASE_X;
+                        d.ty = BASE_Y;
+                        d.savedTx = undefined;
+                        d.savedTy = undefined;
+                        d.lockTarget = false;
+                        d.preventReassignment = true;
+                        return;
+                    }
+
                     d.battery = 100;
                     d.mode = 'Wide';
+                    d.preventReassignment = false;
 
                     let targetAssigned = false;
 
@@ -518,6 +741,7 @@ export const useSimulationEngine = (
                         let minScore = Infinity;
 
                         grid.forEach(row => row.forEach(sec => {
+                            if (!isInsideActiveSearchArea(sec.x, sec.y)) return;
                             const isSurvivor = pinsRef.current.some(p => p.x === sec.x && p.y === sec.y);
                             if (!sec.scanned && !isSurvivor) {
                                 const isOccupied = drones.some(other => other.id !== d.id && Math.round(other.tx) === sec.x && Math.round(other.ty) === sec.y);
@@ -540,6 +764,7 @@ export const useSimulationEngine = (
                     } else {
                         const highProbSectors: Sector[] = [];
                         grid.forEach(row => row.forEach(sec => {
+                            if (!isInsideActiveSearchArea(sec.x, sec.y)) return;
                             if (sec.scanned && sec.prob > THRESHOLD_MICRO) highProbSectors.push(sec);
                         }));
 
@@ -555,7 +780,9 @@ export const useSimulationEngine = (
 
                         if (!targetAssigned && zonesRef.current.length > 0) {
                             const availZone = zonesRef.current.find(z =>
-                                z.unscannedCount > 0 && z.assignedDroneIds.length < 2
+                                z.unscannedCount > 0 &&
+                                z.assignedDroneIds.length < 2 &&
+                                isInsideActiveSearchArea(z.centroid.x, z.centroid.y)
                             );
                             if (availZone) {
                                 d.tx = availZone.centroid.x;
@@ -568,6 +795,7 @@ export const useSimulationEngine = (
                             let bestSector: Sector | null = null;
                             let maxProb = -1;
                             grid.forEach(row => row.forEach(sec => {
+                                if (!isInsideActiveSearchArea(sec.x, sec.y)) return;
                                 const isSurvivor = pinsRef.current.some(p => p.x === sec.x && p.y === sec.y);
                                 if (!sec.scanned && sec.prob > maxProb && !isSurvivor) {
                                     const isOccupied = drones.some(other => other.id !== d.id && Math.round(other.tx) === sec.x && Math.round(other.ty) === sec.y);
@@ -735,7 +963,8 @@ export const useSimulationEngine = (
             if ((d.mode as string) !== 'Charging' && (isNewCell || isPeriodicMicroScan)) {
                 // Surgical Skip: if this EXACT cell is a Pin, only scan if it was UNSCANNED
                 const isPinned = pinsRef.current.some(p => Math.round(p.x) === sx && Math.round(p.y) === sy);
-                const shouldScan = !(isPinned && sector.scanned && d.mode !== 'Micro');
+                const insideSearchAreaNow = isInsideActiveSearchArea(sx, sy);
+                const shouldScan = insideSearchAreaNow && !(isPinned && sector.scanned && d.mode !== 'Micro');
 
                 if (shouldScan) {
                     d.lastScannedX = sx;
@@ -816,7 +1045,7 @@ export const useSimulationEngine = (
             // ── Target Arrival / Routing Logic ────────────────────────
             if (distToTarget < 0.5) {
                 if (d.tx === BASE_X && d.ty === BASE_Y) {
-                    if (d.battery <= 50 || missionComplete || scanProgress >= 100) {
+                    if (d.battery <= 50 || missionComplete || missionReturnTriggeredRef.current || scanProgress >= 100) {
                         d.mode = 'Charging';
                         return;
                     }
@@ -827,6 +1056,7 @@ export const useSimulationEngine = (
                     let options = dirs
                         .map(dir => ({ x: sx + dir[0], y: sy + dir[1] }))
                         .filter(pos => pos.x >= 0 && pos.x < GRID_W && pos.y >= 0 && pos.y < GRID_H)
+                        .filter(pos => isInsideActiveSearchArea(pos.x, pos.y))
                         .filter(pos => {
                             const s = grid[pos.y][pos.x];
                             const isPinned = pinsRef.current.some(p => Math.abs(p.x - pos.x) <= 1.5 && Math.abs(p.y - pos.y) <= 1.5);
@@ -854,7 +1084,9 @@ export const useSimulationEngine = (
                         setDroneTarget(d, options[0].x, options[0].y);
                     } else if (zonesRef.current.length > 0) {
                         const availZone = zonesRef.current.find(z =>
-                            z.unscannedCount > 0 && z.assignedDroneIds.length < 2
+                            z.unscannedCount > 0 &&
+                            z.assignedDroneIds.length < 2 &&
+                            isInsideActiveSearchArea(z.centroid.x, z.centroid.y)
                         );
                         if (availZone) {
                             setDroneTarget(d, availZone.centroid.x, availZone.centroid.y);
@@ -872,7 +1104,7 @@ export const useSimulationEngine = (
                         const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, -1], [-1, 1], [1, -1]];
                         let validDirs = dirs.filter(dir => {
                             const nx = sx + dir[0]; const ny = sy + dir[1];
-                            return nx >= 0 && nx < GRID_W && ny >= 0 && ny < GRID_H;
+                            return nx >= 0 && nx < GRID_W && ny >= 0 && ny < GRID_H && isInsideActiveSearchArea(nx, ny);
                         });
 
                         const filteredDirs = validDirs.filter(dir => {
@@ -1001,7 +1233,7 @@ export const useSimulationEngine = (
             }
         }
 
-        if (!missionComplete && timeRef.current % ZONE_PIPELINE_INTERVAL === 0 && timeRef.current > 0) {
+        if (!missionReturnTriggeredRef.current && !areaMissionComplete && timeRef.current % ZONE_PIPELINE_INTERVAL === 0 && timeRef.current > 0) {
             const gridCells: GridCell[][] = grid.map(row =>
                 row.map(sec => ({
                     x: sec.x,
@@ -1015,9 +1247,20 @@ export const useSimulationEngine = (
                 }))
             );
 
-            const zones = clusterZones(gridCells, GRID_W, GRID_H, 4);
+            const focusedGridCells = selectedCellsRef.current
+                .map(p => grid[p.y]?.[p.x])
+                .filter((cell): cell is Sector => Boolean(cell));
+
+            const zones = missionOverrideRef.current && focusedGridCells.length >= 3
+                ? clusterCellsIntoZones(focusedGridCells, GRID_W, GRID_H, 4)
+                : clusterZones(gridCells, GRID_W, GRID_H, 4);
             const scoredZones = scoreZones(zones, searchMemoryRef.current, timeRef.current, pinsRef.current);
-            zonesRef.current = scoredZones;
+            const zonesToUse = missionOverrideRef.current && searchAreaRef.current.length >= 3
+                ? scoredZones
+                    .filter(z => isPointInPolygon(z.centroid.x, z.centroid.y, searchAreaRef.current))
+                    .filter(z => z.unscannedCount > 0)
+                : scoredZones;
+            zonesRef.current = zonesToUse;
 
             const allocatable = drones
                 .filter(d =>
@@ -1027,7 +1270,7 @@ export const useSimulationEngine = (
                 )
                 .map(d => ({ id: d.id, x: d.x, y: d.y, battery: d.battery, mode: d.mode }));
 
-            const missions = allocateDrones(allocatable, scoredZones, searchMemoryRef.current, timeRef.current, pinsRef.current);
+            const missions = allocateDrones(allocatable, zonesToUse, searchMemoryRef.current, timeRef.current, pinsRef.current);
             activeMissionsRef.current = missions;
 
             for (const mission of missions) {
@@ -1035,9 +1278,36 @@ export const useSimulationEngine = (
                 if (!drone) continue;
                 if (aiDisconnectedRef.current.has(drone.id)) continue;
 
+                // Skip reassignment if drone is heading to base to charge (low battery)
+                const headingToBase =
+                    Math.round(drone.tx) === BASE_STATION.x &&
+                    Math.round(drone.ty) === BASE_STATION.y;
+
                 const distToBase = Math.sqrt(Math.pow(BASE_STATION.x - drone.x, 2) + Math.pow(BASE_STATION.y - drone.y, 2));
                 const criticalBattery = Math.max(5, distToBase * 0.3 + 2);
                 const lowBattery = Math.max(20, criticalBattery + 15);
+                const isLowBattery = drone.battery < lowBattery;
+
+                if (headingToBase && isLowBattery) {
+                    drone.preventReassignment = true;
+                    continue;
+                }
+
+                let targetX = mission.targetX;
+                let targetY = mission.targetY;
+
+                if (hasActiveSearchArea) {
+                    const missionInside = isInsideActiveSearchArea(mission.targetX, mission.targetY);
+                    const customAreaTarget = missionInside
+                        ? { x: Math.round(mission.targetX), y: Math.round(mission.targetY) }
+                        : (findNearestAreaCellToPoint(mission.targetX, mission.targetY) ?? findNearestCellInsideSearchArea(drone));
+
+                    if (!customAreaTarget) continue;
+
+                    targetX = customAreaTarget.x;
+                    targetY = customAreaTarget.y;
+                }
+
                 if (drone.battery < lowBattery) continue;
 
                 const distToTarget = Math.sqrt(Math.pow(drone.tx - drone.x, 2) + Math.pow(drone.ty - drone.y, 2));
@@ -1045,7 +1315,7 @@ export const useSimulationEngine = (
                 const isDivertable = distToTarget < 0.5 || drone.mode === 'Wide' || distToTarget > 3.0;
 
                 if (isDivertable && !drone.preventReassignment) {
-                    setDroneTarget(drone, mission.targetX, mission.targetY);
+                    setDroneTarget(drone, targetX, targetY);
 
                     const distToNewTarget = Math.sqrt(Math.pow(drone.tx - drone.x, 2) + Math.pow(drone.ty - drone.y, 2));
 
@@ -1067,9 +1337,7 @@ export const useSimulationEngine = (
                 }
             }
 
-            if (metricsRef.current.totalUniqueScans < (GRID_W * GRID_H)) {
-                metricsRef.current.missionTimeSec = timeRef.current * (SIM_TICK_MS / 1000);
-            }
+            metricsRef.current.missionTimeSec = timeRef.current * (SIM_TICK_MS / 1000);
         }
 
         if (missionComplete && !missionStopHandledRef.current) {
@@ -1118,6 +1386,15 @@ export const useSimulationEngine = (
         showActualMap, setShowActualMap,
         timeLimit, setTimeLimit,
         useTimeLimit, setUseTimeLimit,
+        searchArea,
+        setSearchArea,
+        isDrawingMode,
+        setIsDrawingMode,
+        selectedCells,
+        missionOverride,
+        setMissionOverride,
+        searchScanActive,
+        setSearchScanActive,
 
         // Refs
         gridRef,

@@ -125,10 +125,13 @@ export async function getFoundSurvivors(): Promise<MCPToolResult<SurvivorInfo[]>
 // ═══════════════════════════════════════════════════════════════════════════
 
 export interface UpdateMissionStatsParams {
+    totalUniqueScans?: number;
+    gridSize?: number;
     averageZoneCoverage?: number;
     meanProbabilityScanned?: number;
     repeatedScanRate?: number;
     missionTimeSec?: number;
+    missionTimeLimit?: number | null;
     sensorWeights?: SensorWeightsSnapshot;
     totalEstimatedSurvivors?: number;
 }
@@ -137,7 +140,17 @@ export interface UpdateMissionStatsParams {
  * Updates the backend mission stats with precision analytics from the UI.
  */
 export async function updateMissionStats(params: UpdateMissionStatsParams): Promise<MCPToolResult<{ message: string }>> {
-    droneStore.updateAnalytics(params);
+    droneStore.updateAnalytics({
+        reportedUniqueScans: params.totalUniqueScans,
+        reportedGridSize: params.gridSize,
+        averageZoneCoverage: params.averageZoneCoverage,
+        meanProbabilityScanned: params.meanProbabilityScanned,
+        repeatedScanRate: params.repeatedScanRate,
+        missionTimeSec: params.missionTimeSec,
+        missionTimeLimit: params.missionTimeLimit ?? undefined,
+        sensorWeights: params.sensorWeights,
+        totalEstimatedSurvivors: params.totalEstimatedSurvivors,
+    });
     
     return {
         success: true,

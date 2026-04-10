@@ -194,6 +194,8 @@ const Dashboard: React.FC = () => {
             const date = new Date(record.timestamp);
             const stamp = date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
+            const isOverride = record.source === 'system' && record.droneId === 'ORCHESTRATOR';
+
             const getDroneColor = (id?: string) => {
                 if (!id) return '#9db1c1';
                 if (id === 'ORCHESTRATOR') return '#00ffcc';
@@ -207,6 +209,59 @@ const Dashboard: React.FC = () => {
 
             const droneId = record.droneId || (record.source === 'ai' ? 'ORCHESTRATOR' : undefined);
             const themeColor = getDroneColor(droneId);
+
+            if (isOverride) {
+                return (
+                    <div
+                        key={`${record.timestamp}-${index}`}
+                        style={{
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: 6,
+                            padding: '8px 10px',
+                            background: 'rgba(0,0,0,0.3)',
+                            fontSize: '0.8rem',
+                            lineHeight: 1.45,
+                            position: 'relative',
+                            borderLeft: '1px solid rgba(255,255,255,0.08)',
+                            marginBottom: '8px'
+                        }}
+                    >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: '0.65rem', fontWeight: 600 }}>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                <div style={{
+                                    width: 18,
+                                    height: 18,
+                                    borderRadius: '4px',
+                                    background: 'rgba(255,255,255,0.05)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    flexShrink: 0,
+                                    border: '1px solid rgba(255,255,255,0.08)'
+                                }}>
+                                    <RobotIcon color="#9db1c1" size={11} />
+                                </div>
+                                <span style={{ color: '#8aa0b3' }}>[{stamp}]</span>
+                                <span style={{ color: '#9db1c1' }}>SYSTEM</span>
+                            </div>
+                        </div>
+                        <div style={{ color: '#9db1c1', overflowWrap: 'break-word', wordBreak: 'break-word' }}>
+                            <ReactMarkdown
+                                components={{
+                                    p: ({ node, ...props }) => <p style={{ margin: 0, marginTop: '2px' }} {...props} />,
+                                    ul: ({ node, ...props }) => <ul style={{ margin: '4px 0 0 16px', padding: 0 }} {...props} />,
+                                    ol: ({ node, ...props }) => <ol style={{ margin: '4px 0 0 16px', padding: 0 }} {...props} />,
+                                    li: ({ node, ...props }) => <li style={{ marginBottom: '2px' }} {...props} />,
+                                    strong: ({ node, ...props }) => <strong style={{ color: '#fff' }} {...props} />,
+                                    code: ({ node, ...props }) => <code style={{ backgroundColor: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '3px', fontFamily: 'monospace', color: '#00ffcc' }} {...props} />
+                                }}
+                            >
+                                {record.message}
+                            </ReactMarkdown>
+                        </div>
+                    </div>
+                );
+            }
 
             return (
                 <div

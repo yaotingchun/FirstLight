@@ -19,6 +19,9 @@ export const useSimulationMCP = (
     resetSim: () => void,
     aiBusyRef: MutableRefObject<boolean>,
     survivorsRef: MutableRefObject<any[]>,
+    searchArea: Array<{ x: number; y: number }>,
+    selectedCells: Array<{ x: number; y: number }>,
+    missionOverride: boolean,
     timeLimit: number,
     useTimeLimit: boolean
 ) => {
@@ -40,9 +43,7 @@ export const useSimulationMCP = (
     const processMcpCommandsRef = useRef<() => Promise<void>>(async () => { });
     const syncedSurvivorIdsRef = useRef<Set<string>>(new Set());
     const bootstrappedServerStateRef = useRef(false);
-    const [chatMessages, setChatMessages] = useState<OrchestratorChatMessage[]>([
-        { role: 'system', text: 'AI chat ready. Ask status or issue commands (e.g. "move DRN-Alpha to 5,8"). Use THINK NOW to force one AI decision cycle.' }
-    ]);
+    const [chatMessages, setChatMessages] = useState<OrchestratorChatMessage[]>([]);
 
     useEffect(() => {
         if (!chatOpen) return;
@@ -193,6 +194,8 @@ export const useSimulationMCP = (
 
         const drones = dronesRef.current;
         const grid = gridRef.current;
+        const hasActiveCustomArea = missionOverride && searchArea.length >= 3 && selectedCells.length > 0;
+        const selectedCellKeySet = new Set(selectedCells.map(c => `${c.x},${c.y}`));
 
         const droneStates: mcpClient.DroneStateForSync[] = drones.map(d => ({
             id: d.id,
@@ -216,18 +219,22 @@ export const useSimulationMCP = (
         await mcpClient.syncDroneStates(droneStates);
         await mcpClient.syncTick(timeRef.current, running);
 
-        const gridState = grid.map(row => row.map(s => ({
-            gridCell: String.fromCharCode(65 + s.x) + (s.y + 1),
-            x: s.x,
-            y: s.y,
-            probability: s.prob,
-            pheromone: s.pheromone,
-            terrain: s.terrain,
-            scanned: s.scanned,
-            lastScannedTick: s.lastScanned,
-            disasterImage: s.disasterImage,
-            signals: s.signals
-        })));
+        const gridState = grid.map(row => row.map(s => {
+            const inCustomArea = !hasActiveCustomArea || selectedCellKeySet.has(`${s.x},${s.y}`);
+
+            return {
+                gridCell: String.fromCharCode(65 + s.x) + (s.y + 1),
+                x: s.x,
+                y: s.y,
+                probability: inCustomArea ? s.prob : 0,
+                pheromone: inCustomArea ? s.pheromone : 0,
+                terrain: s.terrain,
+                scanned: inCustomArea ? s.scanned : true,
+                lastScannedTick: s.lastScanned,
+                disasterImage: s.disasterImage,
+                signals: s.signals
+            };
+        }));
         await mcpClient.syncGridState(gridState);
 
         // Ensure survivor discoveries made by the simulation are reflected in MCP mission stats.
@@ -249,9 +256,14 @@ export const useSimulationMCP = (
         }
 
         if (mcpConnected) {
+            const totalScannedCells = grid.reduce((sum, row) => sum + row.filter(sec => sec.scanned).length, 0);
+            const areaScannedCells = selectedCells.reduce((sum, cell) => sum + (grid[cell.y]?.[cell.x]?.scanned ? 1 : 0), 0);
+            const maskedTotalUniqueScans = hasActiveCustomArea ? areaScannedCells : totalScannedCells;
+            const maskedGridSize = hasActiveCustomArea ? selectedCells.length : GRID_W * GRID_H;
+
             await mcpClient.executeTool('updateMissionStats', {
-                totalUniqueScans: metricsRef.current.totalUniqueScans,
-                gridSize: GRID_W * GRID_H,
+                totalUniqueScans: maskedTotalUniqueScans,
+                gridSize: maskedGridSize,
                 missionTimeSec: metricsRef.current.missionTimeSec,
                 averageZoneCoverage: metricsRef.current.averageZoneCoverage,
                 meanProbabilityScanned: metricsRef.current.meanProbabilityScanned,
@@ -261,7 +273,7 @@ export const useSimulationMCP = (
                 missionTimeLimit: useTimeLimit ? timeLimit : null
             });
         }
-    }, [mcpConnected, running, dronesRef, gridRef, sensorWeightsRef, metricsRef, timeRef, survivorsRef, timeLimit, useTimeLimit]);
+    }, [mcpConnected, running, dronesRef, gridRef, sensorWeightsRef, metricsRef, timeRef, survivorsRef, missionOverride, searchArea, selectedCells, timeLimit, useTimeLimit]);
 
     const processMcpCommands = useCallback(async () => {
         const commands = await mcpClient.getPendingCommands();
@@ -312,6 +324,13 @@ export const useSimulationMCP = (
                     if (drone) {
                         drone.tx = BASE_STATION.x;
                         drone.ty = BASE_STATION.y;
+                        drone.savedTx = undefined;
+                        drone.savedTy = undefined;
+                        drone.lockTarget = false;
+                        drone.preventReassignment = false;
+                        if (drone.mode !== 'Relay') {
+                            drone.mode = 'Wide';
+                        }
                     }
                     break;
                 }

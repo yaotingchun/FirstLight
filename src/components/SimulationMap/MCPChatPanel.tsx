@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Terminal, X, FileText } from 'lucide-react';
 import { getOrchestratorRecords, type OrchestratorRecord } from '../../services/mcpClient';
-import type { OrchestratorChatMessage } from '../../types/simulation';
 import { RobotIcon, DroneIcon } from './LogIcons';
 
 interface MCPChatPanelProps {
@@ -25,7 +24,6 @@ interface MCPChatPanelProps {
     chatDragRef: React.MutableRefObject<{ isDragging: boolean, startX: number, startY: number, startPosX: number, startPosY: number }>;
     chatResizeRef: React.MutableRefObject<{ isResizing: boolean, startWidth: number, startHeight: number, startX: number, startY: number, startPosX: number, startPosY: number }>;
     chatScrollRef: React.MutableRefObject<HTMLDivElement | null>;
-    chatMessages: OrchestratorChatMessage[];
     running: boolean;
     onStartSimulation: () => void;
 }
@@ -36,7 +34,7 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
     executeMcpTool, mcpToolOutput,
     chatOpen, setChatOpen, chatPos, setChatPos, chatSize, setChatSize,
     chatDragRef, chatResizeRef, chatScrollRef,
-    chatMessages, running, onStartSimulation
+    running, onStartSimulation
 }) => {
     const [activityRecords, setActivityRecords] = useState<OrchestratorRecord[]>([]);
     const [startPressedOnce, setStartPressedOnce] = useState(false);
@@ -80,7 +78,7 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
         requestAnimationFrame(() => {
             el.scrollTop = el.scrollHeight;
         });
-    }, [activityRecords, chatMessages, chatOpen, chatScrollRef]);
+    }, [activityRecords, chatOpen, chatScrollRef]);
 
     useEffect(() => {
         if (!chatOpen) return;
@@ -378,6 +376,8 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                                             second: '2-digit',
                                         });
 
+                                        const isOverride = record.source === 'system' && record.droneId === 'ORCHESTRATOR';
+
                                         const getDroneColor = (id?: string) => {
                                             if (!id) return '#9db1c1';
                                             if (id === 'ORCHESTRATOR') return '#00ffcc';
@@ -391,6 +391,55 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
 
                                         const droneId = record.droneId || (record.source === 'ai' ? 'ORCHESTRATOR' : undefined);
                                         const themeColor = getDroneColor(droneId);
+
+                                        if (isOverride) {
+                                            return (
+                                                <div
+                                                    key={`${record.timestamp}-${index}`}
+                                                    style={{
+                                                        border: '1px solid rgba(255,255,255,0.08)',
+                                                        borderRadius: 6,
+                                                        padding: '6px 8px',
+                                                        background: 'rgba(0,0,0,0.2)',
+                                                        fontSize: 12,
+                                                        lineHeight: 1.45,
+                                                        position: 'relative',
+                                                        borderLeft: '1px solid rgba(255,255,255,0.08)'
+                                                    }}
+                                                >
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 10, fontWeight: 600 }}>
+                                                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                                            <div style={{ 
+                                                                width: 18, 
+                                                                height: 18, 
+                                                                borderRadius: '4px', 
+                                                                background: 'rgba(255,255,255,0.05)', 
+                                                                display: 'flex', 
+                                                                alignItems: 'center', 
+                                                                justifyContent: 'center', 
+                                                                flexShrink: 0,
+                                                                border: '1px solid rgba(255,255,255,0.08)'
+                                                            }}>
+                                                                <RobotIcon color="#9db1c1" size={11} />
+                                                            </div>
+                                                            <span style={{ color: '#8aa0b3' }}>[{stamp}]</span>
+                                                            <span style={{ color: '#9db1c1' }}>SYSTEM</span>
+                                                        </div>
+                                                    </div>
+                                                    <ReactMarkdown
+                                                        components={{
+                                                            p: ({ node, ...props }) => <p style={{ margin: 0, color: '#9db1c1' }} {...props} />,
+                                                            ul: ({ node, ...props }) => <ul style={{ margin: '4px 0 0 18px', padding: 0 }} {...props} />,
+                                                            ol: ({ node, ...props }) => <ol style={{ margin: '4px 0 0 18px', padding: 0 }} {...props} />,
+                                                            li: ({ node, ...props }) => <li style={{ marginBottom: '2px' }} {...props} />,
+                                                            strong: ({ node, ...props }) => <strong style={{ color: '#fff' }} {...props} />
+                                                        }}
+                                                    >
+                                                        {record.message}
+                                                    </ReactMarkdown>
+                                                </div>
+                                            );
+                                        }
 
                                         return (
                                             <div

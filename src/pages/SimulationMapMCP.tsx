@@ -7,6 +7,7 @@ import { SimulationGrid } from '../components/SimulationMap/SimulationGrid';
 import { SimulationDashboard } from '../components/SimulationMap/SimulationDashboard';
 import { MCPChatPanel } from '../components/SimulationMap/MCPChatPanel';
 import * as mcpClient from '../services/mcpClient';
+import { isPointInPolygon } from '../utils/polygonUtils';
 
 const CITIES = [
     { name: 'Kuala Lumpur', lat: 3.1319, lng: 101.6841 },
@@ -38,7 +39,13 @@ const SimulationMapMCP: React.FC = () => {
         useTimeLimit, setUseTimeLimit,
         aiBusyRef,
         microScanOnly, toggleMicroScanOnly,
-        centerLocation, setCenterLocation
+        centerLocation, setCenterLocation,
+        searchArea, setSearchArea,
+        selectedCells,
+        isDrawingMode, setIsDrawingMode,
+        searchScanActive, setSearchScanActive,
+        missionOverride,
+        setMissionOverride
     } = useSharedSimulation();
 
     const [latInput, setLatInput] = React.useState(centerLocation.lat.toString());
@@ -49,6 +56,18 @@ const SimulationMapMCP: React.FC = () => {
         setLatInput(centerLocation.lat.toFixed(4));
         setLngInput(centerLocation.lng.toFixed(4));
     }, [centerLocation]);
+
+    const countCellsInArea = React.useCallback((area: { x: number; y: number }[]) => {
+        if (!area || area.length < 3) return 0;
+        let count = 0;
+        for (let y = 0; y < 20; y++) {
+            for (let x = 0; x < 20; x++) {
+                if (isPointInPolygon(x, y, area)) count++;
+            }
+        }
+        return count;
+    }, []);
+
 
     const {
         mcpConnected,
@@ -63,7 +82,6 @@ const SimulationMapMCP: React.FC = () => {
         chatDragRef,
         chatSize, setChatSize,
         chatResizeRef,
-        chatMessages, setChatMessages,
         chatScrollRef,
 
         syncToMcp,
@@ -72,8 +90,46 @@ const SimulationMapMCP: React.FC = () => {
     } = useSimulationMCP(
         timeRef, running, setRunning, dronesRef, gridRef, pinsRef,
         autoRecallThresholdsRef, relayTakeoverTargetRef, sensorWeightsRef, metricsRef,
-        resetSim, aiBusyRef, survivorsRef, timeLimit, useTimeLimit
+        resetSim, aiBusyRef, survivorsRef, searchArea, selectedCells, missionOverride, timeLimit, useTimeLimit
     );
+
+    const appendOverrideRecord = React.useCallback(async (message: string) => {
+        await mcpClient.appendOrchestratorRecord({
+            source: 'system',
+            droneId: 'ORCHESTRATOR',
+            message,
+        });
+    }, []);
+
+    const engageCustomAreaOverride = React.useCallback(async () => {
+        if ((searchArea?.length || 0) <= 2 || searchScanActive) return;
+
+        setSearchScanActive(true);
+        setMissionOverride(true);
+
+        const cellCount = countCellsInArea(searchArea || []);
+        const overrideMessage =
+            `[OVERRIDE] CUSTOM SEARCH AREA ENGAGED.\n` +
+            `Area defined with ${searchArea.length} boundary points covering ~${cellCount} grid cells.\n` +
+            `All drones recalibrating to prioritize search within designated zone.\n` +
+            `${microScanOnly ? 'BLANKET MICRO SCAN is ACTIVE within the custom area.' : 'Standard adaptive scanning within the custom area.'}`;
+
+        await appendOverrideRecord(overrideMessage);
+
+        await runOrchestratorPrompt(
+            'Operator override acknowledged: custom search area is now active. Reallocate all available drones inside the selected boundary and emit concrete per-drone actions for immediate execution.',
+            'auto'
+        );
+    }, [
+        appendOverrideRecord,
+        countCellsInArea,
+        microScanOnly,
+        runOrchestratorPrompt,
+        searchArea,
+        searchScanActive,
+        setMissionOverride,
+        setSearchScanActive,
+    ]);
 
     // The core tick loop wrapped to pass the MCP sync functions
     const performTick = useCallback(() => {
@@ -219,7 +275,14 @@ const SimulationMapMCP: React.FC = () => {
                         </button>
                     </div>
 
-                    <button onClick={toggleRunning} className="hud-btn" style={{ padding: '6px 12px', fontSize: '0.75rem', display: 'flex', gap: '6px', alignItems: 'center', cursor: 'pointer' }}>
+                    <button onClick={() => {
+                        if (!running) {
+                            void engageCustomAreaOverride();
+                            toggleRunning();
+                        } else {
+                            toggleRunning();
+                        }
+                    }} className="hud-btn" style={{ padding: '6px 12px', fontSize: '0.75rem', display: 'flex', gap: '6px', alignItems: 'center', cursor: 'pointer' }}>
                         {running ? <Pause size={14} /> : <Play size={14} />} {running ? 'PAUSE' : 'START SCAN'}
                     </button>
                     <button
@@ -274,6 +337,13 @@ const SimulationMapMCP: React.FC = () => {
                     aiDisconnectedRef={aiDisconnectedRef}
                     aiReconnectedUntilTickRef={aiReconnectedUntilTickRef}
                     showActualMap={showActualMap}
+                    searchArea={searchArea}
+                    isDrawingMode={isDrawingMode}
+                    searchScanActive={searchScanActive}
+                    onFinishDrawing={(area) => {
+                        setSearchArea(area);
+                        setIsDrawingMode(false);
+                    }}
                 />
 
                 <SimulationDashboard
@@ -290,13 +360,31 @@ const SimulationMapMCP: React.FC = () => {
                     onToggleMicroScanOnly={() => {
                         const nextState = !microScanOnly;
                         toggleMicroScanOnly(nextState);
-                        setChatMessages(prev => [...prev, { role: 'system', text: `[OVERRIDE] Micro Scan Only mode ${nextState ? 'ENABLED' : 'DISABLED'} by operator.` }]);
+                        void appendOverrideRecord(`[OVERRIDE] Micro Scan Only mode ${nextState ? 'ENABLED' : 'DISABLED'} by operator.`);
                         // Send command to MCP server
                         mcpClient.mcpTools.setMicroScanOnly(nextState).catch(err => {
                             console.error('Failed to set microScanOnly:', err);
                             // Revert on failure
                             toggleMicroScanOnly(!nextState);
                         });
+                    }}
+                    isDrawingMode={isDrawingMode}
+                    onToggleDrawingMode={() => {
+                        const nextState = !isDrawingMode;
+                        setIsDrawingMode(nextState);
+                        if (nextState) {
+                            setSearchArea([]);
+                            setSearchScanActive(false);
+                            setMissionOverride(false);
+                        }
+                    }}
+                    searchAreaDrawn={(searchArea?.length || 0) > 2}
+                    onClearSearchArea={() => {
+                        setSearchArea([]);
+                        setIsDrawingMode(false);
+                        setSearchScanActive(false);
+                        setMissionOverride(false);
+                        void appendOverrideRecord('[OVERRIDE] CUSTOM SEARCH AREA CLEARED. RESUMING GLOBAL SEARCH.');
                     }}
                 />
             </div>
@@ -321,10 +409,12 @@ const SimulationMapMCP: React.FC = () => {
                 chatDragRef={chatDragRef}
                 chatResizeRef={chatResizeRef}
                 chatScrollRef={chatScrollRef}
-                chatMessages={chatMessages}
                 running={running}
                 onStartSimulation={() => {
-                    if (!running) toggleRunning();
+                    if (!running) {
+                        void engageCustomAreaOverride();
+                        toggleRunning();
+                    }
                 }}
             />
 
