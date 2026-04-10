@@ -4,6 +4,7 @@ import { writeFile } from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { VertexAI, type GenerativeModel, type Content } from '@google-cloud/vertexai';
 import dotenv from 'dotenv';
+import axios from 'axios';
 import { droneStore, BASE_X, BASE_Y } from './droneStore.js';
 import { executeTool } from './tools/index.js';
 
@@ -11,7 +12,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ORCHESTRATOR_RECORDS_PATH = path.resolve(__dirname, '../../.local/orchestrator/orchestrator-records.json');
 
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env') }); // Reloaded to pick up OLLAMA_MODEL change
 
 // Ensure relative credential paths are resolved from the root
 if (process.env.GOOGLE_APPLICATION_CREDENTIALS && !path.isAbsolute(process.env.GOOGLE_APPLICATION_CREDENTIALS)) {
@@ -46,7 +47,6 @@ interface RegionPlan {
     targetY: number;
 }
 
-let model: GenerativeModel | null = null;
 let regionBootstrapDone = false;
 
 export interface OrchestratorRecord {
@@ -54,6 +54,155 @@ export interface OrchestratorRecord {
     source: 'system' | 'ai' | 'action' | 'error';
     message: string;
     droneId?: string;
+}
+
+interface LLMProvider {
+    sendMessage(message: string, history: any[], systemInstruction: string): Promise<string>;
+}
+
+class GeminiProvider implements LLMProvider {
+    private model: GenerativeModel | null = null;
+
+    private getModel(): GenerativeModel {
+        if (this.model) return this.model;
+        const project = process.env.GOOGLE_VERTEX_PROJECT;
+        const location = process.env.GOOGLE_VERTEX_LOCATION;
+        if (!project || !location) {
+            throw new Error('Missing GOOGLE_VERTEX_PROJECT or GOOGLE_VERTEX_LOCATION in environment');
+        }
+        const vertexAI = new VertexAI({ project, location });
+        this.model = vertexAI.getGenerativeModel({
+            model: process.env.ORCHESTRATOR_MODEL ?? 'gemini-2.5-flash',
+            generationConfig: {
+                temperature: 0.3,
+                maxOutputTokens: 4096,
+            },
+        });
+        return this.model;
+    }
+
+    async sendMessage(message: string, history: Content[], systemInstruction: string): Promise<string> {
+        const m = this.getModel();
+        const chat = m.startChat({
+            systemInstruction: { role: 'system', parts: [{ text: systemInstruction }] },
+            history: history,
+        });
+        const result = await chat.sendMessage(message);
+        return result.response.candidates?.[0]?.content?.parts?.[0]?.text ?? '(no response)';
+    }
+}
+
+class OllamaProvider implements LLMProvider {
+    async sendMessage(message: string, history: Content[], systemInstruction: string): Promise<string> {
+        let baseUrl = (process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434').trim();
+        if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
+        
+        const model = process.env.OLLAMA_MODEL ?? 'llama3.1:8b';
+
+        // Convert Gemini-style history to OpenAI/Ollama-style messages
+        const ollamaHistory = [
+            { role: 'system', content: systemInstruction },
+            ...history.map(h => ({
+                role: h.role === 'model' ? 'assistant' : h.role,
+                content: h.parts[0].text
+            })),
+            { role: 'user', content: message }
+        ];
+
+        try {
+            const response = await axios.post(`${baseUrl}/api/chat`, {
+                model: model,
+                messages: ollamaHistory,
+                stream: false,
+                options: {
+                    temperature: 0.3,
+                }
+            });
+            return response.data.message.content;
+        } catch (error: any) {
+            // Fallback for older Ollama versions that don't support /api/chat
+            if (error.response?.status === 404) {
+                console.log(`[Ollama] /api/chat not found, falling back to legacy /api/generate for model ${model}`);
+                const legacyPrompt = `System: ${systemInstruction}\n\n` + 
+                    history.map(h => `${h.role === 'model' ? 'Assistant' : 'User'}: ${h.parts[0].text}`).join('\n') + 
+                    `\nUser: ${message}`;
+                
+                const response = await axios.post(`${baseUrl}/api/generate`, {
+                    model: model,
+                    prompt: legacyPrompt,
+                    stream: false,
+                    options: { temperature: 0.3 }
+                });
+                return response.data.response;
+            }
+
+            console.error('Ollama request failed:', error);
+            throw new Error(`Ollama error: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+}
+
+export const ConnectivityChecker = {
+    async checkGemini(): Promise<boolean> {
+        // Fast credential check
+        if (!process.env.GOOGLE_APPLICATION_CREDENTIALS || !process.env.GOOGLE_VERTEX_PROJECT) {
+            console.log('[Connectivity] Gemini: Offline (Missing credentials)');
+            return false;
+        }
+        
+        try {
+            // Active probe: Verify we can actually reach Google services
+            await axios.get('https://www.googleapis.com/generate_204', { timeout: 2000 });
+            return true; 
+        } catch (error) {
+            console.log(`[Connectivity] Gemini: Offline (Network probe failed: ${error instanceof Error ? error.message : 'timeout'})`);
+            return false;
+        }
+    },
+    async checkOllama(): Promise<boolean> {
+        const baseUrl = process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434';
+        try {
+            await axios.get(`${baseUrl}/api/tags`, { timeout: 1500 });
+            return true;
+        } catch {
+            return false;
+        }
+    }
+};
+
+const geminiProvider = new GeminiProvider();
+const ollamaProvider = new OllamaProvider();
+
+async function getProvider(mode: 'online' | 'offline' | 'auto'): Promise<{ provider: LLMProvider, activeMode: 'online' | 'offline' }> {
+    // Mode preference check
+    const modePref = mode ?? process.env.DEFAULT_ORCHESTRATOR_MODE ?? 'auto';
+
+    // Online mode: Skip Ollama entirely
+    if (modePref === 'online') {
+        const isOnline = await ConnectivityChecker.checkGemini();
+        if (!isOnline) throw new Error('Gemini credentials missing or invalid. Check GOOGLE_APPLICATION_CREDENTIALS.');
+        return { provider: geminiProvider, activeMode: 'online' };
+    }
+
+    // Offline mode: Skip Gemini entirely
+    if (modePref === 'offline') {
+        const isOllamaAvailable = await ConnectivityChecker.checkOllama();
+        if (!isOllamaAvailable) throw new Error('Ollama service unreachable at ' + (process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434'));
+        return { provider: ollamaProvider, activeMode: 'offline' };
+    }
+
+    // Auto mode: Detect and prioritize Gemini
+    const isOnline = await ConnectivityChecker.checkGemini();
+    if (isOnline) {
+        return { provider: geminiProvider, activeMode: 'online' };
+    }
+    
+    const isOllamaAvailable = await ConnectivityChecker.checkOllama();
+    if (isOllamaAvailable) {
+        return { provider: ollamaProvider, activeMode: 'offline' };
+    }
+
+    throw new Error('No LLM provider available (Gemini offline and Ollama unreachable)');
 }
 
 const stateProxy = {
@@ -136,9 +285,7 @@ export function clearOrchestratorRecords(): void {
 mkdirSync(path.dirname(ORCHESTRATOR_RECORDS_PATH), { recursive: true });
 // Legacy disk records load omitted to prevent cross-contamination in sandboxes
 
-// Conversation history for stateful multi-turn chat (role: 'user' | 'model')
-const MAX_HISTORY_TURNS = 20; // 10 user + 10 model messages
-// History handled by stateProxy
+const MAX_HISTORY_TURNS = 20;
 
 function trimHistory(): void {
     if (stateProxy.chatHistory.length > MAX_HISTORY_TURNS) {
@@ -148,28 +295,6 @@ function trimHistory(): void {
 
 function clearChatHistory(): void {
     stateProxy.chatHistory = [];
-}
-
-function getModel(): GenerativeModel {
-    if (model) return model;
-
-    const project = process.env.GOOGLE_VERTEX_PROJECT;
-    const location = process.env.GOOGLE_VERTEX_LOCATION;
-
-    if (!project || !location) {
-        throw new Error('Missing GOOGLE_VERTEX_PROJECT or GOOGLE_VERTEX_LOCATION in environment');
-    }
-
-    const vertexAI = new VertexAI({ project, location });
-    model = vertexAI.getGenerativeModel({
-        model: process.env.ORCHESTRATOR_MODEL ?? 'gemini-2.5-flash',
-        generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 4096,
-        },
-    });
-
-    return model;
 }
 
 function buildStateSummary(): string {
@@ -606,13 +731,14 @@ function applyRelaySafetyFallback(actions: ChatAction[]): ChatAction[] {
     return hydratedActions;
 }
 
-export async function processOrchestratorChat(message: string): Promise<{
+export async function processOrchestratorChat(message: string, mode: 'online' | 'offline' | 'auto' = 'auto'): Promise<{
     success: boolean;
     reply?: string;
     decision?: ParsedDecision;
     executionLog?: string[];
     error?: string;
     timestamp: number;
+    activeMode?: 'online' | 'offline';
 }> {
     try {
         const missionStats = droneStore.getMissionStats();
@@ -651,7 +777,7 @@ export async function processOrchestratorChat(message: string): Promise<{
             };
         }
 
-        const m = getModel();
+        const { provider, activeMode } = await getProvider(mode);
         const stateSummary = buildStateSummary();
 
         const systemPrompt = `You are FirstLight rescue orchestrator AI.
@@ -707,13 +833,7 @@ Critical rules:
 
         const userPrompt = `STATE:\n${stateSummary}\n\nUSER:\n${message}`;
 
-        const chat = m.startChat({
-            systemInstruction: { role: 'system', parts: [{ text: systemPrompt }] },
-            history: stateProxy.chatHistory,
-        });
-
-        const result = await chat.sendMessage(userPrompt);
-        const reply = result.response.candidates?.[0]?.content?.parts?.[0]?.text ?? '(no response)';
+        const reply = await provider.sendMessage(userPrompt, stateProxy.chatHistory, systemPrompt);
 
         // Persist this turn into history
         stateProxy.chatHistory.push({ role: 'user', parts: [{ text: userPrompt }] });
@@ -731,6 +851,7 @@ Critical rules:
                 success: true,
                 reply,
                 timestamp: Date.now(),
+                activeMode
             };
         }
 
@@ -773,6 +894,7 @@ Critical rules:
             decision: safeDecision,
             executionLog: executionLog.map(e => e.message),
             timestamp: Date.now(),
+            activeMode
         };
     } catch (error) {
         pushOrchestratorRecord({

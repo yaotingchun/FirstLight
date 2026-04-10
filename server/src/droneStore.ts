@@ -95,6 +95,7 @@ interface DroneStateStore {
 
     // Global configuration
     microScanOnly: boolean;
+    aiMode: 'online' | 'offline' | 'auto';
 }
 
 export type CommandType =
@@ -155,6 +156,7 @@ export class DroneStore {
             lastUpdated: 0,
         },
         microScanOnly: false,
+        aiMode: (process.env.DEFAULT_ORCHESTRATOR_MODE as any) ?? 'auto',
     };
 
     private listeners: Set<(state: DroneStateStore) => void> = new Set();
@@ -270,6 +272,7 @@ export class DroneStore {
                 lastUpdated: 0,
             },
             microScanOnly: false,
+            aiMode: (process.env.DEFAULT_ORCHESTRATOR_MODE as any) ?? 'auto',
         };
         this.notify();
     }
@@ -289,6 +292,15 @@ export class DroneStore {
 
     isMicroScanOnly(): boolean {
         return this.state.microScanOnly;
+    }
+
+    setAiMode(mode: 'online' | 'offline' | 'auto'): void {
+        this.state.aiMode = mode;
+        this.notify();
+    }
+
+    getAiMode(): 'online' | 'offline' | 'auto' {
+        return this.state.aiMode;
     }
 
     // ─────────────────────────────────────────────────────────────────────

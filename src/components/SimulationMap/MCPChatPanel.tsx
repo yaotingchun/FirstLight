@@ -28,6 +28,9 @@ interface MCPChatPanelProps {
     chatMessages: OrchestratorChatMessage[];
     running: boolean;
     onStartSimulation: () => void;
+    aiMode: 'online' | 'offline' | 'auto';
+    setAiMode: (mode: 'online' | 'offline' | 'auto') => void;
+    providerStatus: { gemini: 'online' | 'offline'; ollama: 'online' | 'offline' };
 }
 
 export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
@@ -36,7 +39,8 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
     executeMcpTool, mcpToolOutput,
     chatOpen, setChatOpen, chatPos, setChatPos, chatSize, setChatSize,
     chatDragRef, chatResizeRef, chatScrollRef,
-    chatMessages, running, onStartSimulation
+    chatMessages, running, onStartSimulation,
+    aiMode, setAiMode, providerStatus
 }) => {
     const [activityRecords, setActivityRecords] = useState<OrchestratorRecord[]>([]);
     const [startPressedOnce, setStartPressedOnce] = useState(false);
@@ -310,6 +314,37 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                         >
                             <FileText size={16} /> Mission Log
                         </h3>
+                        
+                        {/* AI Mode Selection & Status */}
+                        <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.4)', borderRadius: '6px', padding: '2px 4px', border: '1px solid rgba(0, 255, 204, 0.2)', gap: '4px' }}>
+                            <div style={{ display: 'flex', borderRight: '1px solid rgba(255,255,255,0.1)', paddingRight: '4px', gap: '4px', alignItems: 'center' }}>
+                                <div title="Gemini Status" style={{ width: '6px', height: '6px', borderRadius: '50%', background: providerStatus.gemini === 'online' ? '#00ffcc' : '#f03e3e', boxShadow: providerStatus.gemini === 'online' ? '0 0 5px #00ffcc' : 'none' }} />
+                                <div title="Ollama Status" style={{ width: '6px', height: '6px', borderRadius: '50%', background: providerStatus.ollama === 'online' ? '#4da3ff' : '#f03e3e', boxShadow: providerStatus.ollama === 'online' ? '0 0 5px #4da3ff' : 'none' }} />
+                            </div>
+                            
+                            {(['online', 'offline', 'auto'] as const).map(mode => (
+                                <button
+                                    key={mode}
+                                    onClick={() => setAiMode(mode)}
+                                    style={{
+                                        background: aiMode === mode ? 'rgba(0, 255, 204, 0.2)' : 'transparent',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        color: aiMode === mode ? '#00ffcc' : '#6b8a8b',
+                                        fontSize: '9px',
+                                        fontWeight: 700,
+                                        padding: '2px 6px',
+                                        cursor: 'pointer',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.5px',
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    {mode}
+                                </button>
+                            ))}
+                        </div>
+
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <button
                                 onClick={() => {
@@ -322,16 +357,17 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                                     border: 'none',
                                     color: '#001018',
                                     borderRadius: 4,
-                                    padding: '4px 8px',
-                                    fontSize: 11,
+                                    padding: '4px 10px',
+                                    fontSize: 10,
                                     fontWeight: 700,
                                     cursor: startPressedOnce || running ? 'not-allowed' : 'pointer',
-                                    opacity: startPressedOnce || running ? 0.5 : 1
+                                    opacity: startPressedOnce || running ? 0.5 : 1,
+                                    letterSpacing: '0.5px'
                                 }}
                             >
-                                START SIMULATION
+                                START
                             </button>
-                            <button onClick={() => setChatOpen(false)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}>
+                            <button onClick={() => setChatOpen(false)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex' }}>
                                 <X size={16} />
                             </button>
                         </div>
