@@ -120,12 +120,12 @@ export interface AppendOrchestratorRecordPayload {
 /**
  * Send a message to the orchestrator AI through the MCP server.
  */
-export async function orchestratorChat(message: string): Promise<OrchestratorChatResponse> {
+export async function orchestratorChat(message: string, mode?: 'online' | 'offline' | 'auto'): Promise<OrchestratorChatResponse> {
     try {
         const response = await mcpFetch(`${MCP_SERVER_URL}/api/orchestrator/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message })
+            body: JSON.stringify({ message, mode })
         });
         return await response.json();
     } catch (error) {
@@ -134,6 +134,40 @@ export async function orchestratorChat(message: string): Promise<OrchestratorCha
             error: `Failed to reach orchestrator endpoint: ${error instanceof Error ? error.message : String(error)}`,
             timestamp: Date.now()
         };
+    }
+}
+
+/**
+ * Get the status of LLM providers and the current AI mode.
+ */
+export async function getOrchestratorStatus(): Promise<{
+    success: boolean;
+    providers: { gemini: 'online' | 'offline'; ollama: 'online' | 'offline' };
+    currentMode: 'online' | 'offline' | 'auto';
+    timestamp: number;
+} | null> {
+    try {
+        const response = await mcpFetch(`${MCP_SERVER_URL}/api/orchestrator/status`);
+        return await response.json();
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Update the AI orchestrator mode on the server.
+ */
+export async function setOrchestratorMode(mode: 'online' | 'offline' | 'auto'): Promise<boolean> {
+    try {
+        const response = await mcpFetch(`${MCP_SERVER_URL}/api/orchestrator/mode`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode })
+        });
+        const result = await response.json();
+        return !!result.success;
+    } catch {
+        return false;
     }
 }
 

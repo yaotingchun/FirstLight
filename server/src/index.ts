@@ -23,7 +23,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import { executeTool, listTools, getToolSchema } from './tools/index.js';
 import { droneStore, sessionStores, DroneStore, storeContext } from './droneStore.js';
-import { processOrchestratorChat, getOrchestratorRecords, clearOrchestratorRecords, appendOrchestratorRecord } from './orchestratorChat.js';
+import { processOrchestratorChat, getOrchestratorRecords, clearOrchestratorRecords, appendOrchestratorRecord, ConnectivityChecker } from './orchestratorChat.js';
 import { localAutonomy } from './simulation/localAutonomy.js';
 import type { DroneStatus, SectorScanResult, CommLink, SurvivorInfo } from './types.js';
 
@@ -54,8 +54,10 @@ async function runPeriodicOrchestratorThink(sessionId: string, tick: number): Pr
     lock.lastTick = tick;
 
     try {
+        const mode = droneStore.getAiMode();
         const result = await processOrchestratorChat(
-            'Periodic strategic review: evaluate global mission progress, battery posture, relay network health, hotspot coverage, and survivor search efficiency. Issue actions only if meaningful intervention is required; otherwise use no_action with a short reason.'
+            'Periodic strategic review: evaluate global mission progress, battery posture, relay network health, hotspot coverage, and survivor search efficiency. Issue actions only if meaningful intervention is required; otherwise use no_action with a short reason.',
+            mode
         );
 
         if (!result.success) {
@@ -184,7 +186,7 @@ app.post('/api/tools/:toolName', async (req, res) => {
 
 // Orchestrator chat endpoint (frontend AI chat)
 app.post('/api/orchestrator/chat', async (req, res) => {
-    const { message } = req.body as { message?: string };
+    const { message, mode } = req.body as { message?: string, mode?: 'online' | 'offline' | 'auto' };
 
     if (!message || !message.trim()) {
         res.status(400).json({
@@ -195,8 +197,54 @@ app.post('/api/orchestrator/chat', async (req, res) => {
         return;
     }
 
-    const result = await processOrchestratorChat(message.trim());
+    // Persist mode if provided
+    if (mode) {
+        droneStore.setAiMode(mode);
+    }
+
+    const currentMode = mode || droneStore.getAiMode();
+    const result = await processOrchestratorChat(message.trim(), currentMode);
     res.json(result);
+});
+
+// Provider status endpoint
+app.get('/api/orchestrator/status', async (req, res) => {
+    const [gemini, ollama] = await Promise.all([
+        ConnectivityChecker.checkGemini(),
+        ConnectivityChecker.checkOllama()
+    ]);
+
+    res.json({
+        success: true,
+        providers: {
+            gemini: gemini ? 'online' : 'offline',
+            ollama: ollama ? 'online' : 'offline'
+        },
+        currentMode: droneStore.getAiMode(),
+        timestamp: Date.now()
+    });
+});
+
+// Set orchestrator mode
+app.post('/api/orchestrator/mode', (req, res) => {
+    const { mode } = req.body as { mode: 'online' | 'offline' | 'auto' };
+    
+    if (!mode || !['online', 'offline', 'auto'].includes(mode)) {
+        res.status(400).json({
+            success: false,
+            error: 'mode must be one of: online, offline, auto',
+            timestamp: Date.now()
+        });
+        return;
+    }
+
+    droneStore.setAiMode(mode);
+    
+    res.json({
+        success: true,
+        mode,
+        timestamp: Date.now()
+    });
 });
 
 // Get orchestrator record feed for dashboard timeline

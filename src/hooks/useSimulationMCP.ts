@@ -31,6 +31,11 @@ export const useSimulationMCP = (
     const [mcpSelectedTool, setMcpSelectedTool] = useState<string>('getSwarmStatus');
     const [mcpToolParams, setMcpToolParams] = useState<string>('{}');
     const [chatOpen, setChatOpen] = useState(false);
+    const [aiMode, setAiMode] = useState<'online' | 'offline' | 'auto'>('auto');
+    const [providerStatus, setProviderStatus] = useState({
+        gemini: 'offline' as 'online' | 'offline',
+        ollama: 'offline' as 'online' | 'offline'
+    });
 
     // Chat UI state
     const [chatPos, setChatPos] = useState({ x: 0, y: 0 });
@@ -58,6 +63,15 @@ export const useSimulationMCP = (
         const checkConnection = async () => {
             const status = await mcpClient.getServerStatus();
             setMcpConnected(!!status);
+
+            // Also check provider status
+            if (status) {
+                const provStatus = await mcpClient.getOrchestratorStatus();
+                if (provStatus) {
+                    setProviderStatus(provStatus.providers);
+                    setAiMode(provStatus.currentMode);
+                }
+            }
         };
         checkConnection();
         const interval = setInterval(checkConnection, 5000);
@@ -87,7 +101,7 @@ export const useSimulationMCP = (
             setChatMessages(prev => [...prev, { role: 'system', text: 'Auto-think: AI is evaluating current swarm state...' }]);
         }
 
-        const result = await mcpClient.orchestratorChat(trimmed);
+        const result = await mcpClient.orchestratorChat(trimmed, aiMode);
 
         if (!result.success) {
             setChatMessages(prev => [...prev, { role: 'system', text: `Error: ${result.error ?? 'Unknown error'}` }]);
@@ -534,6 +548,15 @@ export const useSimulationMCP = (
         runOrchestratorPrompt,
 
         syncToMcp,
-        processMcpCommands
+        processMcpCommands,
+
+        aiMode,
+        setAiMode: async (mode: 'online' | 'offline' | 'auto') => {
+            // Optimistic update
+            setAiMode(mode);
+            // Sync with server
+            await mcpClient.setOrchestratorMode(mode);
+        },
+        providerStatus
     };
 };

@@ -89,7 +89,10 @@ const SimulationMapMCP: React.FC = () => {
 
         syncToMcp,
         processMcpCommands,
-        runOrchestratorPrompt
+        runOrchestratorPrompt,
+
+        aiMode, setAiMode,
+        providerStatus
     } = useSimulationMCP(
         timeRef, running, setRunning, dronesRef, gridRef, pinsRef,
         autoRecallThresholdsRef, relayTakeoverTargetRef, sensorWeightsRef, metricsRef,
@@ -427,6 +430,9 @@ const SimulationMapMCP: React.FC = () => {
                 chatResizeRef={chatResizeRef}
                 chatScrollRef={chatScrollRef}
                 running={running}
+                aiMode={aiMode}
+                setAiMode={setAiMode}
+                providerStatus={providerStatus}
                 onStartSimulation={() => {
                     if (!running) {
                         void engageCustomAreaOverride();
