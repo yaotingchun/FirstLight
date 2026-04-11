@@ -70,6 +70,8 @@ interface DroneStateStore {
     isRunning: boolean;
 
     // Advanced Mission Analytics
+    reportedUniqueScans: number | null;
+    reportedGridSize: number | null;
     averageZoneCoverage: number;
     meanProbabilityScanned: number;
     repeatedScanRate: number;
@@ -130,6 +132,8 @@ export class DroneStore {
         foundSurvivors: [],
         currentTick: 0,
         isRunning: false,
+        reportedUniqueScans: null,
+        reportedGridSize: null,
         averageZoneCoverage: 0,
         meanProbabilityScanned: 0,
         repeatedScanRate: 0,
@@ -227,11 +231,14 @@ export class DroneStore {
     }
 
     updateAnalytics(stats: Partial<DroneStateStore>): void {
+        if (stats.reportedUniqueScans !== undefined) this.state.reportedUniqueScans = stats.reportedUniqueScans;
+        if (stats.reportedGridSize !== undefined) this.state.reportedGridSize = stats.reportedGridSize;
         if (stats.averageZoneCoverage !== undefined) this.state.averageZoneCoverage = stats.averageZoneCoverage;
         if (stats.meanProbabilityScanned !== undefined) this.state.meanProbabilityScanned = stats.meanProbabilityScanned;
         if (stats.repeatedScanRate !== undefined) this.state.repeatedScanRate = stats.repeatedScanRate;
         if (stats.missionTimeSec !== undefined) this.state.missionTimeSec = stats.missionTimeSec;
         if (stats.sensorWeights !== undefined) this.state.sensorWeights = stats.sensorWeights;
+        if (stats.totalEstimatedSurvivors !== undefined) this.state.totalEstimatedSurvivors = stats.totalEstimatedSurvivors;
         if (stats.missionTimeLimit !== undefined) this.state.missionTimeLimit = stats.missionTimeLimit;
         this.notify();
     }
@@ -245,6 +252,8 @@ export class DroneStore {
             foundSurvivors: [],
             currentTick: 0,
             isRunning: false,
+            reportedUniqueScans: null,
+            reportedGridSize: null,
             averageZoneCoverage: 0,
             meanProbabilityScanned: 0,
             repeatedScanRate: 0,
@@ -374,8 +383,8 @@ export class DroneStore {
     getMissionStats(): MissionStats {
         const drones = this.getAllDrones();
         const activeDrones = drones.filter(d => d.isActive);
-        const scannedSectors = this.state.grid.flat().filter(s => s.scanned).length;
-        const totalSectors = GRID_W * GRID_H;
+        const scannedSectors = this.state.reportedUniqueScans ?? this.state.grid.flat().filter(s => s.scanned).length;
+        const totalSectors = this.state.reportedGridSize ?? (GRID_W * GRID_H);
         const highPriorityRemaining = this.state.grid.flat()
             .filter(s => !s.scanned && s.probability > 0.6).length;
         const avgBattery = activeDrones.length > 0
@@ -388,7 +397,7 @@ export class DroneStore {
             currentTick: this.state.currentTick,
             sectorsScanned: scannedSectors,
             totalSectors,
-            scanProgress: (scannedSectors / totalSectors) * 100,
+            scanProgress: totalSectors > 0 ? (scannedSectors / totalSectors) * 100 : 0,
             survivorsFound: this.state.foundSurvivors.length,
             totalEstimatedSurvivors: this.state.totalEstimatedSurvivors,
             highPriorityZonesRemaining: highPriorityRemaining,

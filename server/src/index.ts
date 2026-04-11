@@ -213,6 +213,40 @@ app.get('/api/orchestrator/records', (req, res) => {
     });
 });
 
+// Append a record to orchestrator timeline.
+app.post('/api/orchestrator/records', (req, res) => {
+    const { source, message, droneId } = req.body as {
+        source?: 'system' | 'ai' | 'action' | 'error';
+        message?: string;
+        droneId?: string;
+    };
+
+    if (!source || !['system', 'ai', 'action', 'error'].includes(source)) {
+        res.status(400).json({
+            success: false,
+            error: 'source is required and must be one of system|ai|action|error',
+            timestamp: Date.now(),
+        });
+        return;
+    }
+
+    if (!message || !message.trim()) {
+        res.status(400).json({
+            success: false,
+            error: 'message is required',
+            timestamp: Date.now(),
+        });
+        return;
+    }
+
+    appendOrchestratorRecord(source, message.trim(), typeof droneId === 'string' ? droneId : undefined);
+
+    res.json({
+        success: true,
+        timestamp: Date.now(),
+    });
+});
+
 // Clear orchestrator record feed (used to reset timeline after page refresh)
 app.delete('/api/orchestrator/records', (req, res) => {
     clearOrchestratorRecords();

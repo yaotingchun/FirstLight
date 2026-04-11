@@ -135,6 +135,82 @@ export const clusterZones = (
 };
 
 /**
+ * Cluster only a filtered list of cells into zones.
+ * Used for custom search-area mode so zone centroids are computed from
+ * polygon-constrained data only.
+ */
+export const clusterCellsIntoZones = (
+    cells: GridCell[],
+    gridW = 20,
+    gridH = 20,
+    zoneSize = 4,
+): SearchZone[] => {
+    const zonesX = Math.ceil(gridW / zoneSize);
+    const zonesY = Math.ceil(gridH / zoneSize);
+    const zones: SearchZone[] = [];
+
+    for (let zy = 0; zy < zonesY; zy++) {
+        for (let zx = 0; zx < zonesX; zx++) {
+            const zoneCells = cells.filter(cell => {
+                const xStart = zx * zoneSize;
+                const yStart = zy * zoneSize;
+                const xEnd = Math.min(xStart + zoneSize, gridW);
+                const yEnd = Math.min(yStart + zoneSize, gridH);
+                return cell.x >= xStart && cell.x < xEnd && cell.y >= yStart && cell.y < yEnd;
+            });
+
+            if (zoneCells.length === 0) continue;
+
+            let sumX = 0;
+            let sumY = 0;
+            let sumProb = 0;
+            let maxProb = 0;
+            let sumSensor = 0;
+            let unscanned = 0;
+            let lastTick = 0;
+
+            for (const cell of zoneCells) {
+                sumX += cell.x;
+                sumY += cell.y;
+                sumProb += cell.prob;
+                if (cell.prob > maxProb) maxProb = cell.prob;
+
+                const s = cell.signals;
+                sumSensor +=
+                    SENSOR_WEIGHTS.mobile * s.mobile +
+                    SENSOR_WEIGHTS.thermal * s.thermal +
+                    SENSOR_WEIGHTS.sound * s.sound +
+                    SENSOR_WEIGHTS.wifi * s.wifi;
+
+                if (!cell.scanned) unscanned++;
+                if (cell.lastScanned > lastTick) lastTick = cell.lastScanned;
+            }
+
+            const n = zoneCells.length;
+            zones.push({
+                zoneId: `Z-${zx}-${zy}`,
+                cells: zoneCells,
+                centroid: {
+                    x: Math.round(sumX / n),
+                    y: Math.round(sumY / n),
+                },
+                probabilityScore: sumProb / n,
+                maxProbability: maxProb,
+                sensorScore: sumSensor / n,
+                recencyPenalty: 0,
+                zoneScore: 0,
+                assignedDroneIds: [],
+                unscannedCount: unscanned,
+                totalCells: n,
+                lastScannedTick: lastTick,
+            });
+        }
+    }
+
+    return zones;
+};
+
+/**
  * Find the zone that contains a given cell coordinate.
  */
 export const getZoneForCell = (

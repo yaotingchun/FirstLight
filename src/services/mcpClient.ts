@@ -111,6 +111,12 @@ export interface OrchestratorRecord {
     droneId?: string;
 }
 
+export interface AppendOrchestratorRecordPayload {
+    source: OrchestratorRecord['source'];
+    message: string;
+    droneId?: string;
+}
+
 /**
  * Send a message to the orchestrator AI through the MCP server.
  */
@@ -151,6 +157,23 @@ export async function getOrchestratorRecords(limit?: number): Promise<{
             error: `Failed to fetch orchestrator records: ${error instanceof Error ? error.message : String(error)}`,
             timestamp: Date.now(),
         };
+    }
+}
+
+/**
+ * Append an orchestrator activity record.
+ */
+export async function appendOrchestratorRecord(payload: AppendOrchestratorRecordPayload): Promise<boolean> {
+    try {
+        const response = await mcpFetch(`${MCP_SERVER_URL}/api/orchestrator/records`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const result = await response.json();
+        return !!result.success;
+    } catch {
+        return false;
     }
 }
 

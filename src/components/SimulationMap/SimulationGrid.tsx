@@ -7,6 +7,7 @@ import {
 } from '../../types/simulation';
 import type { Sector, Drone, CommEdge, HiddenSurvivor, FoundPin } from '../../types/simulation';
 import { useSharedSimulation } from '../../context/SimulationContext';
+import { simplifyPath, isPointInPolygon, type Point } from '../../utils/polygonUtils';
 
 const MAPTILER_KEY = 'SAX29oYdDKXlxm4RKRBu';
 
@@ -28,6 +29,10 @@ interface SimulationGridProps {
     aiDisconnectedRef: React.MutableRefObject<Set<string>>;
     aiReconnectedUntilTickRef: React.MutableRefObject<Map<string, number>>;
     showActualMap: boolean;
+    searchArea: Point[];
+    isDrawingMode: boolean;
+    searchScanActive: boolean;
+    onFinishDrawing: (area: Point[]) => void;
 }
 
 export const getDroneThemeColor = (id?: string) => {
@@ -46,9 +51,51 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
     selectedPin, setSelectedPin, showSensors, 
     showTrails, setShowTrails, selectedTrailDroneId, setSelectedTrailDroneId,
     getSectorProbability, time, aiDisconnectedRef, aiReconnectedUntilTickRef,
-    showActualMap
+    showActualMap, searchArea, isDrawingMode, searchScanActive, onFinishDrawing
 }) => {
     const { centerLocation } = useSharedSimulation();
+    const [draftArea, setDraftArea] = React.useState<Point[]>([]);
+    const draftAreaRef = React.useRef<Point[]>([]);
+    const isDraggingRef = React.useRef(false);
+
+    const getSvgPointFromEvent = React.useCallback((e: React.PointerEvent<SVGSVGElement>): Point | null => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return null;
+
+        const svgW = GRID_W * CELL_SIZE;
+        const svgH = GRID_H * CELL_SIZE;
+        const scaleX = svgW / rect.width;
+        const scaleY = svgH / rect.height;
+
+        const sx = (e.clientX - rect.left) * scaleX;
+        const sy = (e.clientY - rect.top) * scaleY;
+
+        if (sx < 0 || sx >= svgW || sy < 0 || sy >= svgH) return null;
+        return { x: sx, y: sy };
+    }, []);
+
+    const commitDraftArea = React.useCallback((area: Point[]) => {
+        if (area.length < 3) {
+            setDraftArea([]);
+            draftAreaRef.current = [];
+            return;
+        }
+
+        // Simplify in SVG-space for smooth freehand behavior, then snap to grid cells.
+        const simplifiedSvg = simplifyPath(area, 6);
+        const snapped = simplifiedSvg
+            .map(p => ({
+                x: Math.max(0, Math.min(GRID_W - 1, Math.floor(p.x / CELL_SIZE))),
+                y: Math.max(0, Math.min(GRID_H - 1, Math.floor(p.y / CELL_SIZE))),
+            }))
+            .filter((p, i, arr) => i === 0 || p.x !== arr[i - 1].x || p.y !== arr[i - 1].y);
+
+        if (snapped.length >= 3) {
+            onFinishDrawing(simplifyPath(snapped, 0.35));
+        }
+        setDraftArea([]);
+        draftAreaRef.current = [];
+    }, [onFinishDrawing]);
 
     return (
         <div className="hud-panel" style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', paddingLeft: '40px' }}>
@@ -74,7 +121,47 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                 style={{ 
                     border: '1px dashed rgba(0,255,204,0.2)', 
                     backgroundColor: showActualMap ? 'transparent' : '#050a10',
-                    zIndex: 1
+                    zIndex: 1,
+                    cursor: isDrawingMode ? 'crosshair' : 'default'
+                }}
+                onPointerDown={(e) => {
+                    if (!isDrawingMode) return;
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    isDraggingRef.current = true;
+                    const first = getSvgPointFromEvent(e);
+                    if (first) {
+                        draftAreaRef.current = [first];
+                        setDraftArea([first]);
+                    }
+                }}
+                onPointerMove={(e) => {
+                    if (!isDrawingMode || !isDraggingRef.current) return;
+                    const nextPoint = getSvgPointFromEvent(e);
+                    if (nextPoint) {
+                        setDraftArea(prev => {
+                            const last = prev[prev.length - 1];
+                            const movedEnough = !last || Math.hypot(nextPoint.x - last.x, nextPoint.y - last.y) >= 2;
+                            if (movedEnough) {
+                                const next = [...prev, nextPoint];
+                                draftAreaRef.current = next;
+                                return next;
+                            }
+                            return prev;
+                        });
+                    }
+                }}
+                onPointerUp={(e) => {
+                    isDraggingRef.current = false;
+                    e.currentTarget.releasePointerCapture(e.pointerId);
+                    const endPoint = getSvgPointFromEvent(e);
+                    if (endPoint) {
+                        const last = draftAreaRef.current[draftAreaRef.current.length - 1];
+                        if (!last || Math.hypot(endPoint.x - last.x, endPoint.y - last.y) >= 2) {
+                            draftAreaRef.current = [...draftAreaRef.current, endPoint];
+                            setDraftArea(draftAreaRef.current);
+                        }
+                    }
+                    commitDraftArea(draftAreaRef.current);
                 }}
             >
                 {/* Grid & Heatmap */}
@@ -86,10 +173,21 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                                 y={y * CELL_SIZE}
                                 width={CELL_SIZE}
                                 height={CELL_SIZE}
-                                fill={!showTrails && cell.scanned && !showActualMap
-                                    ? `rgba(255, 68, 68, ${0.05 + getSectorProbability(x, y) * 0.75})` 
-                                    : 'transparent'}
-                                stroke="rgba(0, 255, 204, 0.05)"
+                                fill={(() => {
+                                    const insideArea = searchArea.length >= 3 && isPointInPolygon(x, y, searchArea);
+                                    if (insideArea) {
+                                        if (cell.scanned) {
+                                            return 'rgba(255, 68, 68, 0.28)';
+                                        }
+                                        return 'rgba(0, 255, 204, 0.12)';
+                                    }
+                                    return !showTrails && cell.scanned && !showActualMap
+                                        ? `rgba(255, 68, 68, ${0.05 + getSectorProbability(x, y) * 0.75})`
+                                        : 'transparent';
+                                })()}
+                                stroke={searchArea.length >= 3 && isPointInPolygon(x, y, searchArea)
+                                    ? 'rgba(0, 255, 204, 0.35)'
+                                    : 'rgba(0, 255, 204, 0.05)'}
                                 strokeWidth="1"
                             />
 
@@ -131,6 +229,35 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                             )}
                         </React.Fragment>
                     ))
+                )}
+
+                {/* Active Search Area */}
+                {searchArea.length >= 3 && !isDrawingMode && (
+                    <g style={{ pointerEvents: 'none' }}>
+                        <polygon
+                            points={searchArea.map(p => `${p.x * CELL_SIZE + CELL_SIZE / 2},${p.y * CELL_SIZE + CELL_SIZE / 2}`).join(' ')}
+                            fill={searchScanActive ? 'rgba(0, 255, 204, 0.04)' : 'transparent'}
+                            stroke="rgba(0, 255, 204, 0.8)"
+                            strokeWidth="2"
+                            style={{ filter: 'drop-shadow(0 0 6px rgba(0,255,204,0.55))' }}
+                        />
+                    </g>
+                )}
+
+                {/* Drawing Preview */}
+                {isDrawingMode && draftArea.length > 0 && (
+                    <g style={{ pointerEvents: 'none' }}>
+                        <polyline
+                            points={draftArea.map(p => `${p.x},${p.y}`).join(' ')}
+                            fill="none"
+                            stroke="rgba(0, 255, 204, 0.9)"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeDasharray="4"
+                            style={{ filter: 'drop-shadow(0 0 5px rgba(0,255,204,0.5))' }}
+                        />
+                    </g>
                 )}
 
                 {/* Comm Network Edges */}

@@ -1,8 +1,5 @@
 import React from 'react';
 import { Activity, Wifi, WifiOff, Radio } from 'lucide-react';
-import {
-    GRID_W, GRID_H
-} from '../../types/simulation';
 import type { Drone } from '../../types/simulation';
 
 interface SimulationDashboardProps {
@@ -24,15 +21,19 @@ interface SimulationDashboardProps {
     running: boolean;
     microScanOnly: boolean;
     onToggleMicroScanOnly: () => void;
+    isDrawingMode: boolean;
+    onToggleDrawingMode: () => void;
+    searchAreaDrawn: boolean;
+    onClearSearchArea: () => void;
 }
 
 export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
     drones, time, aiDisconnectedRef, aiReconnectedUntilTickRef,
     metrics, sensorWeights, randomizeBattery, setRandomizeBattery, running,
-    microScanOnly, onToggleMicroScanOnly
+    microScanOnly, onToggleMicroScanOnly,
+    isDrawingMode, onToggleDrawingMode,
+    searchAreaDrawn, onClearSearchArea
 }) => {
-    const TOTAL_CELLS = GRID_W * GRID_H;
-
     return (
         <div style={{ width: '320px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {/* Live Swarm Status */}
@@ -151,7 +152,7 @@ export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
                         <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
                             SEARCH DURATION
                         </div>
-                        <div style={{ fontSize: '1.2rem', color: metrics.totalUniqueScans >= TOTAL_CELLS ? '#00ffcc' : 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+                        <div style={{ fontSize: '1.2rem', color: metrics.averageZoneCoverage >= 100 ? '#00ffcc' : 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
                             {(() => {
                                 const s = Math.floor(metrics.missionTimeSec);
                                 const hours = Math.floor(s / 3600);
@@ -160,10 +161,10 @@ export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
                                 return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
                             })()}
                         </div>
-                        {metrics.totalUniqueScans >= TOTAL_CELLS && (
+                        {metrics.averageZoneCoverage >= 100 && (
                             <div style={{ fontSize: '0.55rem', color: '#00ffcc', fontWeight: 'bold', marginTop: '2px' }}>MISSION COMPLETE</div>
                         )}
-                        <div style={{ position: 'absolute', bottom: 0, left: 0, height: '2px', background: '#00ccff', width: `${Math.min(100, (metrics.totalUniqueScans / TOTAL_CELLS) * 100)}%`, opacity: 0.5 }} />
+                        <div style={{ position: 'absolute', bottom: 0, left: 0, height: '2px', background: '#00ccff', width: `${Math.min(100, metrics.averageZoneCoverage)}%`, opacity: 0.5 }} />
                     </div>
 
                     {/* Metric: Mean Probability */}
@@ -188,7 +189,47 @@ export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
                 <h4 className="hud-text" style={{ fontSize: '0.85rem', color: 'var(--accent-secondary, #ffb84d)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', letterSpacing: '1px' }}>
                     DIRECTIVE OVERRIDES
                 </h4>
-                
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>CUSTOM SEARCH AREA</div>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        {searchAreaDrawn && (
+                            <button
+                                onClick={onClearSearchArea}
+                                style={{
+                                    background: 'rgba(0,0,0,0.4)',
+                                    color: '#ff6b6b',
+                                    border: '1px solid rgba(255,107,107,0.3)',
+                                    borderRadius: '4px',
+                                    padding: '6px 10px',
+                                    fontFamily: 'var(--font-mono)',
+                                    fontSize: '0.65rem',
+                                    cursor: 'pointer',
+                                    letterSpacing: '0.5px'
+                                }}
+                            >
+                                CLEAR AREA
+                            </button>
+                        )}
+                        <button
+                            onClick={onToggleDrawingMode}
+                            style={{
+                                background: isDrawingMode ? '#00ffcc' : 'rgba(0,0,0,0.4)',
+                                color: isDrawingMode ? '#000' : 'var(--text-secondary)',
+                                border: `1px solid ${isDrawingMode ? '#00ffcc' : 'var(--panel-border)'}`,
+                                borderRadius: '4px',
+                                padding: '6px 10px',
+                                fontFamily: 'var(--font-mono)',
+                                fontSize: '0.65rem',
+                                cursor: 'pointer',
+                                fontWeight: isDrawingMode ? 700 : 400,
+                                letterSpacing: '0.5px'
+                            }}
+                        >
+                            {isDrawingMode ? 'DRAWING...' : 'DRAW AREA'}
+                        </button>
+                    </div>
+                </div>
+
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>BLANKET MICRO SCAN</div>
                     <button

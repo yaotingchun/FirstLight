@@ -104,8 +104,11 @@ class LocalAutonomyEngine {
         }
 
         const recallThreshold = droneStore.getAutoRecallThreshold(drone.id) ?? 20;
+        const hasPendingRecall = droneStore.getPendingCommands().some(
+            (cmd) => !cmd.processed && cmd.type === 'RECALL_TO_BASE' && cmd.params.droneId === drone.id
+        );
 
-        if (drone.battery <= recallThreshold && !this.isHeadingToBase(drone)) {
+        if (drone.battery <= recallThreshold && !this.isHeadingToBase(drone) && !hasPendingRecall) {
             droneStore.enqueueCommand('RECALL_TO_BASE', { droneId: drone.id });
             actions.push({
                 droneId: drone.id,

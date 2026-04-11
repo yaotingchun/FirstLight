@@ -61,12 +61,15 @@
  *    } from '../utils/swarmRouting';
  */
 
+import { isPointInPolygon } from './polygonUtils';
+
 export const BASE_X = 10;
 export const BASE_Y = 19;      // bottom center of grid
 export const MAX_RADIUS_KM = 1.0;      // 1 km operational radius
 export const MAX_RADIUS_GRID = 9;      // 9 grid units ≈ 1 km
 export const COMM_RANGE_GRID = 9;      // drone-to-relay comm range (same as op. radius)
 export const SAFE_DISTANCE_GRID = 1.5; // grid units before VO kicks in
+export const FOCUSED_SEARCH_MODE = true;
 
 /** Minimal drone shape needed for region allocation.
  *  Your teammates' Drone type should extend this (or just add these fields). */
@@ -115,7 +118,8 @@ export const aStarPath = (
     // Cells out of range of every relay get commPenalty added to g.
     // Pass an empty array (or omit) to disable this constraint.
     relayNodes: GridPoint[] = [],
-    commPenalty = 15        // high penalty for going out of comms range
+    commPenalty = 15,       // high penalty for going out of comms range
+    searchArea: GridPoint[] = []
 ): GridPoint[] => {
     // Is cell (x,y) within COMM_RANGE_GRID of at least one relay node?
     const isConnected = (x: number, y: number): boolean => {
@@ -131,6 +135,10 @@ export const aStarPath = (
         if (!regionBounds) return true;
         return x >= regionBounds.xMin && x < regionBounds.xMax
             && y >= regionBounds.yMin && y < regionBounds.yMax;
+    };
+    const inSearchArea = (x: number, y: number): boolean => {
+        if (!FOCUSED_SEARCH_MODE || searchArea.length < 3) return true;
+        return isPointInPolygon(x, y, searchArea);
     };
     const open: AStarNode[] = [];
     const closed = new Set<string>();
@@ -168,8 +176,9 @@ export const aStarPath = (
 
             const moveCost = (dx !== 0 && dy !== 0 ? 1.414 : 1);
             const penalty = inRegion(nx, ny) ? 0 : regionPenalty;
+            const searchPenalty = inSearchArea(nx, ny) ? 0 : 20;
             const connPenalty = isConnected(nx, ny) ? 0 : commPenalty;
-            const g = current.g + moveCost + penalty + connPenalty;
+            const g = current.g + moveCost + penalty + searchPenalty + connPenalty;
             const h = heuristic({ x: nx, y: ny }, goal);
             const existing = open.find(n => n.x === nx && n.y === ny);
 
@@ -207,13 +216,15 @@ export const buildBoustrophedonQueue = (
     drone: DroneWithRegion,
     gridW: number,
     gridH: number,
-    obstacles: Set<string>
+    obstacles: Set<string>,
+    searchArea: GridPoint[] = []
 ): GridPoint[] => {
     const rows: GridPoint[][] = [];
     for (let y = 0; y < gridH; y++) {
         const row: GridPoint[] = [];
         for (let x = 0; x < gridW; x++) {
             if (obstacles.has(`${x},${y}`)) continue;
+            if (searchArea.length >= 3 && !isPointInPolygon(x, y, searchArea)) continue;
             if (cellInRegion(x, y, drone)) row.push({ x, y });
         }
         if (row.length > 0) rows.push(row);
@@ -248,7 +259,8 @@ export const buildPriorityQueue = (
     gridH: number,
     obstacles: Set<string>,
     highThreshold = 0.6,   // tunable: cells above this → Tier 1
-    medThreshold  = 0.2    // tunable: cells above this → Tier 2, below → Tier 3
+    medThreshold  = 0.2,   // tunable: cells above this → Tier 2, below → Tier 3
+    searchArea: GridPoint[] = []
 ): GridPoint[] => {
     // Bucket cells into 3 tiers — each tier stored as rows for boustrophedon
     const tiers: [Map<number, GridPoint[]>, Map<number, GridPoint[]>, Map<number, GridPoint[]>] = [
@@ -260,6 +272,7 @@ export const buildPriorityQueue = (
     for (let y = 0; y < gridH; y++) {
         for (let x = 0; x < gridW; x++) {
             if (obstacles.has(`${x},${y}`)) continue;
+            if (searchArea.length >= 3 && !isPointInPolygon(x, y, searchArea)) continue;
             if (!cellInRegion(x, y, drone)) continue;
 
             const prob = heatmap[y]?.[x] ?? 0;
@@ -620,8 +633,8 @@ export const nextScanTarget = (d: SearchDrone): { target: GridPoint; newIndex: n
 };
 
 /** Convenience: build a priority scan queue for a drone using shared grid & obstacle config. */
-export const buildScanQueueForDrone = (d: SearchDrone, heatmap: number[][]): GridPoint[] =>
-    buildPriorityQueue(d, heatmap, GRID_W, GRID_H, OBSTACLE_SET);
+export const buildScanQueueForDrone = (d: SearchDrone, heatmap: number[][], searchArea: GridPoint[] = []): GridPoint[] =>
+    buildPriorityQueue(d, heatmap, GRID_W, GRID_H, OBSTACLE_SET, 0.6, 0.2, searchArea);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SWARM LIFECYCLE

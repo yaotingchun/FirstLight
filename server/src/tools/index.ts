@@ -345,10 +345,13 @@ export const toolSchemas = {
         inputSchema: {
             type: 'object',
             properties: {
+                totalUniqueScans: { type: 'number' },
+                gridSize: { type: 'number' },
                 averageZoneCoverage: { type: 'number' },
                 meanProbabilityScanned: { type: 'number' },
                 repeatedScanRate: { type: 'number' },
-                missionTimeSec: { type: 'number' }
+                missionTimeSec: { type: 'number' },
+                missionTimeLimit: { type: ['number', 'null'] }
             }
         }
     },
