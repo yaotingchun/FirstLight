@@ -22,15 +22,17 @@ export const DroneCameraFeed: React.FC<DroneCameraFeedProps> = ({ drone, sourceC
     const lat = GRID_ORIGIN_LAT - drone.y * CELL_DEG;
 
     useEffect(() => {
-        if (!canvasRef.current || !sourceCanvas) return;
+        if (!canvasRef.current) return;
 
         let animId: number;
         const ctx = canvasRef.current.getContext('2d');
         if (!ctx) return;
 
         const frame = () => {
-            if (sourceCanvas && sourceCanvas.width > 0 && sourceCanvas.height > 0) {
+            if (sourceCanvas && sourceCanvas.isConnected && sourceCanvas.width > 0 && sourceCanvas.height > 0) {
                 ctx.drawImage(sourceCanvas, 0, 0, canvasRef.current!.width, canvasRef.current!.height);
+            } else {
+                ctx.clearRect(0, 0, canvasRef.current!.width, canvasRef.current!.height);
             }
             animId = requestAnimationFrame(frame);
         };
