@@ -29,7 +29,7 @@ export const DroneCameraFeed: React.FC<DroneCameraFeedProps> = ({ drone, sourceC
         if (!ctx) return;
 
         const frame = () => {
-            if (sourceCanvas && sourceCanvas.isConnected && sourceCanvas.width > 0 && sourceCanvas.height > 0) {
+            if (sourceCanvas && sourceCanvas.width > 0 && sourceCanvas.height > 0) {
                 ctx.drawImage(sourceCanvas, 0, 0, canvasRef.current!.width, canvasRef.current!.height);
             } else {
                 ctx.clearRect(0, 0, canvasRef.current!.width, canvasRef.current!.height);
@@ -43,11 +43,11 @@ export const DroneCameraFeed: React.FC<DroneCameraFeedProps> = ({ drone, sourceC
 
     const batteryColor = drone.battery > 60 ? '#00ffcc' : drone.battery > 30 ? '#ffa500' : '#ff4444';
     const altitudeLabel = drone.mode === 'Micro' ? '80.0m' : drone.mode === 'Charging' ? '0.0m' : '300.0m';
-    
+
     return (
         <div style={{
-            width: '240px',
-            height: '180px',
+            width: '235px',
+            height: '175px',
             background: '#000',
             border: '1px solid rgba(0, 255, 204, 0.2)',
             borderRadius: '4px',
@@ -60,13 +60,13 @@ export const DroneCameraFeed: React.FC<DroneCameraFeedProps> = ({ drone, sourceC
             {/* Mirror Canvas - NATURAL COLOR (removed grayscale) */}
             <canvas
                 ref={canvasRef}
-                width={240}
-                height={180}
+                width={220}
+                height={165}
                 style={{
                     width: '100%',
                     height: '100%',
                     objectFit: 'cover',
-                    filter: 'contrast(1.1) brightness(1.0) saturate(1.1)' 
+                    filter: 'contrast(1.1) brightness(1.0) saturate(1.1)'
                 }}
             />
 
@@ -81,61 +81,97 @@ export const DroneCameraFeed: React.FC<DroneCameraFeedProps> = ({ drone, sourceC
                 boxSizing: 'border-box'
             }}>
                 {/* Header info */}
-                <div style={{ 
+                <div style={{
                     position: 'absolute',
-                    top: '8px',
-                    left: '8px',
-                    background: 'rgba(2, 6, 8, 0.75)', 
-                    padding: '4px 8px', 
-                    borderRadius: '2px', 
+                    top: '6px',
+                    left: '6px',
+                    background: 'rgba(2, 6, 8, 0.75)',
+                    padding: '3px 6px',
+                    borderRadius: '2px',
                     borderLeft: `2px solid ${drone.isConnected ? '#00ffcc' : '#ff4444'}`,
-                    fontSize: '0.65rem',
+                    fontSize: '0.55rem',
                     color: '#eee',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '2px'
+                    gap: '1px'
                 }}>
-                    <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        {drone.id} <SignalHigh size={10} color={drone.isConnected ? '#00ffcc' : '#ff4444'} />
+                    <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                        {drone.id} <SignalHigh size={8} color={drone.isConnected ? '#00ffcc' : '#ff4444'} />
                     </div>
-                    <div style={{ opacity: 0.7, fontSize: '0.55rem', letterSpacing: '1px' }}>{drone.mode.toUpperCase()}</div>
+                    <div style={{ opacity: 0.7, fontSize: '0.45rem', letterSpacing: '0.5px' }}>{drone.mode.toUpperCase()}</div>
                 </div>
 
-                <div style={{ position: 'absolute', top: '8px', right: '8px' }}>
-                    <SignalHigh size={12} color="#00ffcc" opacity={0.6} />
+                <div style={{ position: 'absolute', top: '6px', right: '6px' }}>
+                    <SignalHigh size={10} color="#00ffcc" opacity={0.6} />
                 </div>
 
                 {/* Center Crosshair Overlay */}
-                <div style={{ 
-                    position: 'absolute', 
-                    top: '50%', 
-                    left: '50%', 
+                <div style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
                     transform: 'translate(-50%, -50%)',
                     opacity: 0.4
                 }}>
                     <Crosshair size={28} color="#00ffcc" strokeWidth={1} />
                 </div>
 
+                {/* Signal/Uplink Status Overlay */}
+                {(!sourceCanvas || sourceCanvas.width === 0) && (
+                    <div style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        background: 'rgba(5, 10, 16, 0.9)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '12px',
+                        zIndex: 5
+                    }}>
+                        <div style={{ 
+                            width: '40px', 
+                            height: '40px', 
+                            border: '2px solid #ff922b', 
+                            borderTopColor: 'transparent',
+                            borderRadius: '50%',
+                            animation: 'spin 1.5s linear infinite'
+                        }} />
+                        <div style={{ 
+                            color: '#ff922b', 
+                            fontSize: '0.6rem', 
+                            fontWeight: 'bold', 
+                            letterSpacing: '2px',
+                            fontFamily: 'monospace'
+                        }}>
+                            AWAITING UPLINK...
+                        </div>
+                    </div>
+                )}
+
                 {/* Footer Telemetry - Matching DroneCam style */}
-                <div style={{ 
+                <div style={{
                     position: 'absolute',
                     bottom: 0,
                     width: '100%',
                     background: 'rgba(2, 6, 8, 0.8)',
-                    padding: '4px 8px',
-                    fontSize: '0.5rem',
+                    padding: '3px 6px',
+                    fontSize: '0.45rem',
                     color: '#00ffcc',
                     borderTop: '1px solid rgba(0, 255, 204, 0.2)',
                     display: 'flex',
                     justifyContent: 'space-between',
                     boxSizing: 'border-box'
                 }}>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                        <span style={{ opacity: 0.7 }}><Mountain size={8} style={{ verticalAlign: 'middle' }} /> {altitudeLabel}</span>
-                        <span style={{ color: batteryColor }}><Battery size={8} style={{ verticalAlign: 'middle' }} /> {Math.floor(drone.battery)}%</span>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                        <span style={{ opacity: 0.7 }}><Mountain size={6} style={{ verticalAlign: 'middle' }} /> {altitudeLabel}</span>
+                        <span style={{ color: batteryColor }}><Battery size={6} style={{ verticalAlign: 'middle' }} /> {Math.floor(drone.battery)}%</span>
                     </div>
                     <div>
-                        {lat.toFixed(4)}, {lng.toFixed(4)} • T:{time}
+                        {lat.toFixed(3)}, {lng.toFixed(3)}
                     </div>
                 </div>
             </div>

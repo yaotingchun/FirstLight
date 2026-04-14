@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { Play, Pause, FileText, Globe, LocateFixed, Map as MapIcon, ChevronDown, Navigation } from 'lucide-react';
+import { Play, Pause, FileText, Globe, LocateFixed, Map as MapIcon, ChevronDown, Navigation, ChevronLeft, ChevronRight, Video, Camera } from 'lucide-react';
 
 import { useSharedSimulation } from '../context/SimulationContext';
 import { useSimulationMCP } from '../hooks/useSimulationMCP';
@@ -53,6 +53,7 @@ const SimulationMapMCP: React.FC = () => {
     const [latInput, setLatInput] = React.useState(centerLocation.lat.toString());
     const [lngInput, setLngInput] = React.useState(centerLocation.lng.toString());
     const [showCityDropdown, setShowCityDropdown] = React.useState(false);
+    const [showDroneCam, setShowDroneCam] = React.useState(false);
     const [cameraCanvases, setCameraCanvases] = React.useState<Record<string, HTMLCanvasElement>>({});
 
     React.useEffect(() => {
@@ -210,34 +211,34 @@ const SimulationMapMCP: React.FC = () => {
                     {/* Compact Location Controls */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingRight: '12px', borderRight: '1px solid rgba(255, 255, 255, 0.1)', marginRight: '4px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                           <Navigation size={12} color="#00ffcc" style={{ opacity: 0.7 }} />
-                           <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(0, 255, 204, 0.2)', borderRadius: '2px' }}>
-                               <input 
-                                   type="text" 
-                                   value={latInput} 
-                                   onChange={e => setLatInput(e.target.value)}
-                                   onBlur={() => {
-                                       const val = parseFloat(latInput);
-                                       if (!isNaN(val)) setCenterLocation(prev => ({ ...prev, lat: val }));
-                                   }}
-                                   style={{ width: '55px', background: 'transparent', border: 'none', color: '#fff', fontSize: '0.7rem', padding: '3px 6px', fontFamily: 'monospace', outline: 'none' }}
-                               />
-                               <div style={{ width: '1px', height: '12px', background: 'rgba(255,255,255,0.1)' }} />
-                               <input 
-                                   type="text" 
-                                   value={lngInput} 
-                                   onChange={e => setLngInput(e.target.value)}
-                                   onBlur={() => {
-                                       const val = parseFloat(lngInput);
-                                       if (!isNaN(val)) setCenterLocation(prev => ({ ...prev, lng: val }));
-                                   }}
-                                   style={{ width: '65px', background: 'transparent', border: 'none', color: '#fff', fontSize: '0.7rem', padding: '3px 6px', fontFamily: 'monospace', outline: 'none' }}
-                               />
-                           </div>
+                            <Navigation size={12} color="#00ffcc" style={{ opacity: 0.7 }} />
+                            <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(0, 255, 204, 0.2)', borderRadius: '2px' }}>
+                                <input
+                                    type="text"
+                                    value={latInput}
+                                    onChange={e => setLatInput(e.target.value)}
+                                    onBlur={() => {
+                                        const val = parseFloat(latInput);
+                                        if (!isNaN(val)) setCenterLocation(prev => ({ ...prev, lat: val }));
+                                    }}
+                                    style={{ width: '55px', background: 'transparent', border: 'none', color: '#fff', fontSize: '0.7rem', padding: '3px 6px', fontFamily: 'monospace', outline: 'none' }}
+                                />
+                                <div style={{ width: '1px', height: '12px', background: 'rgba(255,255,255,0.1)' }} />
+                                <input
+                                    type="text"
+                                    value={lngInput}
+                                    onChange={e => setLngInput(e.target.value)}
+                                    onBlur={() => {
+                                        const val = parseFloat(lngInput);
+                                        if (!isNaN(val)) setCenterLocation(prev => ({ ...prev, lng: val }));
+                                    }}
+                                    style={{ width: '65px', background: 'transparent', border: 'none', color: '#fff', fontSize: '0.7rem', padding: '3px 6px', fontFamily: 'monospace', outline: 'none' }}
+                                />
+                            </div>
                         </div>
 
                         <div style={{ position: 'relative' }}>
-                            <button 
+                            <button
                                 onClick={() => setShowCityDropdown(!showCityDropdown)}
                                 style={{ background: 'rgba(0, 255, 204, 0.05)', border: '1px solid rgba(0, 255, 204, 0.2)', borderRadius: '2px', padding: '3px 6px', color: '#fff', fontSize: '0.65rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontFamily: 'monospace' }}
                             >
@@ -248,7 +249,7 @@ const SimulationMapMCP: React.FC = () => {
                                     <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 998 }} onClick={() => setShowCityDropdown(false)} />
                                     <div style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, width: '160px', background: 'rgba(10, 20, 30, 0.98)', border: '1px solid rgba(0, 255, 204, 0.3)', borderRadius: '2px', padding: '2px', zIndex: 999, boxShadow: '0 4px 20px rgba(0,0,0,0.8)' }}>
                                         {CITIES.map(city => (
-                                            <button 
+                                            <button
                                                 key={city.name}
                                                 onClick={() => {
                                                     setCenterLocation({ lat: city.lat, lng: city.lng });
@@ -267,7 +268,7 @@ const SimulationMapMCP: React.FC = () => {
                             )}
                         </div>
 
-                        <button 
+                        <button
                             onClick={() => {
                                 if ("geolocation" in navigator) {
                                     navigator.geolocation.getCurrentPosition((pos) => {
@@ -324,7 +325,7 @@ const SimulationMapMCP: React.FC = () => {
                 </div>
             </header>
 
-            <div style={{ flex: 1, display: 'flex', gap: '12px' }}>
+            <div style={{ flex: 1, display: 'flex', gap: '12px', position: 'relative', overflow: 'hidden' }}>
                 <SimulationGrid
                     grid={gridRef.current}
                     drones={dronesRef.current}
@@ -394,15 +395,66 @@ const SimulationMapMCP: React.FC = () => {
                     }}
                 />
 
-                <DroneCameraStrip 
-                    drones={dronesRef.current.filter(d => !d.id.startsWith('RLY-'))}
-                    canvases={cameraCanvases}
-                    time={timeRef.current}
-                    centerLocation={centerLocation}
-                />
+                {/* Collapsible Drone Camera Drawer */}
+                <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                    width: '320px',
+                    transform: showDroneCam ? 'translateX(0)' : 'translateX(100%)',
+                    transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                    zIndex: 100,
+                    display: 'flex',
+                    pointerEvents: 'none' // Allow interaction only with children
+                }}>
+                    {/* Simplified Side Toggle - Arrow Only */}
+                    <div
+                        onClick={() => setShowDroneCam(!showDroneCam)}
+                        style={{
+                            position: 'absolute',
+                            left: '-24px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            background: showDroneCam ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.6)',
+                            border: 'none',
+                            borderRight: 'none',
+                            width: '24px',
+                            height: '60px',
+                            cursor: 'pointer',
+                            color: '#000000',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            pointerEvents: 'auto',
+                            zIndex: 101,
+                            borderRadius: '4px 0 0 4px',
+                            boxShadow: '-2px 0 10px rgba(0,0,0,0.5)',
+                            transition: 'all 0.3s ease'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = showDroneCam ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.6)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = showDroneCam ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.6)'}
+                    >
+                        <div style={{
+                            transition: 'transform 0.4s ease',
+                            transform: showDroneCam ? 'rotate(0deg)' : 'rotate(-180deg)'
+                        }}>
+                            <ChevronRight size={18} strokeWidth={2.5} />
+                        </div>
+                    </div>
+
+                    <div style={{ pointerEvents: 'auto', width: '100%', height: '100%', boxShadow: showDroneCam ? '-10px 0 30px rgba(0,0,0,0.5)' : 'none' }}>
+                        <DroneCameraStrip
+                            drones={dronesRef.current.filter(d => !d.id.startsWith('RLY-'))}
+                            canvases={cameraCanvases}
+                            time={timeRef.current}
+                            centerLocation={centerLocation}
+                        />
+                    </div>
+                </div>
             </div>
 
-            <PersistentCameraEngine 
+            <PersistentCameraEngine
                 drones={dronesRef.current.filter(d => !d.id.startsWith('RLY-'))}
                 commLinks={commLinksRef.current}
                 centerLocation={centerLocation}
