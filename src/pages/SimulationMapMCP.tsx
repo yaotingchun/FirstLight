@@ -1,9 +1,10 @@
 import React, { useCallback } from 'react';
-import { Play, Pause, FileText, Globe, LocateFixed, Map as MapIcon, ChevronDown, Navigation } from 'lucide-react';
+import { Play, Pause, FileText, Globe, LocateFixed, Map as MapIcon, ChevronDown, Navigation, Layers } from 'lucide-react';
 
 import { useSharedSimulation } from '../context/SimulationContext';
 import { useSimulationMCP } from '../hooks/useSimulationMCP';
 import { SimulationGrid } from '../components/SimulationMap/SimulationGrid';
+import { SimulationGrid3D } from '../components/SimulationMap/SimulationGrid3D';
 import { SimulationDashboard } from '../components/SimulationMap/SimulationDashboard';
 import { MCPChatPanel } from '../components/SimulationMap/MCPChatPanel';
 import { PersistentCameraEngine } from '../components/SimulationMap/PersistentCameraEngine';
@@ -54,6 +55,8 @@ const SimulationMapMCP: React.FC = () => {
     const [lngInput, setLngInput] = React.useState(centerLocation.lng.toString());
     const [showCityDropdown, setShowCityDropdown] = React.useState(false);
     const [cameraCanvases, setCameraCanvases] = React.useState<Record<string, HTMLCanvasElement>>({});
+    const [show3D, setShow3D] = React.useState(false);
+    const [has3DMounted, setHas3DMounted] = React.useState(false);
 
     React.useEffect(() => {
         setLatInput(centerLocation.lat.toFixed(4));
@@ -210,34 +213,34 @@ const SimulationMapMCP: React.FC = () => {
                     {/* Compact Location Controls */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingRight: '12px', borderRight: '1px solid rgba(255, 255, 255, 0.1)', marginRight: '4px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                           <Navigation size={12} color="#00ffcc" style={{ opacity: 0.7 }} />
-                           <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(0, 255, 204, 0.2)', borderRadius: '2px' }}>
-                               <input 
-                                   type="text" 
-                                   value={latInput} 
-                                   onChange={e => setLatInput(e.target.value)}
-                                   onBlur={() => {
-                                       const val = parseFloat(latInput);
-                                       if (!isNaN(val)) setCenterLocation(prev => ({ ...prev, lat: val }));
-                                   }}
-                                   style={{ width: '55px', background: 'transparent', border: 'none', color: '#fff', fontSize: '0.7rem', padding: '3px 6px', fontFamily: 'monospace', outline: 'none' }}
-                               />
-                               <div style={{ width: '1px', height: '12px', background: 'rgba(255,255,255,0.1)' }} />
-                               <input 
-                                   type="text" 
-                                   value={lngInput} 
-                                   onChange={e => setLngInput(e.target.value)}
-                                   onBlur={() => {
-                                       const val = parseFloat(lngInput);
-                                       if (!isNaN(val)) setCenterLocation(prev => ({ ...prev, lng: val }));
-                                   }}
-                                   style={{ width: '65px', background: 'transparent', border: 'none', color: '#fff', fontSize: '0.7rem', padding: '3px 6px', fontFamily: 'monospace', outline: 'none' }}
-                               />
-                           </div>
+                            <Navigation size={12} color="#00ffcc" style={{ opacity: 0.7 }} />
+                            <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(0, 255, 204, 0.2)', borderRadius: '2px' }}>
+                                <input
+                                    type="text"
+                                    value={latInput}
+                                    onChange={e => setLatInput(e.target.value)}
+                                    onBlur={() => {
+                                        const val = parseFloat(latInput);
+                                        if (!isNaN(val)) setCenterLocation(prev => ({ ...prev, lat: val }));
+                                    }}
+                                    style={{ width: '55px', background: 'transparent', border: 'none', color: '#fff', fontSize: '0.7rem', padding: '3px 6px', fontFamily: 'monospace', outline: 'none' }}
+                                />
+                                <div style={{ width: '1px', height: '12px', background: 'rgba(255,255,255,0.1)' }} />
+                                <input
+                                    type="text"
+                                    value={lngInput}
+                                    onChange={e => setLngInput(e.target.value)}
+                                    onBlur={() => {
+                                        const val = parseFloat(lngInput);
+                                        if (!isNaN(val)) setCenterLocation(prev => ({ ...prev, lng: val }));
+                                    }}
+                                    style={{ width: '65px', background: 'transparent', border: 'none', color: '#fff', fontSize: '0.7rem', padding: '3px 6px', fontFamily: 'monospace', outline: 'none' }}
+                                />
+                            </div>
                         </div>
 
                         <div style={{ position: 'relative' }}>
-                            <button 
+                            <button
                                 onClick={() => setShowCityDropdown(!showCityDropdown)}
                                 style={{ background: 'rgba(0, 255, 204, 0.05)', border: '1px solid rgba(0, 255, 204, 0.2)', borderRadius: '2px', padding: '3px 6px', color: '#fff', fontSize: '0.65rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontFamily: 'monospace' }}
                             >
@@ -248,7 +251,7 @@ const SimulationMapMCP: React.FC = () => {
                                     <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 998 }} onClick={() => setShowCityDropdown(false)} />
                                     <div style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, width: '160px', background: 'rgba(10, 20, 30, 0.98)', border: '1px solid rgba(0, 255, 204, 0.3)', borderRadius: '2px', padding: '2px', zIndex: 999, boxShadow: '0 4px 20px rgba(0,0,0,0.8)' }}>
                                         {CITIES.map(city => (
-                                            <button 
+                                            <button
                                                 key={city.name}
                                                 onClick={() => {
                                                     setCenterLocation({ lat: city.lat, lng: city.lng });
@@ -267,7 +270,7 @@ const SimulationMapMCP: React.FC = () => {
                             )}
                         </div>
 
-                        <button 
+                        <button
                             onClick={() => {
                                 if ("geolocation" in navigator) {
                                     navigator.geolocation.getCurrentPosition((pos) => {
@@ -307,6 +310,13 @@ const SimulationMapMCP: React.FC = () => {
                         <Globe size={14} /> {showActualMap ? 'GRID VIEW' : 'MAP VIEW'}
                     </button>
                     <button
+                        onClick={() => { if (!has3DMounted) setHas3DMounted(true); setShow3D(v => !v); }}
+                        className={`hud-btn ${show3D ? 'glow-text' : ''}`}
+                        style={{ padding: '6px 12px', fontSize: '0.75rem', display: 'flex', gap: '6px', alignItems: 'center', cursor: 'pointer', borderColor: show3D ? 'var(--accent-primary)' : '' }}
+                    >
+                        <Layers size={14} /> {show3D ? '2D VIEW' : '3D VIEW'}
+                    </button>
+                    <button
                         onClick={() => setChatOpen(!chatOpen)}
                         className={`hud-btn ${chatOpen ? 'glow-text' : ''}`}
                         style={{
@@ -325,32 +335,71 @@ const SimulationMapMCP: React.FC = () => {
             </header>
 
             <div style={{ flex: 1, display: 'flex', gap: '12px' }}>
-                <SimulationGrid
-                    grid={gridRef.current}
-                    drones={dronesRef.current}
-                    commLinks={commLinksRef.current}
-                    survivors={survivorsRef.current}
-                    pins={pinsRef.current}
-                    selectedPin={selectedPin}
-                    setSelectedPin={setSelectedPin}
-                    showSensors={showSensors}
-                    showTrails={showTrails}
-                    setShowTrails={setShowTrails}
-                    selectedTrailDroneId={selectedTrailDroneId}
-                    setSelectedTrailDroneId={setSelectedTrailDroneId}
-                    getSectorProbability={getSectorProbability}
-                    time={timeRef.current}
-                    aiDisconnectedRef={aiDisconnectedRef}
-                    aiReconnectedUntilTickRef={aiReconnectedUntilTickRef}
-                    showActualMap={showActualMap}
-                    searchArea={searchArea}
-                    isDrawingMode={isDrawingMode}
-                    searchScanActive={searchScanActive}
-                    onFinishDrawing={(area) => {
-                        setSearchArea(area);
-                        setIsDrawingMode(false);
-                    }}
-                />
+                {/* Wrapper ensures SimulationGrid retains its original flex sizing. 
+                    3D canvas sits securely on top without perturbing the 2D layout. */}
+                <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
+                    {/* 2D Grid - normal flow so sizes naturally */}
+                    <div style={{
+                        flex: 1,
+                        display: 'flex',
+                        opacity: show3D ? 0 : 1,
+                        transition: 'opacity 0.45s ease',
+                        pointerEvents: show3D ? 'none' : 'auto',
+                    }}>
+                        <SimulationGrid
+                            grid={gridRef.current}
+                            drones={dronesRef.current}
+                            commLinks={commLinksRef.current}
+                            survivors={survivorsRef.current}
+                            pins={pinsRef.current}
+                            selectedPin={selectedPin}
+                            setSelectedPin={setSelectedPin}
+                            showSensors={showSensors}
+                            showTrails={showTrails}
+                            setShowTrails={setShowTrails}
+                            selectedTrailDroneId={selectedTrailDroneId}
+                            setSelectedTrailDroneId={setSelectedTrailDroneId}
+                            getSectorProbability={getSectorProbability}
+                            time={timeRef.current}
+                            aiDisconnectedRef={aiDisconnectedRef}
+                            aiReconnectedUntilTickRef={aiReconnectedUntilTickRef}
+                            showActualMap={showActualMap}
+                            searchArea={searchArea}
+                            isDrawingMode={isDrawingMode}
+                            searchScanActive={searchScanActive}
+                            onFinishDrawing={(area) => {
+                                setSearchArea(area);
+                                setIsDrawingMode(false);
+                            }}
+                        />
+                    </div>
+
+                    {/* 3D Grid – lazy-mounted on first toggle */}
+                    {has3DMounted && (
+                        <div style={{
+                            position: 'absolute',
+                            inset: 0,
+                            opacity: show3D ? 1 : 0,
+                            transition: 'opacity 0.45s ease',
+                            pointerEvents: show3D ? 'auto' : 'none',
+                            zIndex: 10,
+                            background: '#020912',
+                            borderRadius: '4px',
+                            overflow: 'hidden'
+                        }}>
+                            <SimulationGrid3D
+                                grid={gridRef.current}
+                                drones={dronesRef.current}
+                                pins={pinsRef.current}
+                                visible={show3D}
+                                running={running}
+                                getSectorProbability={getSectorProbability}
+                                searchArea={searchArea}
+                                searchScanActive={searchScanActive}
+                            />
+                        </div>
+                    )}
+                </div>
 
                 <SimulationDashboard
                     drones={dronesRef.current}
@@ -394,7 +443,7 @@ const SimulationMapMCP: React.FC = () => {
                     }}
                 />
 
-                <DroneCameraStrip 
+                <DroneCameraStrip
                     drones={dronesRef.current.filter(d => !d.id.startsWith('RLY-'))}
                     canvases={cameraCanvases}
                     time={timeRef.current}
@@ -402,7 +451,7 @@ const SimulationMapMCP: React.FC = () => {
                 />
             </div>
 
-            <PersistentCameraEngine 
+            <PersistentCameraEngine
                 drones={dronesRef.current.filter(d => !d.id.startsWith('RLY-'))}
                 commLinks={commLinksRef.current}
                 centerLocation={centerLocation}
