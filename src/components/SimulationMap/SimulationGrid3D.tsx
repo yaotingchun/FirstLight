@@ -228,9 +228,9 @@ export const SimulationGrid3D: React.FC<SimulationGrid3DProps> = ({
             color: 0x182a40, 
             roughness: 0.65, 
             metalness: 0.15,
-            transparent: true,
-            opacity: 0.88, // Less transparent as requested
-            emissive: new THREE.Color(0x882222), // Muted burgundy
+            transparent: false, // Fully opaque now
+            opacity: 1.0, 
+            emissive: new THREE.Color(0xaa2828), // Slightly brighter burgundy
             emissiveIntensity: 0
         });
 
@@ -382,20 +382,20 @@ export const SimulationGrid3D: React.FC<SimulationGrid3DProps> = ({
                     const hPlane = heatmapPlanes[idx];
                     if (hPlane) { 
                         const mat = hPlane.material as THREE.MeshBasicMaterial;
-                        // Muted burgundy #882222, lower max opacity
-                        mat.color.setHex(0x882222);
+                        // Slightly brighter burgundy #aa2828
+                        mat.color.setHex(0xaa2828);
                         if (cell.scanned) {
-                            mat.opacity = prob * 0.45; 
+                            mat.opacity = prob * 0.6; 
                         } else {
                             mat.opacity = 0;
                         }
                     }
 
-                    // Scanned Glow (Very subtle cyan footprint)
+                    // Scanned Glow (Subtle cyan footprint)
                     const sPlane = scannedPlanes[idx];
                     if (sPlane) { 
                         const mat = sPlane.material as THREE.MeshBasicMaterial;
-                        mat.opacity = cell.scanned ? 0.04 : 0; 
+                        mat.opacity = cell.scanned ? 0.05 : 0; 
                     }
 
                     // Building Glow (New) - sync with 2D visibility (only if scanned)
@@ -403,12 +403,10 @@ export const SimulationGrid3D: React.FC<SimulationGrid3DProps> = ({
                     if (bMesh) {
                         const bMat = bMesh.material as THREE.MeshStandardMaterial;
                         if (cell.scanned) {
-                            // Subtler burgundy glow
-                            bMat.emissiveIntensity = prob * 0.7;
-                            bMat.opacity = 0.88 - (prob * 0.15);
+                            // Slightly brighter burgundy glow on opaque building
+                            bMat.emissiveIntensity = prob * 1.2;
                         } else {
                             bMat.emissiveIntensity = 0;
-                            bMat.opacity = 0.88;
                         }
                     }
                 }

@@ -40,17 +40,18 @@ export function generateBuildingHeights(grid: Sector[][]): BuildingHeightMap {
 
                 // Cluster buildings: if neighbors are tall, be tall too
                 const r = seededRandom(x, y);
-                // ~40% of cells are empty ground
-                if (r < 0.4) {
+                // ~58% of cells are empty ground (reduced density from 40%)
+                if (r < 0.58) {
                     heights[y][x] = 0;
                 } else {
-                    // Height 1–6 biased by position (city-like density near center)
+                    // Height 1–5 biased by position (city-like density near center)
                     const distFromCenter = Math.sqrt(
                         Math.pow(x - GRID_W / 2, 2) + Math.pow(y - GRID_H / 2, 2)
                     );
                     const centerBias = Math.max(0, 1 - distFromCenter / (GRID_W / 2));
                     const rawH = seededRandom(x, y, 99);
-                    heights[y][x] = Math.round(1 + rawH * 5 * (0.5 + centerBias * 0.8));
+                    // Slightly lower max height (4 instead of 5) for better visibility
+                    heights[y][x] = Math.round(1 + rawH * 4 * (0.5 + centerBias * 0.8));
                 }
             }
         }
