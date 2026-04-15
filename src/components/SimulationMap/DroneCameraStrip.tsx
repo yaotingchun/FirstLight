@@ -12,13 +12,13 @@ interface DroneCameraStripProps {
 export const DroneCameraStrip: React.FC<DroneCameraStripProps> = ({ drones, canvases, time, centerLocation }) => {
     return (
         <div style={{
-            width: '260px',
+            width: '100%',
             backgroundColor: 'rgba(2, 6, 8, 0.95)',
-            borderLeft: '1px solid rgba(0, 255, 204, 0.2)',
             height: '100%',
             overflowY: 'auto',
             display: 'flex',
             flexDirection: 'column',
+            alignItems: 'center',
             gap: '12px',
             padding: '16px 10px',
             boxSizing: 'border-box',

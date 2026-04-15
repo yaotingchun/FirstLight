@@ -87,7 +87,7 @@ export const PersistentCameraEngine: React.FC<PersistentCameraEngineProps> = ({ 
                         baseLayerPicker: false,
                         scene3DOnly: true,
                         baseLayer: new Cesium.ImageryLayer(imageryProvider),
-                        requestRenderMode: true, // Performance boost for multi-view
+                        requestRenderMode: false, // Ensure constant rendering even when idle for smoother feed mirroring
                     });
 
                     // Optimization: Disable heavy features

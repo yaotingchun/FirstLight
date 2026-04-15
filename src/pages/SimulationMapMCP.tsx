@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { Play, Pause, FileText, Globe, LocateFixed, Map as MapIcon, ChevronDown, Navigation, Layers, Settings } from 'lucide-react';
+import { Play, Pause, FileText, Globe, Map as MapIcon,  ChevronRight, Layers, Settings } from 'lucide-react';
 
 import { useSharedSimulation } from '../context/SimulationContext';
 import { useSimulationMCP } from '../hooks/useSimulationMCP';
@@ -49,6 +49,7 @@ const SimulationMapMCP: React.FC = () => {
     const [settingsOpen, setSettingsOpen] = React.useState(false);
     const [cameraCanvases, setCameraCanvases] = React.useState<Record<string, HTMLCanvasElement>>({});
     const [show3D, setShow3D] = React.useState(false);
+    const [showDroneCam, setShowDroneCam] = React.useState(false);
     const [has3DMounted, setHas3DMounted] = React.useState(false);
 
     const countCellsInArea = React.useCallback((area: { x: number; y: number }[]) => {
@@ -301,12 +302,63 @@ const SimulationMapMCP: React.FC = () => {
                     running={running}
                 />
 
-                <DroneCameraStrip
-                    drones={dronesRef.current.filter(d => !d.id.startsWith('RLY-'))}
-                    canvases={cameraCanvases}
-                    time={timeRef.current}
-                    centerLocation={centerLocation}
-                />
+                {/* Collapsible Drone Camera Drawer */}
+                <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                    width: '320px',
+                    transform: showDroneCam ? 'translateX(0)' : 'translateX(100%)',
+                    transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                    zIndex: 100,
+                    display: 'flex',
+                    pointerEvents: 'none' // Allow interaction only with children
+                }}>
+                    {/* Simplified Side Toggle - Arrow Only */}
+                    <div
+                        onClick={() => setShowDroneCam(!showDroneCam)}
+                        style={{
+                            position: 'absolute',
+                            left: '-24px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            background: showDroneCam ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.6)',
+                            border: 'none',
+                            borderRight: 'none',
+                            width: '24px',
+                            height: '60px',
+                            cursor: 'pointer',
+                            color: '#000000',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            pointerEvents: 'auto',
+                            zIndex: 101,
+                            borderRadius: '4px 0 0 4px',
+                            boxShadow: '-2px 0 10px rgba(0,0,0,0.5)',
+                            transition: 'all 0.3s ease'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = showDroneCam ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.6)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = showDroneCam ? 'rgba(255, 255, 255, 0.6)' : 'rgba(255, 255, 255, 0.6)'}
+                    >
+                        <div style={{
+                            transition: 'transform 0.4s ease',
+                            transform: showDroneCam ? 'rotate(0deg)' : 'rotate(-180deg)'
+                        }}>
+                            <ChevronRight size={18} strokeWidth={2.5} />
+                        </div>
+                    </div>
+
+                    <div style={{ pointerEvents: 'auto', width: '100%', height: '100%', boxShadow: showDroneCam ? '-10px 0 30px rgba(0,0,0,0.5)' : 'none' }}>
+                        <DroneCameraStrip
+                            drones={dronesRef.current.filter(d => !d.id.startsWith('RLY-'))}
+                            canvases={cameraCanvases}
+                            time={timeRef.current}
+                            centerLocation={centerLocation}
+                        />
+                    </div>
+                </div>
             </div>
 
             <PersistentCameraEngine

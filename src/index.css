@@ -485,3 +485,24 @@ input[type=range].drone-slider::-webkit-slider-runnable-track {
   from { width: 100%; }
   to   { width: 0%; }
 }
+/* Reactor Handle Tactical Animations */
+@keyframes reactor-led-pulse {
+  0% { opacity: 0.6; transform: scale(0.9); box-shadow: 0 0 5px currentColor; }
+  50% { opacity: 1; transform: scale(1.1); box-shadow: 0 0 12px currentColor; }
+  100% { opacity: 0.6; transform: scale(0.9); box-shadow: 0 0 5px currentColor; }
+}
+
+.led-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  animation: reactor-led-pulse 2s infinite ease-in-out;
+}
+
+.handle-unseat {
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.handle-unseat:hover {
+  transform: translateY(-50%) translateX(-6px) !important;
+}
