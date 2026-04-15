@@ -31,6 +31,8 @@ export const useSimulationEngine = (
     const [microScanOnly, setMicroScanOnly] = useState(false);
     const [, setTickFlip] = useState(0);
     const [selectedPin, setSelectedPin] = useState<FoundPin | null>(null);
+    const [pinPopupType, setPinPopupType] = useState<'auto' | 'clicked' | null>(null);
+    const popupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [showSensors, setShowSensors] = useState(false);
     const [showTrails, setShowTrails] = useState(false);
     const [selectedTrailDroneId, setSelectedTrailDroneId] = useState<string | 'all'>('all');
@@ -194,8 +196,11 @@ export const useSimulationEngine = (
 
         survivor.found = true;
 
+
+
         const drone = dronesRef.current.find(d => d.id === droneId);
         if (drone) {
+            survivor.info.battery = `${Math.floor(drone.battery)}%`;
             drone.memory.push(survivor.id);
 
             const weights = sensorWeightsRef.current;
@@ -225,9 +230,31 @@ export const useSimulationEngine = (
             drone.preventReassignment = false;
         }
 
-        if (!pinsRef.current.find(p => p.id === survivor.id)) {
-            pinsRef.current.push({ id: survivor.id, x: sx, y: sy, info: survivor.info });
+        let newPin: FoundPin;
+        const existingPin = pinsRef.current.find(p => p.id === survivor.id);
+        if (!existingPin) {
+            newPin = { id: survivor.id, x: sx, y: sy, info: survivor.info };
+            pinsRef.current.push(newPin);
+        } else {
+            newPin = existingPin;
         }
+
+        // ── Auto pop-out logic ──
+        // Always override current popup (rule: latest detection wins)
+        setSelectedPin(newPin);
+        setPinPopupType('auto');
+
+        // Clear any previous timer to prevent overlap
+        if (popupTimerRef.current) {
+            clearTimeout(popupTimerRef.current);
+        }
+
+        // Start new 10-second auto-dismiss timer
+        popupTimerRef.current = setTimeout(() => {
+            setSelectedPin(null);
+            setPinPopupType(null);
+            popupTimerRef.current = null;
+        }, 10000);
     }, []);
 
     const resetSim = () => {
@@ -278,6 +305,11 @@ export const useSimulationEngine = (
             uniqueProbSum: 0,
         };
         setSelectedPin(null);
+        setPinPopupType(null);
+        if (popupTimerRef.current) {
+            clearTimeout(popupTimerRef.current);
+            popupTimerRef.current = null;
+        }
         setTickFlip(f => f + 1);
     };
 
@@ -1374,11 +1406,27 @@ export const useSimulationEngine = (
         setTickFlip(f => f + 1);
     }, [finalizeDiscovery]);
 
+    const handlePinClick = useCallback((pin: FoundPin | null) => {
+        if (!pin || selectedPin?.id === pin?.id) {
+            setSelectedPin(null);
+            setPinPopupType(null);
+            return;
+        }
+
+        setSelectedPin(pin);
+        setPinPopupType('clicked');
+        if (popupTimerRef.current) {
+            clearTimeout(popupTimerRef.current);
+            popupTimerRef.current = null;
+        }
+    }, [selectedPin]);
+
     return {
         // State
         running, setRunning,
         speed, setSpeed,
         selectedPin, setSelectedPin,
+        pinPopupType, setPinPopupType,
         showSensors, setShowSensors,
         showTrails, setShowTrails,
         selectedTrailDroneId, setSelectedTrailDroneId,
@@ -1418,6 +1466,7 @@ export const useSimulationEngine = (
         activeMissionsRef,
         metricsRef,
         aiBusyRef,
+        popupTimerRef,
 
         // Handlers
         toggleRunning,
@@ -1428,6 +1477,7 @@ export const useSimulationEngine = (
         microScanOnly,
         toggleMicroScanOnly,
         centerLocation,
-        setCenterLocation
+        setCenterLocation,
+        handlePinClick
     };
 };

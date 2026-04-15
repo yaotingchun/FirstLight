@@ -427,3 +427,61 @@ input[type=range].drone-slider::-webkit-slider-runnable-track {
   background: var(--panel-border);
   border-radius: 2px;
 }
+
+/* ─── Pinpoint Pop-out System ─── */
+
+/* Glow ring animation for active pin on grid (SVG) */
+@keyframes pin-glow-pulse {
+  0%   { r: 14; opacity: 0.6; }
+  50%  { r: 20; opacity: 1;   }
+  100% { r: 14; opacity: 0.6; }
+}
+
+.pin-glow-ring {
+  animation: pin-glow-pulse 1.2s ease-in-out infinite;
+}
+
+/* Glassmorphism popup */
+.pinpoint-popup {
+  position: absolute;
+  z-index: 20;
+  min-width: 260px;
+  max-width: 300px;
+  background: rgba(5, 14, 20, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(0, 255, 204, 0.35);
+  border-radius: 10px;
+  padding: 0;
+  overflow: hidden;
+  box-shadow:
+    0 0 24px rgba(0, 255, 204, 0.12),
+    0 8px 32px rgba(0, 0, 0, 0.6);
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  animation: popup-enter 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes popup-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Timer bar that shrinks over 8 seconds */
+.popup-timer-bar {
+  height: 3px;
+  background: linear-gradient(90deg, #ff4444, #ff8800, #ff4444);
+  animation: timer-shrink 8s linear forwards;
+  border-radius: 0 0 2px 2px;
+}
+
+@keyframes timer-shrink {
+  from { width: 100%; }
+  to   { width: 0%; }
+}

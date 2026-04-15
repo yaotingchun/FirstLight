@@ -18,7 +18,8 @@ interface SimulationGridProps {
     survivors: HiddenSurvivor[];
     pins: FoundPin[];
     selectedPin: FoundPin | null;
-    setSelectedPin: (pin: FoundPin | null) => void;
+    pinPopupType: 'auto' | 'clicked' | null;
+    handlePinClick: (pin: FoundPin | null) => void;
     showSensors: boolean;
     showTrails: boolean;
     setShowTrails: (show: boolean) => void;
@@ -48,7 +49,7 @@ export const getDroneThemeColor = (id?: string) => {
 
 export const SimulationGrid: React.FC<SimulationGridProps> = ({
     grid, drones, commLinks, survivors, pins,
-    selectedPin, setSelectedPin, showSensors, 
+    selectedPin, pinPopupType, handlePinClick, showSensors, 
     showTrails, setShowTrails, selectedTrailDroneId, setSelectedTrailDroneId,
     getSectorProbability, time, aiDisconnectedRef, aiReconnectedUntilTickRef,
     showActualMap, searchArea, isDrawingMode, searchScanActive, onFinishDrawing
@@ -99,7 +100,13 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
 
     return (
         <div className="hud-panel" style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', paddingLeft: '40px' }}>
-        <div style={{ position: 'relative', width: GRID_W * CELL_SIZE, height: GRID_H * CELL_SIZE }}>
+            <div style={{ 
+                position: 'relative', 
+                width: GRID_W * CELL_SIZE, 
+                height: GRID_H * CELL_SIZE,
+                transition: 'transform 0.4s cubic-bezier(0.22, 1, 0.36, 1)',
+                transform: selectedPin ? 'translateY(75px)' : 'translateY(0)'
+            }}>
             {showActualMap && (
                 <div style={{ position: 'absolute', width: '100%', height: '100%', overflow: 'hidden', pointerEvents: 'none' }}>
                     <Map
@@ -474,19 +481,26 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                 })}
 
                 {/* Visible Survivor Pins */}
-                {!showTrails && pins.map(pin => (
-                    <g key={pin.id}
-                        transform={`translate(${pin.x * CELL_SIZE + CELL_SIZE / 2}, ${pin.y * CELL_SIZE + CELL_SIZE / 2})`}
-                        style={{ cursor: 'pointer' }}
-                        onClick={() => setSelectedPin(pin)}
-                    >
-                        <circle r="12" fill="rgba(0, 255, 204, 0.3)" className="animate-pulse" />
-                        <circle r="6" fill="#00ffcc" />
-                        <foreignObject x="-10" y="-10" width="20" height="20">
-                            <MapPin size={20} color="#00ffcc" style={{ transform: 'translateY(-18px)' }} />
-                        </foreignObject>
-                    </g>
-                ))}
+                {!showTrails && pins.map(pin => {
+                    const isActive = selectedPin?.id === pin.id;
+                    return (
+                        <g key={pin.id}
+                            transform={`translate(${pin.x * CELL_SIZE + CELL_SIZE / 2}, ${pin.y * CELL_SIZE + CELL_SIZE / 2})`}
+                            style={{ cursor: 'pointer' }}
+                            onClick={() => handlePinClick(pin)}
+                        >
+                            {isActive ? (
+                                <circle r="14" fill="transparent" stroke="#00ffcc" strokeWidth="2" className="pin-glow-ring" />
+                            ) : (
+                                <circle r="12" fill="rgba(0, 255, 204, 0.3)" className="animate-pulse" />
+                            )}
+                            <circle r="6" fill="#00ffcc" />
+                            <foreignObject x="-10" y="-10" width="20" height="20">
+                                <MapPin size={20} color="#00ffcc" style={{ transform: 'translateY(-18px)', filter: isActive ? 'drop-shadow(0 0 4px #00ffcc)' : 'none' }} />
+                            </foreignObject>
+                        </g>
+                    );
+                })}
             </svg>
 
 
@@ -635,37 +649,76 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                 </div>
             </div>
 
-            {/* Survivor Pin Popup */}
+            {/* Glassmorphism Survivor Pin Popup */}
             {selectedPin && (
-                <div style={{
-                    position: 'absolute',
-                    left: selectedPin.x * CELL_SIZE + CELL_SIZE / 2 + 20,
-                    top: selectedPin.y * CELL_SIZE + CELL_SIZE / 2 - 20,
-                    background: 'rgba(5, 10, 16, 0.95)',
-                    border: '1px solid #00ffcc',
-                    padding: '16px',
-                    borderRadius: '4px',
-                    boxShadow: '0 0 20px rgba(0, 255, 204, 0.2)',
-                    zIndex: 10,
-                    minWidth: '220px'
-                }}>
-                    <button onClick={() => setSelectedPin(null)} style={{ position: 'absolute', top: 4, right: 4, background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
-                        <X size={16} />
-                    </button>
-                    <h4 className="glow-text" style={{ margin: '0 0 12px 0', fontSize: '0.9rem', color: '#00ffcc', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <Radio size={16} /> SIGNAL UPLINK
-                    </h4>
-                    <div style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', color: 'var(--text-primary)', marginBottom: '12px', padding: '8px', background: 'rgba(0, 255, 204, 0.1)', borderLeft: '2px solid #00ffcc' }}>
-                        "{selectedPin.info.message}"
+                <div 
+                    key={`${selectedPin.id}-${pinPopupType}`}
+                    className="pinpoint-popup"
+                    style={{
+                        top: 20,
+                        left: 0,
+                        right: 0,
+                        margin: '0 auto',
+                        zIndex: 1000,
+                        display: 'flex',
+                        flexDirection: 'row',
+                        minWidth: '540px',
+                        maxWidth: '550px',
+                        height: '126px',
+                        padding: 0
+                    }}
+                >
+                    {/* Left: Image Preview (if available) */}
+                    {selectedPin.info.img && (
+                        <div style={{ position: 'relative', width: '224px', flexShrink: 0, backgroundColor: 'rgba(0,0,0,0.5)', overflow: 'hidden', borderRight: '1px solid rgba(0, 255, 204, 0.2)' }}>
+                            <img 
+                                src={selectedPin.info.img} 
+                                alt="Detected content" 
+                                style={{ width: '100%', height: '100%', objectFit: 'cover', mixBlendMode: 'screen' }} 
+                            />
+                            <div style={{ position: 'absolute', top: 6, left: 6, background: 'rgba(255,68,68,0.85)', color: '#fff', fontSize: '0.6rem', padding: '2px 6px', borderRadius: '2px', fontWeight: 'bold', border: '1px solid #fff' }}>
+                                LIVE CAM
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Right: Info Area */}
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 14px', borderBottom: '1px solid rgba(0, 255, 204, 0.2)' }}>
+                            <h4 style={{ margin: 0, fontSize: '0.85rem', color: '#00ffcc', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold' }}>
+                                <Radio size={14} className="pulse-fast" /> SIGNAL UPLINK
+                            </h4>
+                            {pinPopupType === 'clicked' && (
+                                <button 
+                                    onClick={() => handlePinClick(null)} 
+                                    style={{ background: 'transparent', border: 'none', color: '#00ffcc', cursor: 'pointer', display: 'flex', opacity: 0.6 }}
+                                >
+                                    <X size={14} />
+                                </button>
+                            )}
+                        </div>
+                        
+                        <div style={{ padding: '8px 14px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                            <div style={{ fontFamily: 'var(--font-main)', fontSize: '0.75rem', letterSpacing: '0.05em', color: '#fff', marginBottom: '6px', padding: '6px 10px', background: 'rgba(0, 255, 204, 0.1)', borderLeft: '2px solid #00ffcc', lineHeight: 1.4, flex: 1, overflow: 'hidden' }}>
+                                {selectedPin.info.message}
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <span>DRONE BATTERY:</span>
+                                    <span style={{ color: '#ff4444', fontWeight: 'bold' }}>{selectedPin.info.battery}</span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <span>LOCATION:</span>
+                                    <span>{(centerLocation.lat - (selectedPin.y - 10) * 0.0009).toFixed(4)}, {(centerLocation.lng + (selectedPin.x - 10) * 0.0009).toFixed(4)}</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between' }}>
-                        <span>DEVICE BATTERY:</span>
-                        <span style={{ color: '#ff4444' }}>{selectedPin.info.battery}</span>
-                    </div>
-                    <div style={{ marginTop: '8px', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                        LAT: {(centerLocation.lat - (selectedPin.y - 10) * 0.0009).toFixed(4)} <br />
-                        LON: {(centerLocation.lng + (selectedPin.x - 10) * 0.0009).toFixed(4)}
-                    </div>
+
+                    {/* Timer Bar ONLY for auto mode */}
+                    {pinPopupType === 'auto' && (
+                        <div className="popup-timer-bar" style={{ position: 'absolute', bottom: 0, left: 0, width: '100%', zIndex: 10 }} />
+                    )}
                 </div>
             )}
         </div>

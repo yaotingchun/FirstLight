@@ -130,24 +130,26 @@ export const createGrid = (survivors?: HiddenSurvivor[]): Sector[][] => {
         }
     }
 
-    if (selectedSectors.length >= 2) {
-        // The remaining survivor grids will not have a direct image.
-        g[selectedSectors[0].y][selectedSectors[0].x].disasterImage = '/mock_images/survivor.png';
-        g[selectedSectors[1].y][selectedSectors[1].x].disasterImage = '/mock_images/thermal.png';
+    // Assign each survivor's message-matched image to its grid cell
+    if (survivors) {
+        survivors.forEach(s => {
+            if (s.info.img) {
+                g[s.y][s.x].disasterImage = s.info.img;
+            }
+        });
+    }
 
-        // Scatter empty images ONLY around the survivor grids without a direct image
-        selectedSectors.slice(2).forEach((s) => {
-            // Place 2 empty images scattered around each remaining survivor
+    // Scatter empty images around survivors that have images, to add noise
+    if (survivors) {
+        survivors.forEach(s => {
             for (let i = 0; i < 2; i++) {
                 let dx, dy;
                 do {
-                    dx = Math.floor(Math.random() * 5) - 2; // -2 to 2
-                    dy = Math.floor(Math.random() * 5) - 2; // -2 to 2
+                    dx = Math.floor(Math.random() * 5) - 2;
+                    dy = Math.floor(Math.random() * 5) - 2;
                 } while (dx === 0 && dy === 0);
                 const nx = Math.max(0, Math.min(GRID_W - 1, s.x + dx));
                 const ny = Math.max(0, Math.min(GRID_H - 1, s.y + dy));
-
-                // Only place empty.png on grids that don't already have an image
                 if (!g[ny][nx].disasterImage) {
                     g[ny][nx].disasterImage = '/mock_images/empty.png';
                 }
@@ -179,19 +181,47 @@ export const createDrones = (randomizeBattery: boolean = true): Drone[] => {
     ];
 };
 
+// ── Message-to-Image Classification ──
+const THERMAL_IMAGES = ['/mock_images/thermal1.png', '/mock_images/thermal2.png', '/mock_images/thermal3.png'];
+const MEDICAL_IMAGES = ['/mock_images/medical1.png', '/mock_images/medical2.png'];
+const DEBRIS_IMAGES  = ['/mock_images/debris1.png', '/mock_images/debris2.png'];
+
+const pickRandom = (arr: string[]): string => arr[Math.floor(Math.random() * arr.length)];
+
+const getDetectionImage = (message: string): string => {
+    // Special override: Level 2 pathways message always gets debris3
+    if (message.includes('LEVEL 2') && message.includes('ASCENT/DESCENT')) {
+        return '/mock_images/debris3.png';
+    }
+    // Special override: Multiple survivors from thermal always gets thermal2
+    if (message.includes('MULTIPLE THERMAL SIGNATURES')) {
+        return '/mock_images/thermal2.png';
+    }
+    // Thermal keywords
+    if (/THERMAL|TEMP|OXYGEN|HEAT/i.test(message)) {
+        return pickRandom(THERMAL_IMAGES);
+    }
+    // Medical keywords
+    if (/MEDICAL|DEHYDRATION|INFANT|ELDERLY|TRAUMA/i.test(message)) {
+        return pickRandom(MEDICAL_IMAGES);
+    }
+    // Default: debris
+    return pickRandom(DEBRIS_IMAGES);
+};
+
 export const createSurvivors = (grid?: Sector[][]): HiddenSurvivor[] => {
     const messages = [
-        "Trapped under concrete. Leg injured.",
-        "Safe but cannot exit building.",
-        "Need water asap.",
-        "Medical assistance needed for elderly person.",
-        "We have a baby with us, please hurry.",
-        "Trapped on the second floor, stairs are collapsed.",
-        "Running out of air, please help.",
-        "Small fire in the adjacent room, need evacuation.",
-        "Multiple people injured here, need medics.",
-        "Power is out, cold and need blankets.",
-        "Cut off by debris, but we are unhurt."
+        "TARGET ISOLATED UNDER STRUCTURAL DEBRIS. LOWER LIMB TRAUMA DETECTED.",
+        "TARGET SECURE. EGRESS ROUTES BLOCKED BY OBSTRUCTIONS.",
+        "TARGET DETECTED. SEVERE DEHYDRATION INDICATORS PRESENT.",
+        "ELDERLY TARGET LOCATED. CRITICAL MEDICAL INTERVENTION REQUIRED.",
+        "VITAL SIGNS UNSTABLE. ACCELERATED MEDICAL EXTRACTION RECOMMENDED.",
+        "TARGET ISOLATED ON LEVEL 2. ASCENT/DESCENT PATHWAYS COMPROMISED.",
+        "TARGET DETECTED. OXYGEN DEPLETION IMMINENT. URGENT EXTRACTION.",
+        "BIOLOGICAL THERMAL SIGNATURE ACQUIRED. TARGET LOCATED ALIVE.",
+        "MULTIPLE THERMAL SIGNATURES DETECTED. IMMEDIATE EXFIL REQUIRED.",
+        "TARGETS LOCATED. AMBIENT TEMP SUB-OPTIMAL. THERMAL INSULATION NEEDED.",
+        "TARGETS ISOLATED BY DEBRIS. NO ACUTE TRAUMA DETECTED."
     ];
 
     // Shuffle the messages so they don't repeat in one simulation
@@ -215,13 +245,17 @@ export const createSurvivors = (grid?: Sector[][]): HiddenSurvivor[] => {
             }
         }
 
-        return selected.map((s, i) => ({
-            id: `S${i + 1}`,
-            x: s.x,
-            y: s.y,
-            found: false,
-            info: { message: shuffledMessages[i % shuffledMessages.length], battery: `${Math.floor(Math.random() * 50 + 5)}%` }
-        }));
+        return selected.map((s, i) => {
+            const message = shuffledMessages[i % shuffledMessages.length];
+            const img = getDetectionImage(message);
+            return {
+                id: `S${i + 1}`,
+                x: s.x,
+                y: s.y,
+                found: false,
+                info: { message, battery: `${Math.floor(Math.random() * 50 + 5)}%`, img }
+            };
+        });
     }
 
     // Fallback if no grid provided (bootstrap phase)
@@ -243,11 +277,15 @@ export const createSurvivors = (grid?: Sector[][]): HiddenSurvivor[] => {
         if (!tooClose) selectedPoints.push(c);
     }
 
-    return selectedPoints.map((p, i) => ({
-        id: `S${i + 1}`,
-        x: p.x,
-        y: p.y,
-        found: false,
-        info: { message: shuffledMessages[i % shuffledMessages.length], battery: "45%" }
-    }));
+    return selectedPoints.map((p, i) => {
+        const message = shuffledMessages[i % shuffledMessages.length];
+        const img = getDetectionImage(message);
+        return {
+            id: `S${i + 1}`,
+            x: p.x,
+            y: p.y,
+            found: false,
+            info: { message, battery: "45%", img }
+        };
+    });
 };

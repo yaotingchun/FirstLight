@@ -23,7 +23,9 @@ const SimulationMapMCP: React.FC = () => {
     const {
         running, setRunning,
         speed,
-        selectedPin, setSelectedPin,
+        selectedPin,
+        pinPopupType,
+        handlePinClick,
         showSensors,
         showTrails, setShowTrails,
         selectedTrailDroneId,
@@ -332,7 +334,8 @@ const SimulationMapMCP: React.FC = () => {
                     survivors={survivorsRef.current}
                     pins={pinsRef.current}
                     selectedPin={selectedPin}
-                    setSelectedPin={setSelectedPin}
+                    pinPopupType={pinPopupType}
+                    handlePinClick={handlePinClick}
                     showSensors={showSensors}
                     showTrails={showTrails}
                     setShowTrails={setShowTrails}
