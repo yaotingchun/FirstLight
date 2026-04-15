@@ -16,23 +16,12 @@ interface SimulationDashboardProps {
         totalScans: number;
     };
     sensorWeights: Record<string, { base: number, conf: number, color: string }>;
-    randomizeBattery: boolean;
-    setRandomizeBattery: (val: boolean) => void;
     running: boolean;
-    microScanOnly: boolean;
-    onToggleMicroScanOnly: () => void;
-    isDrawingMode: boolean;
-    onToggleDrawingMode: () => void;
-    searchAreaDrawn: boolean;
-    onClearSearchArea: () => void;
 }
 
 export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
     drones, time, aiDisconnectedRef, aiReconnectedUntilTickRef,
-    metrics, sensorWeights, randomizeBattery, setRandomizeBattery, running,
-    microScanOnly, onToggleMicroScanOnly,
-    isDrawingMode, onToggleDrawingMode,
-    searchAreaDrawn, onClearSearchArea
+    metrics, sensorWeights, running,
 }) => {
     return (
         <div style={{ width: '320px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -42,46 +31,6 @@ export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
                     <h4 className="hud-text" style={{ margin: 0, fontSize: '0.9rem', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <Activity size={18} /> LIVE SWARM STATUS
                     </h4>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <label style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', letterSpacing: '0.5px' }}>BATTERY:</label>
-                        <div style={{ display: 'flex', border: '1px solid var(--accent-primary)', borderRadius: '4px', overflow: 'hidden', opacity: running ? 0.5 : 1 }}>
-                            <button
-                                onClick={() => setRandomizeBattery(false)}
-                                disabled={running}
-                                style={{
-                                    background: !randomizeBattery ? 'var(--accent-primary)' : 'rgba(0,0,0,0.4)',
-                                    color: !randomizeBattery ? 'var(--bg-color)' : 'var(--text-secondary)',
-                                    border: 'none',
-                                    padding: '4px 8px',
-                                    fontFamily: 'var(--font-mono)',
-                                    fontSize: '0.65rem',
-                                    cursor: running ? 'not-allowed' : 'pointer',
-                                    fontWeight: !randomizeBattery ? 700 : 400,
-                                    transition: 'all 0.2s ease'
-                                }}
-                            >
-                                FULL
-                            </button>
-                            <button
-                                onClick={() => setRandomizeBattery(true)}
-                                disabled={running}
-                                style={{
-                                    background: randomizeBattery ? 'var(--accent-primary)' : 'rgba(0,0,0,0.4)',
-                                    color: randomizeBattery ? 'var(--bg-color)' : 'var(--text-secondary)',
-                                    border: 'none',
-                                    borderLeft: '1px solid var(--accent-primary)',
-                                    padding: '4px 8px',
-                                    fontFamily: 'var(--font-mono)',
-                                    fontSize: '0.65rem',
-                                    cursor: running ? 'not-allowed' : 'pointer',
-                                    fontWeight: randomizeBattery ? 700 : 400,
-                                    transition: 'all 0.2s ease'
-                                }}
-                            >
-                                RANDOM
-                            </button>
-                        </div>
-                    </div>
                 </div>
 
                 <div style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -181,74 +130,6 @@ export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
                 <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: '1px solid rgba(0, 255, 204, 0.1)', fontSize: '0.7rem', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', display: 'flex', justifyContent: 'space-between' }}>
                     <span>TOTAL SCANS:</span>
                     <span style={{ color: 'var(--text-primary)' }}>{metrics.totalScans.toLocaleString()}</span>
-                </div>
-            </div>
-
-            {/* Drone Overrides HUD */}
-            <div className="hud-panel" style={{ padding: '16px', background: 'rgba(255, 204, 0, 0.05)', border: '1px solid var(--panel-border)' }}>
-                <h4 className="hud-text" style={{ fontSize: '0.85rem', color: 'var(--accent-secondary, #ffb84d)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', letterSpacing: '1px' }}>
-                    DIRECTIVE OVERRIDES
-                </h4>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>CUSTOM SEARCH AREA</div>
-                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                        {searchAreaDrawn && (
-                            <button
-                                onClick={onClearSearchArea}
-                                style={{
-                                    background: 'rgba(0,0,0,0.4)',
-                                    color: '#ff6b6b',
-                                    border: '1px solid rgba(255,107,107,0.3)',
-                                    borderRadius: '4px',
-                                    padding: '6px 10px',
-                                    fontFamily: 'var(--font-mono)',
-                                    fontSize: '0.65rem',
-                                    cursor: 'pointer',
-                                    letterSpacing: '0.5px'
-                                }}
-                            >
-                                CLEAR AREA
-                            </button>
-                        )}
-                        <button
-                            onClick={onToggleDrawingMode}
-                            style={{
-                                background: isDrawingMode ? '#00ffcc' : 'rgba(0,0,0,0.4)',
-                                color: isDrawingMode ? '#000' : 'var(--text-secondary)',
-                                border: `1px solid ${isDrawingMode ? '#00ffcc' : 'var(--panel-border)'}`,
-                                borderRadius: '4px',
-                                padding: '6px 10px',
-                                fontFamily: 'var(--font-mono)',
-                                fontSize: '0.65rem',
-                                cursor: 'pointer',
-                                fontWeight: isDrawingMode ? 700 : 400,
-                                letterSpacing: '0.5px'
-                            }}
-                        >
-                            {isDrawingMode ? 'DRAWING...' : 'DRAW AREA'}
-                        </button>
-                    </div>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>BLANKET MICRO SCAN</div>
-                    <button
-                        onClick={onToggleMicroScanOnly}
-                        style={{
-                            background: microScanOnly ? '#ff4444' : 'rgba(0,0,0,0.4)',
-                            color: microScanOnly ? '#fff' : 'var(--text-secondary)',
-                            border: `1px solid ${microScanOnly ? '#ff4444' : 'var(--panel-border)'}`,
-                            borderRadius: '4px',
-                            padding: '6px 12px',
-                            fontFamily: 'var(--font-mono)',
-                            fontSize: '0.7rem',
-                            cursor: 'pointer',
-                            fontWeight: microScanOnly ? 700 : 400,
-                            letterSpacing: '0.5px'
-                        }}
-                    >
-                        {microScanOnly ? 'ACTIVE' : 'INACTIVE'}
-                    </button>
                 </div>
             </div>
 
