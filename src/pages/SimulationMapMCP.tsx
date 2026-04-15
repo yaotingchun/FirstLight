@@ -43,7 +43,8 @@ const SimulationMapMCP: React.FC = () => {
         isDrawingMode, setIsDrawingMode,
         searchScanActive, setSearchScanActive,
         missionOverride,
-        setMissionOverride
+        setMissionOverride,
+        updateDroneBattery
     } = useSharedSimulation();
 
     const [settingsOpen, setSettingsOpen] = React.useState(false);
@@ -440,6 +441,8 @@ const SimulationMapMCP: React.FC = () => {
                 setTimeLimit={setTimeLimit}
                 randomizeBattery={randomizeBattery}
                 setRandomizeBattery={setRandomizeBattery}
+                drones={dronesRef.current}
+                updateDroneBattery={updateDroneBattery}
             />
 
             <style>{`

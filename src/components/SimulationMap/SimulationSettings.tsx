@@ -9,6 +9,8 @@ const CITIES = [
     { name: 'Manila', lat: 14.5995, lng: 120.9842 },
 ];
 
+import type { Drone } from '../../types/simulation';
+
 interface SimulationSettingsProps {
     isOpen: boolean;
     onClose: () => void;
@@ -35,6 +37,8 @@ interface SimulationSettingsProps {
     // Battery
     randomizeBattery: boolean;
     setRandomizeBattery: (val: boolean) => void;
+    drones: Drone[];
+    updateDroneBattery: (id: string, val: number) => void;
 }
 
 export const SimulationSettings: React.FC<SimulationSettingsProps> = ({
@@ -46,6 +50,7 @@ export const SimulationSettings: React.FC<SimulationSettingsProps> = ({
     useTimeLimit, setUseTimeLimit,
     timeLimit, setTimeLimit,
     randomizeBattery, setRandomizeBattery,
+    drones, updateDroneBattery,
 }) => {
     const [latInput, setLatInput] = React.useState(centerLocation.lat.toFixed(4));
     const [lngInput, setLngInput] = React.useState(centerLocation.lng.toFixed(4));
@@ -100,21 +105,6 @@ export const SimulationSettings: React.FC<SimulationSettingsProps> = ({
 
     return (
         <>
-            {/* Backdrop */}
-            <div
-                onClick={onClose}
-                style={{
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    width: '100vw',
-                    height: '100vh',
-                    background: 'rgba(0, 0, 0, 0.5)',
-                    zIndex: 1999,
-                    backdropFilter: 'blur(2px)',
-                }}
-            />
-
             {/* Settings Panel */}
             <div
                 style={{
@@ -362,7 +352,9 @@ export const SimulationSettings: React.FC<SimulationSettingsProps> = ({
                                     }}
                                 >
                                     <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <MapIcon size={12} color="#00ffcc" /> SELECT CITY
+                                        <MapIcon size={12} color="#00ffcc" /> {
+                                            CITIES.find(c => Math.abs(c.lat - centerLocation.lat) < 0.01 && Math.abs(c.lng - centerLocation.lng) < 0.01)?.name || 'SELECT CITY'
+                                        }
                                     </span>
                                     <ChevronDown size={12} style={{ transform: showCityDropdown ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }} />
                                 </button>
@@ -592,6 +584,56 @@ export const SimulationSettings: React.FC<SimulationSettingsProps> = ({
                                 : '🔋 All drones start at 100% battery for maximum mission duration.'
                             }
                         </div>
+                        
+                        {randomizeBattery && (
+                            <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                {drones.map(d => (
+                                    <div key={d.id} style={{
+                                        padding: '8px 12px',
+                                        background: 'rgba(0, 255, 204, 0.03)',
+                                        border: '1px solid rgba(0, 255, 204, 0.08)',
+                                        borderRadius: '3px',
+                                    }}>
+                                        <div style={{ ...labelStyle, marginBottom: '6px', color: '#00ffcc' }}>{d.id} BATTERY</div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <input
+                                                type="range"
+                                                min={20}
+                                                max={100}
+                                                step={1}
+                                                value={d.battery}
+                                                onChange={(e) => updateDroneBattery(d.id, parseInt(e.target.value))}
+                                                disabled={running}
+                                                className="drone-slider"
+                                                style={{ flex: 1, opacity: running ? 0.5 : 1 }}
+                                            />
+                                            <input
+                                                type="number"
+                                                value={d.battery}
+                                                onChange={(e) => updateDroneBattery(d.id, parseInt(e.target.value) || 20)}
+                                                disabled={running}
+                                                min={20}
+                                                max={100}
+                                                style={{
+                                                    width: '50px',
+                                                    background: 'rgba(0,0,0,0.5)',
+                                                    border: '1px solid rgba(0, 255, 204, 0.2)',
+                                                    borderRadius: '3px',
+                                                    color: '#00ffcc',
+                                                    padding: '3px 6px',
+                                                    fontSize: '0.8rem',
+                                                    fontFamily: 'var(--font-mono)',
+                                                    outline: 'none',
+                                                    textAlign: 'center',
+                                                    opacity: running ? 0.5 : 1,
+                                                }}
+                                            />
+                                            <span style={{ fontSize: '0.6rem', color: '#5a8585', fontFamily: 'var(--font-mono)' }}>%</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
 

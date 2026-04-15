@@ -160,7 +160,7 @@ export const createGrid = (survivors?: HiddenSurvivor[]): Sector[][] => {
     return g;
 };
 
-export const createDrones = (randomizeBattery: boolean = true): Drone[] => {
+export const createDrones = (randomizeBattery: boolean = true, customBatteries?: Record<string, number>): Drone[] => {
     const bx = BASE_STATION.x;
     const by = BASE_STATION.y;
     // Departure stagger: drones flying to distant targets leave first so all arrive roughly together.
@@ -168,16 +168,22 @@ export const createDrones = (randomizeBattery: boolean = true): Drone[] => {
     // RLY-Prime   → center      (~9 cells away)       → depart tick 15
     // Gamma/Delta → lower corners (~7.8 cells away)  → depart tick 25
     
-    // Helper to randomize battery between 40 and 100
-    const randomBattery = () => randomizeBattery ? Math.floor(40 + Math.random() * 61) : 100;
+    // Helper to randomize battery between 40 and 100 or use custom override
+    const getBattery = (id: string, defRandom: boolean) => {
+        if (!randomizeBattery) return 100;
+        if (customBatteries && typeof customBatteries[id] === 'number') {
+            return Math.min(100, Math.max(20, customBatteries[id]));
+        }
+        return defRandom ? Math.floor(40 + Math.random() * 61) : 100;
+    };
 
     return [
-        { id: 'DRN-Alpha', x: bx, y: by, tx: 2, ty: 2, mode: 'Wide', battery: randomBattery(), targetSector: null, isConnected: true, memory: [], startTick: 0, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] },
-        { id: 'DRN-Beta', x: bx, y: by, tx: 17, ty: 2, mode: 'Wide', battery: randomBattery(), targetSector: null, isConnected: true, memory: [], startTick: 0, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] },
-        { id: 'RLY-Prime', x: bx, y: by, tx: GRID_W / 2, ty: GRID_H / 2, mode: 'Relay', battery: randomBattery(), targetSector: null, isConnected: true, memory: [], startTick: 15, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] },
-        { id: 'RLY-Backup', x: bx, y: by, tx: bx, ty: by, mode: 'Charging', battery: 100, targetSector: null, isConnected: true, memory: [], startTick: 0, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] },
-        { id: 'DRN-Gamma', x: bx, y: by, tx: 2, ty: 17, mode: 'Wide', battery: randomBattery(), targetSector: null, isConnected: true, memory: [], startTick: 25, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] },
-        { id: 'DRN-Delta', x: bx, y: by, tx: 17, ty: 17, mode: 'Wide', battery: randomBattery(), targetSector: null, isConnected: true, memory: [], startTick: 25, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] }
+        { id: 'DRN-Alpha', x: bx, y: by, tx: 2, ty: 2, mode: 'Wide', battery: getBattery('DRN-Alpha', true), targetSector: null, isConnected: true, memory: [], startTick: 0, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] },
+        { id: 'DRN-Beta', x: bx, y: by, tx: 17, ty: 2, mode: 'Wide', battery: getBattery('DRN-Beta', true), targetSector: null, isConnected: true, memory: [], startTick: 0, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] },
+        { id: 'RLY-Prime', x: bx, y: by, tx: GRID_W / 2, ty: GRID_H / 2, mode: 'Relay', battery: getBattery('RLY-Prime', true), targetSector: null, isConnected: true, memory: [], startTick: 15, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] },
+        { id: 'RLY-Backup', x: bx, y: by, tx: bx, ty: by, mode: 'Charging', battery: getBattery('RLY-Backup', false), targetSector: null, isConnected: true, memory: [], startTick: 0, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] },
+        { id: 'DRN-Gamma', x: bx, y: by, tx: 2, ty: 17, mode: 'Wide', battery: getBattery('DRN-Gamma', true), targetSector: null, isConnected: true, memory: [], startTick: 25, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] },
+        { id: 'DRN-Delta', x: bx, y: by, tx: 17, ty: 17, mode: 'Wide', battery: getBattery('DRN-Delta', true), targetSector: null, isConnected: true, memory: [], startTick: 25, knownOtherDrones: {}, lockTarget: false, preventReassignment: false, lastScannedX: -1, lastScannedY: -1, path: [{ x: bx, y: by, tick: 0 }] }
     ];
 };
 

@@ -28,6 +28,7 @@ export const useSimulationEngine = (
     const [running, setRunning] = useState(false);
     const [speed, setSpeed] = useState(1);
     const [randomizeBattery, setRandomizeBatteryState] = useState(true);
+    const [customBatteries, setCustomBatteries] = useState<Record<string, number>>({});
     const [microScanOnly, setMicroScanOnly] = useState(false);
     const [, setTickFlip] = useState(0);
     const [selectedPin, setSelectedPin] = useState<FoundPin | null>(null);
@@ -52,7 +53,7 @@ export const useSimulationEngine = (
 
     const initialSurvivors = createSurvivors();
     const gridRef = useRef<Sector[][]>(createGrid(initialSurvivors));
-    const dronesRef = useRef<Drone[]>(createDrones());
+    const dronesRef = useRef<Drone[]>(createDrones(true, {}));
     const survivorsRef = useRef<HiddenSurvivor[]>(initialSurvivors);
     const pinsRef = useRef<FoundPin[]>([]);
     const timeRef = useRef<number>(0);
@@ -149,10 +150,10 @@ export const useSimulationEngine = (
     const setRandomizeBattery = useCallback((val: boolean) => {
         setRandomizeBatteryState(val);
         if (!running) {
-            dronesRef.current = createDrones(val);
+            dronesRef.current = createDrones(val, customBatteries);
             setTickFlip(f => f + 1);
         }
-    }, [running]);
+    }, [running, customBatteries]);
 
     const toggleRunning = useCallback(() => {
         const nextRunning = !running;
@@ -257,13 +258,24 @@ export const useSimulationEngine = (
         }, 10000);
     }, []);
 
+    const updateDroneBattery = useCallback((id: string, val: number) => {
+        setCustomBatteries(prev => ({ ...prev, [id]: val }));
+        if (!running) {
+            const drone = dronesRef.current.find(d => d.id === id);
+            if (drone) {
+                drone.battery = val;
+                setTickFlip(f => f + 1);
+            }
+        }
+    }, [running]);
+
     const resetSim = () => {
         setRunning(false);
         gridDataService.releaseSource();
         const newSurvivors = createSurvivors();
         const newGrid = createGrid(newSurvivors);
         gridRef.current = newGrid;
-        dronesRef.current = createDrones(randomizeBattery);
+        dronesRef.current = createDrones(randomizeBattery, customBatteries);
         survivorsRef.current = newSurvivors;
         pinsRef.current = [];
         commLinksRef.current = [];
@@ -1471,6 +1483,7 @@ export const useSimulationEngine = (
         // Handlers
         toggleRunning,
         resetSim,
+        updateDroneBattery,
         triggerFailureEvent,
         getSectorProbability,
         performTickCore,
