@@ -1,14 +1,16 @@
 /**
  * FirstLight MCP Server
  * 
- * HTTP API server that exposes MCP tools for manual function calling.
- * This allows the frontend to invoke tools via button clicks while
- * an AI orchestration layer is being developed.
+ * Hybrid server:
+ * - REST API for dashboard/state sync/manual calls
+ * - MCP JSON-RPC endpoint for protocol-compliant tool clients
  * 
  * Endpoints:
  * - GET  /api/status          - Server status
  * - GET  /api/tools           - List all available tools
  * - POST /api/tools/:toolName - Execute a tool
+ * - POST /api/mcp             - MCP JSON-RPC endpoint
+ * - POST /mcp                 - MCP JSON-RPC endpoint (alias)
  * - GET  /api/commands        - Get pending commands (for frontend polling)
  * - POST /api/commands/:id/ack - Acknowledge command processed
  * - POST /api/state/sync      - Sync state from frontend
@@ -30,6 +32,51 @@ import type { DroneStatus, SectorScanResult, CommLink, SurvivorInfo } from './ty
 const app = express();
 const PORT = process.env.PORT || 3001;
 const ORCHESTRATOR_THINK_INTERVAL_TICKS = parseInt(process.env.ORCHESTRATOR_THINK_INTERVAL_TICKS ?? '30', 10);
+const MCP_PROTOCOL_VERSION = '2024-11-05';
+
+type JsonRpcId = string | number | null;
+
+interface JsonRpcRequest {
+    jsonrpc?: unknown;
+    id?: unknown;
+    method?: unknown;
+    params?: unknown;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isJsonRpcId(value: unknown): value is JsonRpcId {
+    return typeof value === 'string' || typeof value === 'number' || value === null;
+}
+
+function sendJsonRpcResult(res: express.Response, id: JsonRpcId, result: unknown): void {
+    res.json({
+        jsonrpc: '2.0',
+        id,
+        result,
+    });
+}
+
+function sendJsonRpcError(
+    res: express.Response,
+    id: JsonRpcId,
+    code: number,
+    message: string,
+    data?: unknown
+): void {
+    const errorPayload: { code: number; message: string; data?: unknown } = { code, message };
+    if (data !== undefined) {
+        errorPayload.data = data;
+    }
+
+    res.status(400).json({
+        jsonrpc: '2.0',
+        id,
+        error: errorPayload,
+    });
+}
 
 function getAutonomyAgentName(droneId: string): string {
     if (droneId.startsWith('RLY-')) return 'Agent Relay';
@@ -76,7 +123,7 @@ app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
 app.use((req, res, next) => {
-    if (!req.path.startsWith('/api')) {
+    if (!req.path.startsWith('/api') && req.path !== '/mcp') {
         return next();
     }
     const sessionId = req.headers['x-session-id'] as string || 'default';
@@ -182,6 +229,157 @@ app.post('/api/tools/:toolName', async (req, res) => {
     const result = await executeTool(toolName, params);
     
     res.json(result);
+});
+
+// MCP JSON-RPC endpoint (HTTP transport)
+app.post(['/api/mcp', '/mcp'], async (req, res) => {
+    const rpc = req.body as JsonRpcRequest;
+
+    if (!isRecord(rpc)) {
+        sendJsonRpcError(res, null, -32600, 'Invalid Request');
+        return;
+    }
+
+    const hasId = Object.prototype.hasOwnProperty.call(rpc, 'id');
+    const idValue = hasId ? rpc.id : null;
+    const id = isJsonRpcId(idValue) ? idValue : null;
+
+    if (rpc.jsonrpc !== '2.0' || typeof rpc.method !== 'string') {
+        sendJsonRpcError(res, id, -32600, 'Invalid Request');
+        return;
+    }
+
+    if (hasId && !isJsonRpcId(idValue)) {
+        sendJsonRpcError(res, null, -32600, 'Invalid Request', 'id must be string, number, or null');
+        return;
+    }
+
+    const isNotification = !hasId;
+
+    try {
+        switch (rpc.method) {
+            case 'initialize': {
+                const result = {
+                    protocolVersion: MCP_PROTOCOL_VERSION,
+                    capabilities: {
+                        tools: {
+                            listChanged: false,
+                        },
+                    },
+                    serverInfo: {
+                        name: 'firstlight-mcp-server',
+                        version: '1.0.0',
+                    },
+                };
+
+                if (isNotification) {
+                    res.status(204).end();
+                    return;
+                }
+                sendJsonRpcResult(res, id, result);
+                return;
+            }
+
+            case 'notifications/initialized': {
+                if (isNotification) {
+                    res.status(204).end();
+                    return;
+                }
+                sendJsonRpcResult(res, id, {});
+                return;
+            }
+
+            case 'tools/list': {
+                const tools = listTools().map((tool) => ({
+                    name: tool.name,
+                    description: tool.description,
+                    inputSchema: tool.inputSchema,
+                }));
+
+                if (isNotification) {
+                    res.status(204).end();
+                    return;
+                }
+                sendJsonRpcResult(res, id, { tools });
+                return;
+            }
+
+            case 'tools/call': {
+                if (!isRecord(rpc.params)) {
+                    sendJsonRpcError(res, id, -32602, 'Invalid params', 'params must be an object');
+                    return;
+                }
+
+                const name = rpc.params.name;
+                if (typeof name !== 'string' || !name.trim()) {
+                    sendJsonRpcError(res, id, -32602, 'Invalid params', 'params.name is required');
+                    return;
+                }
+
+                const args = rpc.params.arguments;
+                if (args !== undefined && !isRecord(args)) {
+                    sendJsonRpcError(res, id, -32602, 'Invalid params', 'params.arguments must be an object');
+                    return;
+                }
+
+                const toolResult = await executeTool(name, (args as Record<string, unknown> | undefined) ?? {});
+                const normalized = isRecord(toolResult)
+                    ? toolResult
+                    : {
+                        success: false,
+                        error: 'Tool execution returned a non-object response',
+                        timestamp: Date.now(),
+                    };
+
+                const success = normalized.success === true;
+                const structuredContent = success
+                    ? (normalized.data ?? normalized)
+                    : normalized;
+                const text = success
+                    ? JSON.stringify(structuredContent, null, 2)
+                    : String(normalized.error ?? 'Tool execution failed');
+
+                const result = {
+                    content: [
+                        {
+                            type: 'text',
+                            text,
+                        },
+                    ],
+                    structuredContent,
+                    isError: !success,
+                };
+
+                if (isNotification) {
+                    res.status(204).end();
+                    return;
+                }
+                sendJsonRpcResult(res, id, result);
+                return;
+            }
+
+            default: {
+                if (isNotification) {
+                    res.status(204).end();
+                    return;
+                }
+                sendJsonRpcError(res, id, -32601, `Method not found: ${rpc.method}`);
+                return;
+            }
+        }
+    } catch (error) {
+        if (isNotification) {
+            res.status(204).end();
+            return;
+        }
+        sendJsonRpcError(
+            res,
+            id,
+            -32603,
+            'Internal error',
+            error instanceof Error ? error.message : String(error)
+        );
+    }
 });
 
 // Orchestrator chat endpoint (frontend AI chat)
@@ -492,6 +690,8 @@ app.listen(PORT, () => {
 ║    GET  /api/status              - Server status                           ║
 ║    GET  /api/tools               - List all MCP tools                      ║
 ║    POST /api/tools/:toolName     - Execute a tool                          ║
+║    POST /api/mcp                 - MCP JSON-RPC endpoint                   ║
+║    POST /mcp                     - MCP JSON-RPC endpoint (alias)           ║
 ║    GET  /api/commands            - Get pending commands                    ║
 ║                                                                            ║
 ║  State Sync (Frontend → Server):                                           ║
