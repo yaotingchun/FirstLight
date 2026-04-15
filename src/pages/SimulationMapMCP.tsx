@@ -224,7 +224,7 @@ const SimulationMapMCP: React.FC = () => {
                 </div>
             </header>
 
-            <div style={{ flex: 1, display: 'flex', gap: '12px' }}>
+            <div style={{ flex: 1, display: 'flex', gap: '12px', position: 'relative', overflow: 'hidden' }}>
                 {/* Wrapper ensures SimulationGrid retains its original flex sizing. 
                     3D canvas sits securely on top without perturbing the 2D layout. */}
                 <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
