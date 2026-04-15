@@ -108,13 +108,14 @@ export const SimulationSettings: React.FC<SimulationSettingsProps> = ({
             {/* Settings Panel */}
             <div
                 style={{
-                    position: 'fixed',
-                    top: 0,
-                    right: 0,
+                    position: 'absolute',
+                    top: '85px',
+                    right: '20px',
+                    bottom: '16px',
                     width: '380px',
-                    height: '100vh',
                     background: 'rgba(2, 11, 14, 0.97)',
-                    borderLeft: '1px solid rgba(0, 255, 204, 0.25)',
+                    border: '1px solid rgba(0, 255, 204, 0.25)',
+                    borderRadius: '4px',
                     zIndex: 2000,
                     display: 'flex',
                     flexDirection: 'column',
@@ -128,7 +129,7 @@ export const SimulationSettings: React.FC<SimulationSettingsProps> = ({
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
-                    padding: '20px 20px 16px',
+                    padding: '12px 20px',
                     borderBottom: '1px solid rgba(0, 255, 204, 0.2)',
                     flexShrink: 0,
                 }}>
