@@ -198,18 +198,6 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                                 strokeWidth="1"
                             />
 
-                            {/* Disaster Image Discovery - Visible if scanned OR sensors toggled */}
-                            {!showTrails && (cell.scanned || showSensors) && cell.disasterImage && (
-                                <image
-                                    href={cell.disasterImage}
-                                    x={x * CELL_SIZE + 2}
-                                    y={y * CELL_SIZE + 2}
-                                    width={CELL_SIZE - 4}
-                                    height={CELL_SIZE - 4}
-                                    style={{ opacity: 0.6, pointerEvents: 'none' }}
-                                />
-                            )}
-
                             {/* Sensor Values Overlay */}
                             {!showTrails && showSensors && (
                                 <g style={{ pointerEvents: 'none' }}>
