@@ -318,17 +318,17 @@ const MapSimulator: React.FC = () => {
                 </svg>
 
                 {/* Legend */}
-                <div style={{ position: 'absolute', bottom: 24, left: 24, padding: '16px', backgroundColor: 'var(--panel-bg)', border: '1px solid var(--panel-border)', backdropFilter: 'blur(8px)', zIndex: 10 }}>
-                    <h4 className="hud-text" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>TACTICAL PROBABILITY KEY</h4>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ position: 'absolute', bottom: 24, left: 24, padding: '16px', backgroundColor: 'var(--panel-bg)', border: '1px solid var(--panel-border)', backdropFilter: 'blur(8px)', zIndex: 10, width: '200px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <h4 className="hud-text" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>TACTICAL PROBABILITY KEY</h4>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {[
                             { label: 'Critical Area (≥0.8)', color: `rgba(255, 68, 68, ${0.05 + 0.8 * 0.75})`, border: 'none' },
                             { label: 'High Priority (≥0.5)', color: `rgba(255, 68, 68, ${0.05 + 0.5 * 0.75})`, border: 'none' },
                             { label: 'Moderate Area (≥0.3)', color: `rgba(255, 68, 68, ${0.05 + 0.3 * 0.75})`, border: 'none' },
-                            { label: 'Minimal / Unknown (<0.3)', color: 'transparent', border: '1px solid rgba(0, 255, 204, 0.2)' }
+                            { label: 'Minimal / Unknown', color: 'transparent', border: '1px solid rgba(0, 255, 204, 0.2)' }
                         ].map(item => (
-                            <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.7rem', color: 'var(--text-primary)' }}>
-                                <div style={{ width: 12, height: 12, backgroundColor: item.color, border: item.border }}></div>
+                            <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.7rem', color: 'var(--text-primary)', lineHeight: 1.4 }}>
+                                <div style={{ width: 14, height: 14, backgroundColor: item.color, border: item.border, flexShrink: 0 }}></div>
                                 {item.label}
                             </div>
                         ))}

@@ -99,7 +99,7 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
     }, [onFinishDrawing]);
 
     return (
-        <div className="hud-panel" style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', paddingLeft: '40px' }}>
+        <div className="hud-panel" style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div style={{ 
                 position: 'relative', 
                 width: GRID_W * CELL_SIZE, 
@@ -201,10 +201,10 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                             {/* Sensor Values Overlay */}
                             {!showTrails && showSensors && (
                                 <g style={{ pointerEvents: 'none' }}>
-                                    <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 8} fontSize="5" fill="#00ffcc" opacity="0.9" fontFamily="var(--font-mono)">M:{cell.signals.mobile.toFixed(1)}</text>
-                                    <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 15} fontSize="5" fill="#ff4444" opacity="0.9" fontFamily="var(--font-mono)">T:{cell.signals.thermal.toFixed(1)}</text>
-                                    <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 22} fontSize="5" fill="#ffff00" opacity="0.9" fontFamily="var(--font-mono)">S:{cell.signals.sound.toFixed(1)}</text>
-                                    <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 29} fontSize="5" fill="#ff00ff" opacity="0.9" fontFamily="var(--font-mono)">W:{cell.signals.wifi.toFixed(1)}</text>
+                                    <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 9} fontSize="6.5" fill="#00ffcc" opacity="0.95" fontFamily="var(--font-mono)">M:{cell.signals.mobile.toFixed(1)}</text>
+                                    <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 17} fontSize="6.5" fill="#ff4444" opacity="0.95" fontFamily="var(--font-mono)">T:{cell.signals.thermal.toFixed(1)}</text>
+                                    <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 25} fontSize="6.5" fill="#ffff00" opacity="0.95" fontFamily="var(--font-mono)">S:{cell.signals.sound.toFixed(1)}</text>
+                                    <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 33} fontSize="6.5" fill="#ff00ff" opacity="0.95" fontFamily="var(--font-mono)">W:{cell.signals.wifi.toFixed(1)}</text>
 
                                     {/* Survivor Ground Truth Indicator */}
                                     {survivors.some((s: HiddenSurvivor) => s.x === x && s.y === y) && (
@@ -626,14 +626,14 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
 
             {/* Legend */}
             <div style={{ position: 'absolute', bottom: 16, right: 16, display: 'flex', gap: '16px' }}>
-                <div style={{ background: 'rgba(0,0,0,0.8)', border: '1px solid var(--panel-border)', padding: '12px', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', backdropFilter: 'blur(4px)' }}>
-                    <div style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>MAP LEGEND</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #00ffcc' }}></div> Wide-Scan Mode</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #ff4444' }}></div> Micro-Scan Mode</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #0077ff' }}></div> Relay Drone</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #ffa500' }}></div> Charging</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #ff4444' }}></div> Disconnected</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#00ffcc' }}><MapPin size={12} /> Confirmed Survivor</div>
+                <div style={{ background: 'rgba(0,0,0,0.8)', border: '1px solid var(--panel-border)', padding: '12px', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', backdropFilter: 'blur(4px)', width: '200px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ color: 'var(--text-secondary)', marginBottom: '4px', fontSize: '0.7rem' }}>MAP LEGEND</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><div style={{ width: 12, height: 12, border: '1px solid #00ffcc', flexShrink: 0 }}></div> Wide-Scan Mode</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><div style={{ width: 12, height: 12, border: '1px solid #ff4444', flexShrink: 0 }}></div> Micro-Scan Mode</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><div style={{ width: 12, height: 12, border: '1px solid #0077ff', flexShrink: 0 }}></div> Relay Drone</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><div style={{ width: 12, height: 12, border: '1px solid #ffa500', flexShrink: 0 }}></div> Charging</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><div style={{ width: 12, height: 12, border: '1px solid #ff4444', flexShrink: 0 }}></div> Disconnected</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#00ffcc' }}><MapPin size={12} style={{ flexShrink: 0 }} /> Confirmed Survivor</div>
                 </div>
             </div>
 

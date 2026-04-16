@@ -199,33 +199,34 @@ const ProbabilityMap3D: React.FC = () => {
                 </DeckGL>
 
                 {/* Legend Overlay */}
-                <div style={{ position: 'absolute', bottom: 24, left: 24, background: 'var(--panel-bg)', padding: '16px', border: '1px solid var(--panel-border)', backdropFilter: 'blur(4px)', display: 'flex', flexDirection: 'column', gap: '8px', zIndex: 10 }}>
-                    <h4 className="hud-text" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>PROBABILITY DENSITY</h4>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', fontFamily: 'var(--font-mono)' }}>
-                        <div style={{ width: 16, height: 16, background: 'rgb(255, 0, 0)' }}></div>
-                        Critical (Residential, ≥80%)
+                <div style={{ position: 'absolute', bottom: 24, left: 24, background: 'var(--panel-bg)', padding: '16px', border: '1px solid var(--panel-border)', backdropFilter: 'blur(4px)', display: 'flex', flexDirection: 'column', gap: '14px', zIndex: 10, width: '200px' }}>
+                    <h4 className="hud-text" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>PROBABILITY DENSITY</h4>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>
+                        <div style={{ width: 14, height: 14, background: 'rgb(255, 0, 0)', flexShrink: 0 }}></div>
+                        Critical (Res, ≥80%)
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', fontFamily: 'var(--font-mono)' }}>
-                        <div style={{ width: 16, height: 16, background: 'rgb(255, 165, 0)' }}></div>
-                        High (Academic, ≥50%)
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>
+                        <div style={{ width: 14, height: 14, background: 'rgb(255, 165, 0)', flexShrink: 0 }}></div>
+                        High (Acad, ≥50%)
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', fontFamily: 'var(--font-mono)' }}>
-                        <div style={{ width: 16, height: 16, background: 'rgb(0, 255, 0)' }}></div>
-                        Medium (Offices, ≥30%)
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>
+                        <div style={{ width: 14, height: 14, background: 'rgb(0, 255, 0)', flexShrink: 0 }}></div>
+                        Med (Office, ≥30%)
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', fontFamily: 'var(--font-mono)' }}>
-                        <div style={{ width: 16, height: 16, background: 'rgba(0, 0, 255, 0.5)' }}></div>
-                        Low (Fields/Open, ≤20%)
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>
+                        <div style={{ width: 14, height: 14, background: 'rgba(0, 0, 255, 0.5)', flexShrink: 0 }}></div>
+                        Low (Open, ≤20%)
                     </div>
-
-                    <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--panel-border)' }}>
-                        <h4 className="hud-text" style={{ fontSize: '0.7rem', color: 'var(--warning)', marginBottom: '8px' }}>DRONE SIMULATION CONTROLS</h4>
-                        <div style={{ fontSize: '0.7rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                            <strong>Left Click:</strong> +Heat (Motion detected)<br />
-                            <strong>Shift + Left Click:</strong> -Heat (Area clear)<br />
+ 
+                    <div style={{ marginTop: '4px', paddingTop: '12px', borderTop: '1px solid var(--panel-border)' }}>
+                        <h4 className="hud-text" style={{ fontSize: '0.7rem', color: 'var(--warning)', marginBottom: '10px' }}>DRONE SIMULATION CONTROLS</h4>
+                        <div style={{ fontSize: '0.65rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', lineHeight: 1.8 }}>
+                            <strong>Left Click:</strong> <br/>+Heat (Motion detected)<br />
+                            <strong>Shift + Click:</strong> <br/>-Heat (Area clear)<br />
                         </div>
                     </div>
                 </div>
+</div>
 
                 <div style={{ position: 'absolute', top: 24, right: 24, padding: '12px', background: 'rgba(0, 255, 204, 0.1)', border: '1px dashed var(--accent-primary)', backdropFilter: 'blur(4px)', zIndex: 10 }}>
                     <div style={{ fontSize: '0.85rem', fontFamily: 'var(--font-mono)', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center' }}>

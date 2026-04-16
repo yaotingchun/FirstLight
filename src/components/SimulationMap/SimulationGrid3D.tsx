@@ -479,19 +479,25 @@ export const SimulationGrid3D: React.FC<SimulationGrid3DProps> = ({
             {hoverInfo && (
                 <div style={{
                     position: 'absolute', top: 10, right: 10,
-                    background: 'rgba(2, 9, 18, 0.9)', border: '1px solid var(--accent-primary)',
-                    padding: '10px', borderRadius: '4px', fontFamily: 'monospace',
-                    fontSize: '0.7rem', color: 'var(--accent-primary)', pointerEvents: 'none',
-                    boxShadow: '0 0 15px rgba(0, 255, 204, 0.2)', zIndex: 100, minWidth: '140px'
+                    background: 'rgba(2, 9, 18, 0.95)', border: '1px solid var(--accent-primary)',
+                    padding: '16px', borderRadius: '4px', fontFamily: 'monospace',
+                    fontSize: '0.85rem', color: 'var(--accent-primary)', pointerEvents: 'none',
+                    boxShadow: '0 0 20px rgba(0, 255, 204, 0.25)', zIndex: 100, 
+                    width: '200px', display: 'flex', flexDirection: 'column', gap: '10px'
                 }}>
-                    <div style={{ borderBottom: '1px solid rgba(0, 255, 204, 0.3)', marginBottom: '6px', paddingBottom: '4px', fontWeight: 'bold' }}>CELL [{hoverInfo.x}, {hoverInfo.y}]</div>
-                    <div>PROBABILITY: {(getSectorProbabilityRef.current(hoverInfo.x, hoverInfo.y) * 100).toFixed(1)}%</div>
-                    <div>SCANNED: {hoverInfo.sector.scanned ? 'YES' : 'NO'}</div>
-                    <div style={{ marginTop: '6px', color: '#888' }}>SENSORS:</div>
-                    <div style={{ color: '#00ffcc' }}>MOBILE: {hoverInfo.sector.signals.mobile.toFixed(2)}</div>
-                    <div style={{ color: '#ff4444' }}>THERMAL: {hoverInfo.sector.signals.thermal.toFixed(2)}</div>
-                    <div style={{ color: '#ffff00' }}>SOUND: {hoverInfo.sector.signals.sound.toFixed(2)}</div>
-                    <div style={{ color: '#ff00ff' }}>WIFI: {hoverInfo.sector.signals.wifi.toFixed(2)}</div>
+                    <div style={{ borderBottom: '1px solid rgba(0, 255, 204, 0.3)', marginBottom: '4px', paddingBottom: '8px', fontWeight: 'bold', letterSpacing: '1px', fontSize: '0.9rem' }}>
+                        CELL [{hoverInfo.x}, {hoverInfo.y}]
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div>PROBABILITY: {(getSectorProbabilityRef.current(hoverInfo.x, hoverInfo.y) * 100).toFixed(1)}%</div>
+                        <div>SCANNED: {hoverInfo.sector.scanned ? 'YES' : 'NO'}</div>
+                        
+                        <div style={{ marginTop: '8px', color: 'var(--text-secondary)', fontSize: '0.7rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '4px', letterSpacing: '1px' }}>SENSORS:</div>
+                        <div style={{ color: '#00ffcc', display: 'flex', justifyContent: 'space-between' }}><span>MOBILE:</span> <span>{hoverInfo.sector.signals.mobile.toFixed(2)}</span></div>
+                        <div style={{ color: '#ff4444', display: 'flex', justifyContent: 'space-between' }}><span>THERMAL:</span> <span>{hoverInfo.sector.signals.thermal.toFixed(2)}</span></div>
+                        <div style={{ color: '#ffff00', display: 'flex', justifyContent: 'space-between' }}><span>SOUND:</span> <span>{hoverInfo.sector.signals.sound.toFixed(2)}</span></div>
+                        <div style={{ color: '#ff00ff', display: 'flex', justifyContent: 'space-between' }}><span>WIFI:</span> <span>{hoverInfo.sector.signals.wifi.toFixed(2)}</span></div>
+                    </div>
                 </div>
             )}
         </div>

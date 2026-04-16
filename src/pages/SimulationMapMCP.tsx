@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { Play, Pause, FileText, Globe, Map as MapIcon,  ChevronRight, Layers, Settings } from 'lucide-react';
+import { Play, Pause, FileText, Globe, Map as MapIcon, ChevronRight, Layers, Settings } from 'lucide-react';
 
 import { useSharedSimulation } from '../context/SimulationContext';
 import { useSimulationMCP } from '../hooks/useSimulationMCP';
