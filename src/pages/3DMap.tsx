@@ -7,6 +7,7 @@ import { useSharedSimulation } from '../context/SimulationContext';
 
 // --- CONFIG ---
 const MAPTILER_KEY = 'SAX29oYdDKXlxm4RKRBu'; // API key
+const DEFAULT_CENTER = { lat: 3.1319, lng: 101.6841 };
 
 export interface HeatmapPoint {
     id: string;
@@ -42,11 +43,32 @@ const ProbabilityMap3D: React.FC = () => {
     const [data, setData] = useState<HeatmapPoint[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
 
+    const [viewState, setViewState] = useState({
+        longitude: centerLocation.lng || DEFAULT_CENTER.lng,
+        latitude: centerLocation.lat || DEFAULT_CENTER.lat,
+        zoom: 14,
+        maxZoom: 18,
+        pitch: 0,
+        bearing: 0,
+    });
+
+    // Sync viewState when centerLocation changes
+    useEffect(() => {
+        setViewState(prev => ({
+            ...prev,
+            longitude: centerLocation.lng,
+            latitude: centerLocation.lat,
+            // Smoothly transition if needed, or just jump
+        }));
+    }, [centerLocation.lat, centerLocation.lng]);
+
     // Fetch building footprints and extract centroids
     const fetchOSMData = async () => {
         setLoading(true);
+        const lat = centerLocation.lat || DEFAULT_CENTER.lat;
+        const lng = centerLocation.lng || DEFAULT_CENTER.lng;
         const offset = 0.009;
-        const bbox = `${(centerLocation.lat - offset).toFixed(4)},${(centerLocation.lng - offset).toFixed(4)},${(centerLocation.lat + offset).toFixed(4)},${(centerLocation.lng + offset).toFixed(4)}`;
+        const bbox = `${(lat - offset).toFixed(4)},${(lng - offset).toFixed(4)},${(lat + offset).toFixed(4)},${(lng + offset).toFixed(4)}`;
 
         try {
             // Use the robust mirror-rotating client (now with built-in caching)
@@ -76,14 +98,6 @@ const ProbabilityMap3D: React.FC = () => {
         fetchOSMData();
     }, [centerLocation]);
 
-    const INITIAL_VIEW_STATE = {
-        longitude: centerLocation.lng,
-        latitude: centerLocation.lat,
-        zoom: 14,
-        maxZoom: 18,
-        pitch: 0,
-        bearing: 0,
-    };
 
     // Simulated Drone Scan Interaction Functionality
     const handleMapClick = useCallback((info: any, event: any) => {
@@ -172,7 +186,8 @@ const ProbabilityMap3D: React.FC = () => {
             <div style={{ flex: 1, position: 'relative', margin: 0, border: '1px solid var(--panel-border)', overflow: 'hidden' }} className="hud-panel">
                 <DeckGL
                     layers={layers}
-                    initialViewState={INITIAL_VIEW_STATE}
+                    viewState={viewState}
+                    onViewStateChange={e => setViewState(e.viewState as any)}
                     controller={true}
                     onClick={handleMapClick}
                     getCursor={() => 'crosshair'}

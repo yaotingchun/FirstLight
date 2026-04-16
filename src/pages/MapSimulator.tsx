@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { gridDataService, type GridSource, type TerrainType } from '../services/gridDataService';
 import { fetchOSMFeatures } from '../utils/osmClient';
+import { useSharedSimulation } from '../context/SimulationContext';
 
-// Center location (using the one from 3DMap.tsx for consistency)
-const MAP_CENTER = { longitude: 101.6841, latitude: 3.1319 };
+// Default constants
+const DEFAULT_MAP_CENTER = { longitude: 101.6841, latitude: 3.1319 };
 const BBOX_OFFSET = 0.009;
 const GRID_CELLS = 20;
 const DEG_STEP = (BBOX_OFFSET * 2) / GRID_CELLS; // 0.0009 degrees
@@ -74,11 +75,17 @@ const getTerrainFromTags = (tags: any): TerrainType => {
 };
 
 const MapSimulator: React.FC = () => {
+    const { centerLocation } = useSharedSimulation();
     const [points, setPoints] = useState<HeatmapPoint[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
     const [scanOverlay, setScanOverlay] = useState<number[][] | null>(null);
     const [activeSource, setActiveSource] = useState<GridSource | null>(null);
 
+    // Use context location or default
+    const mapCenter = useMemo(() => ({
+        latitude: centerLocation.lat || DEFAULT_MAP_CENTER.latitude,
+        longitude: centerLocation.lng || DEFAULT_MAP_CENTER.longitude
+    }), [centerLocation]);
 
     // Subscribe to gridDataService — when scan writes arrive, overlay them on the map
     useEffect(() => {
@@ -95,32 +102,29 @@ const MapSimulator: React.FC = () => {
         return unsubscribe;
     }, []);
 
-    const fetchOSMData = async () => {
-        setLoading(true);
-        const bbox = `${(MAP_CENTER.latitude - BBOX_OFFSET).toFixed(4)},${(MAP_CENTER.longitude - BBOX_OFFSET).toFixed(4)},${(MAP_CENTER.latitude + BBOX_OFFSET).toFixed(4)},${(MAP_CENTER.longitude + BBOX_OFFSET).toFixed(4)}`;
-        
-        try {
-            // Use the robust mirror-rotating client
-            const features = await fetchOSMFeatures(bbox);
-            
-            const newPoints: HeatmapPoint[] = features.map((f) => ({
-                id: f.id,
-                position: [f.center.lon, f.center.lat],
-                weight: getProbabilityFromTags(f.tags),
-                tags: f.tags
-            }));
-
-            setPoints(newPoints);
-        } catch (err: any) {
-            console.error("OSM Fetch Error:", err);
-        } finally {
-            setLoading(false);
-        }
-    };
-
+    // Listen for centralized terrain updates (location changes)
     useEffect(() => {
-        fetchOSMData();
+        const handleTerrainChange = () => {
+            if (gridDataService.isTerrainReady()) {
+                const rawPoints = gridDataService.getOSMPoints();
+                const mappedPoints: HeatmapPoint[] = rawPoints.map((f: any) => ({
+                    id: f.id,
+                    position: [f.center.lon, f.center.lat],
+                    weight: getProbabilityFromTags(f.tags),
+                    tags: f.tags
+                }));
+                setPoints(mappedPoints);
+                setLoading(false);
+            } else {
+                setLoading(true);
+            }
+        };
+
+        const unsubscribe = gridDataService.subscribeTerrain(handleTerrainChange);
+        handleTerrainChange(); // Initial sync
+        return unsubscribe;
     }, []);
+
 
 
 
@@ -139,8 +143,8 @@ const MapSimulator: React.FC = () => {
         const rIndex = 19 - row; 
         const cIndex = col;
 
-        const startLat = MAP_CENTER.latitude - BBOX_OFFSET;
-        const startLon = MAP_CENTER.longitude - BBOX_OFFSET;
+        const startLat = mapCenter.latitude - BBOX_OFFSET;
+        const startLon = mapCenter.longitude - BBOX_OFFSET;
         const clickLon = startLon + cIndex * DEG_STEP + DEG_STEP / 2;
         const clickLat = startLat + rIndex * DEG_STEP + DEG_STEP / 2;
 
@@ -161,8 +165,8 @@ const MapSimulator: React.FC = () => {
 
     const gridData = useMemo(() => {
         const cells: GridDataPoint[] = [];
-        const startLat = MAP_CENTER.latitude - BBOX_OFFSET;
-        const startLon = MAP_CENTER.longitude - BBOX_OFFSET;
+        const startLat = mapCenter.latitude - BBOX_OFFSET;
+        const startLon = mapCenter.longitude - BBOX_OFFSET;
 
         for (let r = 0; r < GRID_CELLS; r++) {
             for (let c = 0; c < GRID_CELLS; c++) {

@@ -86,6 +86,7 @@ class GridDataService {
     private weights: GridWeightMap;
     private sensorWeights: SensorWeights;
     private terrainGrid: TerrainGrid;
+    private osmPoints: any[] = [];
     private terrainReady = false;
     private activeSource: GridSource | null = null;
     private listeners: ((weights: GridWeightMap, sensorWeights: SensorWeights) => void)[] = [];
@@ -95,14 +96,21 @@ class GridDataService {
         this.weights = Array.from({ length: 20 }, () => new Array(20).fill(0.05));
         this.sensorWeights = JSON.parse(JSON.stringify(INITIAL_SENSORS));
         this.terrainGrid = Array.from({ length: 20 }, () => new Array<TerrainType>(20).fill('Open Field'));
-        // Auto-fetch OSM terrain on startup
-        this.fetchOSMTerrain();
+        // Initial fetch for default location
+        this.syncToLocation(MAP_CENTER.latitude, MAP_CENTER.longitude);
     }
 
-    // ── OSM Terrain Fetch (runs once at startup) ────────────────────────────
-    private async fetchOSMTerrain() {
+    /** 
+     * Centralized OSM Terrain Sync.
+     * Fetches building data for a location and builds the 20x20 terrain/probability grid.
+     */
+    public async syncToLocation(lat: number, lng: number) {
+        console.log(`[GridDataService] Syncing to location: ${lat}, ${lng}...`);
+        this.terrainReady = false; 
+        this.notifyTerrainUpdate(); // Notify and trigger 'loading' state if needed
+
         try {
-            const bbox = `${(MAP_CENTER.latitude - BBOX_OFFSET).toFixed(4)},${(MAP_CENTER.longitude - BBOX_OFFSET).toFixed(4)},${(MAP_CENTER.latitude + BBOX_OFFSET).toFixed(4)},${(MAP_CENTER.longitude + BBOX_OFFSET).toFixed(4)}`;
+            const bbox = `${(lat - BBOX_OFFSET).toFixed(4)},${(lng - BBOX_OFFSET).toFixed(4)},${(lat + BBOX_OFFSET).toFixed(4)},${(lng + BBOX_OFFSET).toFixed(4)}`;
             
             // Use the robust mirror-rotating client
             const points = await fetchOSMFeatures(bbox);
@@ -114,8 +122,8 @@ class GridDataService {
                 new Array(20).fill(0.05)
             );
 
-            const startLat = MAP_CENTER.latitude - BBOX_OFFSET;
-            const startLon = MAP_CENTER.longitude - BBOX_OFFSET;
+            const startLat = lat - BBOX_OFFSET;
+            const startLon = lng - BBOX_OFFSET;
 
             for (let r = 0; r < GRID_CELLS; r++) {
                 for (let c = 0; c < GRID_CELLS; c++) {
@@ -127,7 +135,7 @@ class GridDataService {
                         p.center.lon >= lonMin && p.center.lon < lonMin + DEG_STEP
                     );
 
-                    // Row mapping: r=0 is south (bottom), grid index 0 = top
+                    // Row mapping: r=0 is south (bottom), grid index 0 = top in SVG/Simulation
                     const gridRow = GRID_CELLS - 1 - r;
 
                     if (inside.length > 0) {
@@ -151,16 +159,30 @@ class GridDataService {
                 }
             }
 
+            this.osmPoints = points;
             this.terrainGrid = terrain;
             this.terrainReady = true;
-            // Set initial prediction weights from OSM (won't overwrite scan)
+            // Set initial prediction weights from OSM
             this.setWeights(probWeights, 'prediction');
-            // Notify terrain subscribers
-            this.terrainListeners.forEach(fn => fn());
-            console.log('[GridDataService] OSM terrain loaded — terrain & weights ready.');
+            
+            // Notify all listeners that terrain is ready/changed
+            this.notifyTerrainUpdate();
+            console.log('[GridDataService] Terrain sync complete.');
         } catch (err) {
-            console.warn('[GridDataService] OSM terrain fetch failed, using fallback.', err);
+            console.warn('[GridDataService] OSM terrain fetch failed.', err);
+            this.terrainReady = true; // Release lock even on failure
+            this.notifyTerrainUpdate();
         }
+    }
+
+    /** Set raw OSM points */
+    setOSMPoints(points: any[]) { this.osmPoints = points; }
+
+    /** Get raw OSM points */
+    getOSMPoints(): any[] { return this.osmPoints; }
+
+    private notifyTerrainUpdate() {
+        this.terrainListeners.forEach(fn => fn());
     }
 
     /** Set the 20×20 terrain grid */
@@ -176,6 +198,14 @@ class GridDataService {
     onTerrainReady(fn: () => void) {
         if (this.terrainReady) { fn(); return; }
         this.terrainListeners.push(fn);
+    }
+
+    /** Permanent subscription to terrain changes */
+    subscribeTerrain(fn: () => void) {
+        this.terrainListeners.push(fn);
+        return () => {
+            this.terrainListeners = this.terrainListeners.filter(l => l !== fn);
+        };
     }
 
     /** Claim write authority — lower-priority sources will be blocked. */
