@@ -36,7 +36,6 @@ export const DroneCameraStrip: React.FC<DroneCameraStripProps> = ({ drones, canv
                 gap: '8px',
                 fontFamily: 'monospace'
             }}>
-                <div style={{ width: '4px', height: '12px', background: '#00ffcc' }} />
                 LIVE OPTICS FEED [SWARM]
             </div>
 
