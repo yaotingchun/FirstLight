@@ -167,21 +167,44 @@ export const useSimulationEngine = (
     }, []);
 
     useEffect(() => {
-        if (gridDataService.isTerrainReady()) {
-            const newSurvivors = createSurvivors();
-            const newGrid = createGrid(newSurvivors);
-            gridRef.current = newGrid;
-            survivorsRef.current = newSurvivors;
-            setTickFlip(f => f + 1);
-        } else {
-            gridDataService.onTerrainReady(() => {
+        gridDataService.syncToLocation(centerLocation.lat, centerLocation.lng);
+    }, [centerLocation.lat, centerLocation.lng]);
+
+    useEffect(() => {
+        const handleTerrainUpdate = () => {
+            if (gridDataService.isTerrainReady()) {
+                console.log('[useSimulationEngine] World geometry changed. Performing tactical reset...');
+                
+                // 1. Rebuild basic world
                 const newSurvivors = createSurvivors();
                 const newGrid = createGrid(newSurvivors);
                 gridRef.current = newGrid;
                 survivorsRef.current = newSurvivors;
+
+                // 2. Reset tactical state
+                pinsRef.current = [];
+                commLinksRef.current = [];
+                swarmMessagesRef.current = [];
+                timeRef.current = 0;
+                
+                // 3. Reset drones to base
+                dronesRef.current = createDrones(randomizeBattery, customBatteries);
+                
+                // 4. Stop simulation
+                setRunning(false);
+
                 setTickFlip(f => f + 1);
-            });
+            }
+        };
+
+        const unsubscribe = gridDataService.subscribeTerrain(handleTerrainUpdate);
+        
+        // Initial check in case it's already ready
+        if (gridDataService.isTerrainReady()) {
+            handleTerrainUpdate();
         }
+
+        return unsubscribe;
     }, []);
 
     const finalizeDiscovery = useCallback((survivorId: string, droneId: string, sx: number, sy: number) => {

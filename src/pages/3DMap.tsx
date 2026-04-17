@@ -7,6 +7,7 @@ import { useSharedSimulation } from '../context/SimulationContext';
 
 // --- CONFIG ---
 const MAPTILER_KEY = 'SAX29oYdDKXlxm4RKRBu'; // API key
+const DEFAULT_CENTER = { lat: 3.1319, lng: 101.6841 };
 
 export interface HeatmapPoint {
     id: string;
@@ -42,11 +43,32 @@ const ProbabilityMap3D: React.FC = () => {
     const [data, setData] = useState<HeatmapPoint[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
 
+    const [viewState, setViewState] = useState({
+        longitude: centerLocation.lng || DEFAULT_CENTER.lng,
+        latitude: centerLocation.lat || DEFAULT_CENTER.lat,
+        zoom: 14,
+        maxZoom: 18,
+        pitch: 0,
+        bearing: 0,
+    });
+
+    // Sync viewState when centerLocation changes
+    useEffect(() => {
+        setViewState(prev => ({
+            ...prev,
+            longitude: centerLocation.lng,
+            latitude: centerLocation.lat,
+            // Smoothly transition if needed, or just jump
+        }));
+    }, [centerLocation.lat, centerLocation.lng]);
+
     // Fetch building footprints and extract centroids
     const fetchOSMData = async () => {
         setLoading(true);
+        const lat = centerLocation.lat || DEFAULT_CENTER.lat;
+        const lng = centerLocation.lng || DEFAULT_CENTER.lng;
         const offset = 0.009;
-        const bbox = `${(centerLocation.lat - offset).toFixed(4)},${(centerLocation.lng - offset).toFixed(4)},${(centerLocation.lat + offset).toFixed(4)},${(centerLocation.lng + offset).toFixed(4)}`;
+        const bbox = `${(lat - offset).toFixed(4)},${(lng - offset).toFixed(4)},${(lat + offset).toFixed(4)},${(lng + offset).toFixed(4)}`;
 
         try {
             // Use the robust mirror-rotating client (now with built-in caching)
@@ -76,14 +98,6 @@ const ProbabilityMap3D: React.FC = () => {
         fetchOSMData();
     }, [centerLocation]);
 
-    const INITIAL_VIEW_STATE = {
-        longitude: centerLocation.lng,
-        latitude: centerLocation.lat,
-        zoom: 14,
-        maxZoom: 18,
-        pitch: 0,
-        bearing: 0,
-    };
 
     // Simulated Drone Scan Interaction Functionality
     const handleMapClick = useCallback((info: any, event: any) => {
@@ -172,7 +186,8 @@ const ProbabilityMap3D: React.FC = () => {
             <div style={{ flex: 1, position: 'relative', margin: 0, border: '1px solid var(--panel-border)', overflow: 'hidden' }} className="hud-panel">
                 <DeckGL
                     layers={layers}
-                    initialViewState={INITIAL_VIEW_STATE}
+                    viewState={viewState}
+                    onViewStateChange={e => setViewState(e.viewState as any)}
                     controller={true}
                     onClick={handleMapClick}
                     getCursor={() => 'crosshair'}
@@ -184,33 +199,34 @@ const ProbabilityMap3D: React.FC = () => {
                 </DeckGL>
 
                 {/* Legend Overlay */}
-                <div style={{ position: 'absolute', bottom: 24, left: 24, background: 'var(--panel-bg)', padding: '16px', border: '1px solid var(--panel-border)', backdropFilter: 'blur(4px)', display: 'flex', flexDirection: 'column', gap: '8px', zIndex: 10 }}>
-                    <h4 className="hud-text" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>PROBABILITY DENSITY</h4>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', fontFamily: 'var(--font-mono)' }}>
-                        <div style={{ width: 16, height: 16, background: 'rgb(255, 0, 0)' }}></div>
-                        Critical (Residential, ≥80%)
+                <div style={{ position: 'absolute', bottom: 24, left: 24, background: 'var(--panel-bg)', padding: '16px', border: '1px solid var(--panel-border)', backdropFilter: 'blur(4px)', display: 'flex', flexDirection: 'column', gap: '14px', zIndex: 10, width: '200px' }}>
+                    <h4 className="hud-text" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>PROBABILITY DENSITY</h4>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>
+                        <div style={{ width: 14, height: 14, background: 'rgb(255, 0, 0)', flexShrink: 0 }}></div>
+                        Critical (Res, ≥80%)
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', fontFamily: 'var(--font-mono)' }}>
-                        <div style={{ width: 16, height: 16, background: 'rgb(255, 165, 0)' }}></div>
-                        High (Academic, ≥50%)
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>
+                        <div style={{ width: 14, height: 14, background: 'rgb(255, 165, 0)', flexShrink: 0 }}></div>
+                        High (Acad, ≥50%)
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', fontFamily: 'var(--font-mono)' }}>
-                        <div style={{ width: 16, height: 16, background: 'rgb(0, 255, 0)' }}></div>
-                        Medium (Offices, ≥30%)
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>
+                        <div style={{ width: 14, height: 14, background: 'rgb(0, 255, 0)', flexShrink: 0 }}></div>
+                        Med (Office, ≥30%)
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', fontFamily: 'var(--font-mono)' }}>
-                        <div style={{ width: 16, height: 16, background: 'rgba(0, 0, 255, 0.5)' }}></div>
-                        Low (Fields/Open, ≤20%)
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.75rem', fontFamily: 'var(--font-mono)' }}>
+                        <div style={{ width: 14, height: 14, background: 'rgba(0, 0, 255, 0.5)', flexShrink: 0 }}></div>
+                        Low (Open, ≤20%)
                     </div>
-
-                    <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--panel-border)' }}>
-                        <h4 className="hud-text" style={{ fontSize: '0.7rem', color: 'var(--warning)', marginBottom: '8px' }}>DRONE SIMULATION CONTROLS</h4>
-                        <div style={{ fontSize: '0.7rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                            <strong>Left Click:</strong> +Heat (Motion detected)<br />
-                            <strong>Shift + Left Click:</strong> -Heat (Area clear)<br />
+ 
+                    <div style={{ marginTop: '4px', paddingTop: '12px', borderTop: '1px solid var(--panel-border)' }}>
+                        <h4 className="hud-text" style={{ fontSize: '0.7rem', color: 'var(--warning)', marginBottom: '10px' }}>DRONE SIMULATION CONTROLS</h4>
+                        <div style={{ fontSize: '0.65rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', lineHeight: 1.8 }}>
+                            <strong>Left Click:</strong> <br/>+Heat (Motion detected)<br />
+                            <strong>Shift + Click:</strong> <br/>-Heat (Area clear)<br />
                         </div>
                     </div>
                 </div>
+</div>
 
                 <div style={{ position: 'absolute', top: 24, right: 24, padding: '12px', background: 'rgba(0, 255, 204, 0.1)', border: '1px dashed var(--accent-primary)', backdropFilter: 'blur(4px)', zIndex: 10 }}>
                     <div style={{ fontSize: '0.85rem', fontFamily: 'var(--font-mono)', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center' }}>
@@ -219,7 +235,6 @@ const ProbabilityMap3D: React.FC = () => {
                     </div>
                 </div>
             </div>
-        </div>
     );
 };
 

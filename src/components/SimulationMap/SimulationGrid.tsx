@@ -99,13 +99,13 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
     }, [onFinishDrawing]);
 
     return (
-        <div className="hud-panel" style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', paddingLeft: '40px' }}>
+        <div className="hud-panel" style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div style={{ 
                 position: 'relative', 
                 width: GRID_W * CELL_SIZE, 
                 height: GRID_H * CELL_SIZE,
                 transition: 'transform 0.4s cubic-bezier(0.22, 1, 0.36, 1)',
-                transform: selectedPin ? 'translateY(75px)' : 'translateY(0)'
+                transform: 'translateY(0)'
             }}>
             {showActualMap && (
                 <div style={{ position: 'absolute', width: '100%', height: '100%', overflow: 'hidden', pointerEvents: 'none' }}>
@@ -201,10 +201,10 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
                             {/* Sensor Values Overlay */}
                             {!showTrails && showSensors && (
                                 <g style={{ pointerEvents: 'none' }}>
-                                    <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 8} fontSize="5" fill="#00ffcc" opacity="0.9" fontFamily="var(--font-mono)">M:{cell.signals.mobile.toFixed(1)}</text>
-                                    <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 15} fontSize="5" fill="#ff4444" opacity="0.9" fontFamily="var(--font-mono)">T:{cell.signals.thermal.toFixed(1)}</text>
-                                    <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 22} fontSize="5" fill="#ffff00" opacity="0.9" fontFamily="var(--font-mono)">S:{cell.signals.sound.toFixed(1)}</text>
-                                    <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 29} fontSize="5" fill="#ff00ff" opacity="0.9" fontFamily="var(--font-mono)">W:{cell.signals.wifi.toFixed(1)}</text>
+                                    <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 9} fontSize="6.5" fill="#00ffcc" opacity="0.95" fontFamily="var(--font-mono)">M:{cell.signals.mobile.toFixed(1)}</text>
+                                    <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 17} fontSize="6.5" fill="#ff4444" opacity="0.95" fontFamily="var(--font-mono)">T:{cell.signals.thermal.toFixed(1)}</text>
+                                    <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 25} fontSize="6.5" fill="#ffff00" opacity="0.95" fontFamily="var(--font-mono)">S:{cell.signals.sound.toFixed(1)}</text>
+                                    <text x={x * CELL_SIZE + 2} y={y * CELL_SIZE + 33} fontSize="6.5" fill="#ff00ff" opacity="0.95" fontFamily="var(--font-mono)">W:{cell.signals.wifi.toFixed(1)}</text>
 
                                     {/* Survivor Ground Truth Indicator */}
                                     {survivors.some((s: HiddenSurvivor) => s.x === x && s.y === y) && (
@@ -492,33 +492,46 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
             </svg>
 
 
-            {/* Map Scale - Positioned exactly below the rightmost grid cell */}
+            {/* Map Scale - Left side of grid, vertical bar with horizontal readable text */}
             <div style={{
                 position: 'absolute',
-                bottom: -32,
-                right: 0,
+                left: -44,
+                bottom: 0,
+                top: 0,
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
+                justifyContent: 'flex-end',
                 pointerEvents: 'none',
                 zIndex: 100,
                 WebkitFontSmoothing: 'antialiased',
                 MozOsxFontSmoothing: 'grayscale'
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', width: CELL_SIZE, justifyContent: 'space-between' }}>
-                    <div style={{ width: 0, height: 0, borderTop: '4px solid transparent', borderBottom: '4px solid transparent', borderRight: '6px solid rgba(255,255,255,0.95)' }} />
-                    <div style={{ flex: 1, height: '1.5px', background: 'rgba(255,255,255,0.95)' }} />
-                    <div style={{ width: 0, height: 0, borderTop: '4px solid transparent', borderBottom: '4px solid transparent', borderLeft: '6px solid rgba(255,255,255,0.95)' }} />
-                </div>
-                <div style={{ 
-                    fontSize: '11px', 
-                    color: '#ffffff', 
-                    fontFamily: 'var(--font-mono)', 
-                    marginTop: '4px',
-                    fontWeight: 'bold',
-                    letterSpacing: '1px'
-                }}>
-                    100m
+                <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '4px' }}>
+                    {/* Text stays horizontal, to the left */}
+                    <div style={{ 
+                        fontSize: '11px', 
+                        color: '#ffffff', 
+                        fontFamily: 'var(--font-mono)', 
+                        fontWeight: 'bold',
+                        letterSpacing: '1px'
+                    }}>
+                        100m
+                    </div>
+                    {/* SVG Arrow - Perfectly matches CELL_SIZE height */}
+                    <svg 
+                        width="12" 
+                        height={CELL_SIZE} 
+                        viewBox={`0 0 12 ${CELL_SIZE}`} 
+                        style={{ display: 'block', overflow: 'visible' }}
+                    >
+                        {/* Top Tip */}
+                        <path d="M 6 0 L 10 7 L 2 7 Z" fill="rgba(255,255,255,0.95)" />
+                        {/* Vertical Line */}
+                        <rect x="5.25" y="7" width="1.5" height={CELL_SIZE - 14} fill="rgba(255,255,255,0.95)" />
+                        {/* Bottom Tip */}
+                        <path d={`M 6 ${CELL_SIZE} L 10 ${CELL_SIZE - 7} L 2 ${CELL_SIZE - 7} Z`} fill="rgba(255,255,255,0.95)" />
+                    </svg>
                 </div>
             </div>
         </div>
@@ -626,89 +639,18 @@ export const SimulationGrid: React.FC<SimulationGridProps> = ({
 
             {/* Legend */}
             <div style={{ position: 'absolute', bottom: 16, right: 16, display: 'flex', gap: '16px' }}>
-                <div style={{ background: 'rgba(0,0,0,0.8)', border: '1px solid var(--panel-border)', padding: '12px', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', backdropFilter: 'blur(4px)' }}>
-                    <div style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>MAP LEGEND</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #00ffcc' }}></div> Wide-Scan Mode</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #ff4444' }}></div> Micro-Scan Mode</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #0077ff' }}></div> Relay Drone</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #ffa500' }}></div> Charging</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: 10, height: 10, border: '1px solid #ff4444' }}></div> Disconnected</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#00ffcc' }}><MapPin size={12} /> Confirmed Survivor</div>
+                <div style={{ background: 'rgba(0,0,0,0.8)', border: '1px solid var(--panel-border)', padding: '12px', fontFamily: 'var(--font-mono)', fontSize: '0.75rem', backdropFilter: 'blur(4px)', width: '200px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ color: 'var(--text-secondary)', marginBottom: '4px', fontSize: '0.7rem' }}>MAP LEGEND</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><div style={{ width: 12, height: 12, border: '1px solid #00ffcc', flexShrink: 0 }}></div> Wide-Scan Mode</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><div style={{ width: 12, height: 12, border: '1px solid #ff4444', flexShrink: 0 }}></div> Micro-Scan Mode</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><div style={{ width: 12, height: 12, border: '1px solid #0077ff', flexShrink: 0 }}></div> Relay Drone</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><div style={{ width: 12, height: 12, border: '1px solid #ffa500', flexShrink: 0 }}></div> Charging</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><div style={{ width: 12, height: 12, border: '1px solid #ff4444', flexShrink: 0 }}></div> Disconnected</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#00ffcc' }}><MapPin size={12} style={{ flexShrink: 0 }} /> Confirmed Survivor</div>
                 </div>
             </div>
 
-            {/* Glassmorphism Survivor Pin Popup */}
-            {selectedPin && (
-                <div 
-                    key={`${selectedPin.id}-${pinPopupType}`}
-                    className="pinpoint-popup"
-                    style={{
-                        top: 20,
-                        left: 0,
-                        right: 0,
-                        margin: '0 auto',
-                        zIndex: 1000,
-                        display: 'flex',
-                        flexDirection: 'row',
-                        minWidth: '540px',
-                        maxWidth: '550px',
-                        height: '126px',
-                        padding: 0
-                    }}
-                >
-                    {/* Left: Image Preview (if available) */}
-                    {selectedPin.info.img && (
-                        <div style={{ position: 'relative', width: '224px', flexShrink: 0, backgroundColor: 'rgba(0,0,0,0.5)', overflow: 'hidden', borderRight: '1px solid rgba(0, 255, 204, 0.2)' }}>
-                            <img 
-                                src={selectedPin.info.img} 
-                                alt="Detected content" 
-                                style={{ width: '100%', height: '100%', objectFit: 'cover', mixBlendMode: 'screen' }} 
-                            />
-                            <div style={{ position: 'absolute', top: 6, left: 6, background: 'rgba(255,68,68,0.85)', color: '#fff', fontSize: '0.6rem', padding: '2px 6px', borderRadius: '2px', fontWeight: 'bold', border: '1px solid #fff' }}>
-                                LIVE CAM
-                            </div>
-                        </div>
-                    )}
 
-                    {/* Right: Info Area */}
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 14px', borderBottom: '1px solid rgba(0, 255, 204, 0.2)' }}>
-                            <h4 style={{ margin: 0, fontSize: '0.85rem', color: '#00ffcc', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold' }}>
-                                <Radio size={14} className="pulse-fast" /> SIGNAL UPLINK
-                            </h4>
-                            {pinPopupType === 'clicked' && (
-                                <button 
-                                    onClick={() => handlePinClick(null)} 
-                                    style={{ background: 'transparent', border: 'none', color: '#00ffcc', cursor: 'pointer', display: 'flex', opacity: 0.6 }}
-                                >
-                                    <X size={14} />
-                                </button>
-                            )}
-                        </div>
-                        
-                        <div style={{ padding: '8px 14px', flex: 1, display: 'flex', flexDirection: 'column' }}>
-                            <div style={{ fontFamily: 'var(--font-main)', fontSize: '0.75rem', letterSpacing: '0.05em', color: '#fff', marginBottom: '6px', padding: '6px 10px', background: 'rgba(0, 255, 204, 0.1)', borderLeft: '2px solid #00ffcc', lineHeight: 1.4, flex: 1, overflow: 'hidden' }}>
-                                {selectedPin.info.message}
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <span>DRONE BATTERY:</span>
-                                    <span style={{ color: '#ff4444', fontWeight: 'bold' }}>{selectedPin.info.battery}</span>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <span>LOCATION:</span>
-                                    <span>{(centerLocation.lat - (selectedPin.y - 10) * 0.0009).toFixed(4)}, {(centerLocation.lng + (selectedPin.x - 10) * 0.0009).toFixed(4)}</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Timer Bar ONLY for auto mode */}
-                    {pinPopupType === 'auto' && (
-                        <div className="popup-timer-bar" style={{ position: 'absolute', bottom: 0, left: 0, width: '100%', zIndex: 10 }} />
-                    )}
-                </div>
-            )}
         </div>
     );
 };
