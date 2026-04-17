@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { Play, Pause, FileText, Globe, Map as MapIcon, ChevronRight, Layers, Settings } from 'lucide-react';
+import { Play, Pause, FileText, Globe, Map as MapIcon, ChevronRight, Layers, Settings, Radio, X } from 'lucide-react';
 
 import { useSharedSimulation } from '../context/SimulationContext';
 import { useSimulationMCP } from '../hooks/useSimulationMCP';
@@ -52,6 +52,7 @@ const SimulationMapMCP: React.FC = () => {
     const [show3D, setShow3D] = React.useState(false);
     const [showDroneCam, setShowDroneCam] = React.useState(false);
     const [has3DMounted, setHas3DMounted] = React.useState(false);
+
 
     const countCellsInArea = React.useCallback((area: { x: number; y: number }[]) => {
         if (!area || area.length < 3) return 0;
@@ -225,7 +226,7 @@ const SimulationMapMCP: React.FC = () => {
                 </div>
             </header>
 
-            <div style={{ flex: 1, display: 'flex', gap: '12px', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ flex: 1, display: 'flex', gap: '12px', position: 'relative' }}>
                 {/* Wrapper ensures SimulationGrid retains its original flex sizing. 
                     3D canvas sits securely on top without perturbing the 2D layout. */}
                 <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
@@ -289,6 +290,81 @@ const SimulationMapMCP: React.FC = () => {
                                 searchArea={searchArea}
                                 searchScanActive={searchScanActive}
                             />
+                        </div>
+                    )}
+
+                    {/* Glassmorphism Survivor Pin Popup - Centered over the grid area specifically, ignoring the dashboard */}
+                    {selectedPin && (
+                        <div 
+                            className="pinpoint-popup"
+                            style={{
+                                position: 'absolute',
+                                top: '-99px', /* Aligns to absolute top of the viewport (offsets the ~99px header area) */
+                                left: 0,
+                                right: 0,
+                                margin: '0 auto',
+                                zIndex: 2000,
+                                display: 'flex',
+                                flexDirection: 'row',
+                                minWidth: '540px',
+                                maxWidth: '550px',
+                                height: '126px',
+                                padding: 0
+                            }}
+                        >
+                            {/* Left: Image Preview (if available) */}
+                            {selectedPin.info.img && (
+                                <div style={{ position: 'relative', width: '224px', flexShrink: 0, backgroundColor: 'rgba(0,0,0,0.5)', overflow: 'hidden', borderRight: '1px solid rgba(0, 255, 204, 0.2)' }}>
+                                    <img 
+                                        key={selectedPin.info.img}
+                                        src={selectedPin.info.img} 
+                                        alt="Detected content" 
+                                        decoding="sync"
+                                        style={{ width: '100%', height: '100%', objectFit: 'cover', color: 'transparent' }} 
+                                    />
+                                    <div style={{ position: 'absolute', top: 6, left: 6, background: 'rgba(255,68,68,0.85)', color: '#fff', fontSize: '0.6rem', padding: '2px 6px', borderRadius: '2px', fontWeight: 'bold', border: '1px solid #fff' }}>
+                                        LIVE CAM
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Right: Info Area */}
+                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 14px', borderBottom: '1px solid rgba(0, 255, 204, 0.2)' }}>
+                                    <h4 style={{ margin: 0, fontSize: '0.85rem', color: '#00ffcc', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold' }}>
+                                        <Radio size={14} className="pulse-fast" /> SIGNAL UPLINK
+                                    </h4>
+                                    {pinPopupType === 'clicked' && (
+                                        <button 
+                                            onClick={() => handlePinClick(null)} 
+                                            style={{ background: 'transparent', border: 'none', color: '#00ffcc', cursor: 'pointer', display: 'flex', opacity: 0.6 }}
+                                        >
+                                            <X size={14} />
+                                        </button>
+                                    )}
+                                </div>
+                                
+                                <div style={{ padding: '8px 14px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                                    <div style={{ fontFamily: 'var(--font-main)', fontSize: '0.75rem', letterSpacing: '0.05em', color: '#fff', marginBottom: '6px', padding: '6px 10px', background: 'rgba(0, 255, 204, 0.1)', borderLeft: '2px solid #00ffcc', lineHeight: 1.4, flex: 1, overflow: 'hidden' }}>
+                                        {selectedPin.info.message}
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <span>DRONE BATTERY:</span>
+                                            <span style={{ color: '#ff4444', fontWeight: 'bold' }}>{selectedPin.info.battery}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <span>LOCATION:</span>
+                                            <span>{(centerLocation.lat - (selectedPin.y - 10) * 0.0009).toFixed(4)}, {(centerLocation.lng + (selectedPin.x - 10) * 0.0009).toFixed(4)}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Timer Bar ONLY for auto mode */}
+                            {pinPopupType === 'auto' && (
+                                <div className="popup-timer-bar" style={{ position: 'absolute', bottom: 0, left: 0, width: '100%', zIndex: 10 }} />
+                            )}
                         </div>
                     )}
                 </div>
@@ -444,6 +520,24 @@ const SimulationMapMCP: React.FC = () => {
                 drones={dronesRef.current}
                 updateDroneBattery={updateDroneBattery}
             />
+
+            {/* Hidden image preload rack - forces GPU decode of all mock images at startup
+                so popup image renders instantly with zero decode delay */}
+            <div aria-hidden="true" style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden', opacity: 0, pointerEvents: 'none' }}>
+                {[
+                    '/mock_images/thermal1.png',
+                    '/mock_images/thermal2.png',
+                    '/mock_images/thermal3.png',
+                    '/mock_images/medical1.png',
+                    '/mock_images/medical2.png',
+                    '/mock_images/debris1.png',
+                    '/mock_images/debris2.png',
+                    '/mock_images/debris3.png',
+                    '/mock_images/empty.png',
+                ].map(src => (
+                    <img key={src} src={src} alt="" width={1} height={1} />
+                ))}
+            </div>
 
             <style>{`
                 @keyframes spin { 100% { transform: rotate(360deg); } }

@@ -235,7 +235,6 @@ const ProbabilityMap3D: React.FC = () => {
                     </div>
                 </div>
             </div>
-        </div>
     );
 };
 
