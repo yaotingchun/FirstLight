@@ -12,7 +12,7 @@ import {
     createGrid, createDrones, createSurvivors
 } from '../utils/simulationSetup';
 import {
-    GRID_W, GRID_H, THRESHOLD_MICRO, THRESHOLD_FOUND, SIM_TICK_MS,
+    GRID_W, GRID_H, THRESHOLD_MICRO, THRESHOLD_FOUND,
     ZONE_PIPELINE_INTERVAL, COMM_RANGE_DRONE,
     COMM_RANGE_RELAY, COMM_RANGE_BASE, RELAY_LOW_BATTERY_THRESHOLD,
     RELAY_TAKEOVER_MIN_BATTERY, RELAY_BASE_DOCK_EPSILON, RELAY_DEFAULT_TARGET,
@@ -86,11 +86,29 @@ export const useSimulationEngine = (
         averageZoneCoverage: 0,
         missionTimeSec: 0,
         meanProbabilityScanned: 0,
+        survivorFoundCount: 0,
         totalScans: 0,
         totalUniqueScans: 0,
         totalRepeatScans: 0,
         uniqueProbSum: 0,
     });
+    const missionAccumulatedMsRef = useRef<number>(0);
+    const missionRunStartedAtMsRef = useRef<number | null>(null);
+
+    const nowMs = useCallback(() => {
+        if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+            return performance.now();
+        }
+        return Date.now();
+    }, []);
+
+    const syncMissionElapsedTime = useCallback(() => {
+        const startedAt = missionRunStartedAtMsRef.current;
+        const elapsedMs = startedAt !== null
+            ? missionAccumulatedMsRef.current + (nowMs() - startedAt)
+            : missionAccumulatedMsRef.current;
+        metricsRef.current.missionTimeSec = Math.max(0, elapsedMs / 1000);
+    }, [nowMs]);
 
     const setSearchArea = useCallback((area: Point[]) => {
         setSearchAreaState(area);
@@ -167,6 +185,19 @@ export const useSimulationEngine = (
     }, []);
 
     useEffect(() => {
+        if (running) {
+            if (missionRunStartedAtMsRef.current === null) {
+                missionRunStartedAtMsRef.current = nowMs();
+            }
+        } else if (missionRunStartedAtMsRef.current !== null) {
+            missionAccumulatedMsRef.current += nowMs() - missionRunStartedAtMsRef.current;
+            missionRunStartedAtMsRef.current = null;
+        }
+
+        syncMissionElapsedTime();
+    }, [running, nowMs, syncMissionElapsedTime]);
+
+    useEffect(() => {
         gridDataService.syncToLocation(centerLocation.lat, centerLocation.lng);
     }, [centerLocation.lat, centerLocation.lng]);
 
@@ -186,6 +217,8 @@ export const useSimulationEngine = (
                 commLinksRef.current = [];
                 swarmMessagesRef.current = [];
                 timeRef.current = 0;
+                missionAccumulatedMsRef.current = 0;
+                missionRunStartedAtMsRef.current = null;
                 
                 // 3. Reset drones to base
                 dronesRef.current = createDrones(randomizeBattery, customBatteries);
@@ -259,6 +292,7 @@ export const useSimulationEngine = (
         if (!existingPin) {
             newPin = { id: survivor.id, x: sx, y: sy, info: survivor.info };
             pinsRef.current.push(newPin);
+            metricsRef.current.survivorFoundCount = pinsRef.current.length;
         } else {
             newPin = existingPin;
         }
@@ -306,6 +340,8 @@ export const useSimulationEngine = (
         sensorWeightsRef.current = JSON.parse(JSON.stringify(INITIAL_SENSORS));
         gridDataService.setSensorWeights(sensorWeightsRef.current);
         timeRef.current = 0;
+        missionAccumulatedMsRef.current = 0;
+        missionRunStartedAtMsRef.current = null;
 
         missionReturnTriggeredRef.current = false;
         missionStopHandledRef.current = false;
@@ -334,6 +370,7 @@ export const useSimulationEngine = (
             averageZoneCoverage: 0,
             missionTimeSec: 0,
             meanProbabilityScanned: 0,
+            survivorFoundCount: 0,
             totalScans: 0,
             totalUniqueScans: 0,
             totalRepeatScans: 0,
@@ -368,6 +405,7 @@ export const useSimulationEngine = (
 
     const performTickCore = useCallback((onMcpSyncRequest: () => void, onMcpCommandProcessRequest: () => void, onRelaySwapDecisionMade: (preferredId: string, msg: string) => void) => {
         timeRef.current++;
+        syncMissionElapsedTime();
         aiReconnectedUntilTickRef.current.forEach((untilTick, droneId) => {
             if (untilTick <= timeRef.current) aiReconnectedUntilTickRef.current.delete(droneId);
         });
@@ -1403,8 +1441,6 @@ export const useSimulationEngine = (
                     }
                 }
             }
-
-            metricsRef.current.missionTimeSec = timeRef.current * (SIM_TICK_MS / 1000);
         }
 
         if (missionComplete && !missionStopHandledRef.current) {
@@ -1439,7 +1475,7 @@ export const useSimulationEngine = (
         }
 
         setTickFlip(f => f + 1);
-    }, [finalizeDiscovery]);
+    }, [finalizeDiscovery, syncMissionElapsedTime]);
 
     const handlePinClick = useCallback((pin: FoundPin | null) => {
         if (!pin || selectedPin?.id === pin?.id) {

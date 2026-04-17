@@ -11,7 +11,7 @@ interface SimulationDashboardProps {
         totalUniqueScans: number;
         missionTimeSec: number;
         averageZoneCoverage: number;
-        meanProbabilityScanned: number;
+        survivorFoundCount: number;
         repeatedScanRate: number;
         totalScans: number;
     };
@@ -119,10 +119,10 @@ export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
                     {/* Metric: Mean Probability */}
                     <div style={{ padding: '10px', border: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.4)', position: 'relative', overflow: 'hidden' }}>
                         <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
-                            MEAN PROB
+                            SURVIVORS FOUND
                         </div>
-                        <div style={{ fontSize: '1.2rem', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
-                            {metrics.meanProbabilityScanned.toFixed(3)}
+                        <div style={{ fontSize: '1.2rem', color: running ? '#00ffcc' : 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+                            {metrics.survivorFoundCount.toLocaleString()}
                         </div>
                     </div>
                 </div>
