@@ -160,7 +160,7 @@ export const createGrid = (survivors?: HiddenSurvivor[]): Sector[][] => {
     return g;
 };
 
-export const createDrones = (randomizeBattery: boolean = true, customBatteries?: Record<string, number>): Drone[] => {
+export const createDrones = (randomizeBattery: boolean = false, customBatteries?: Record<string, number>): Drone[] => {
     const bx = BASE_STATION.x;
     const by = BASE_STATION.y;
     // Departure stagger: drones flying to distant targets leave first so all arrive roughly together.
