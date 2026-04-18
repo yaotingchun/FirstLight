@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { Play, Pause, FileText, Globe, Map as MapIcon, ChevronRight, Layers, Settings, Radio, X } from 'lucide-react';
+import { Play, Pause, FileText, Globe, ChevronRight, Layers, Settings, Radio, X } from 'lucide-react';
 
 import { useSharedSimulation } from '../context/SimulationContext';
 import { useSimulationMCP } from '../hooks/useSimulationMCP';
@@ -100,6 +100,13 @@ const SimulationMapMCP: React.FC = () => {
             message,
         });
     }, []);
+
+    const appendSimulationRecord = React.useCallback(async () => {
+        return mcpClient.appendSimulationAnalyticsRecord({
+            searchDurationMinutes: metricsRef.current.missionTimeSec / 60,
+            repeatRatePercent: metricsRef.current.repeatedScanRate,
+        });
+    }, [metricsRef]);
 
     const engageCustomAreaOverride = React.useCallback(async () => {
         if ((searchArea?.length || 0) <= 2 || searchScanActive) return;
@@ -377,6 +384,7 @@ const SimulationMapMCP: React.FC = () => {
                     metrics={metricsRef.current}
                     sensorWeights={sensorWeightsRef.current}
                     running={running}
+                    onAppendSimulationRecord={appendSimulationRecord}
                 />
 
                 {/* Collapsible Drone Camera Drawer */}

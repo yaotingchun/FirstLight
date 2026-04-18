@@ -117,6 +117,11 @@ export interface AppendOrchestratorRecordPayload {
     droneId?: string;
 }
 
+export interface AppendSimulationAnalyticsPayload {
+    searchDurationMinutes: number;
+    repeatRatePercent: number;
+}
+
 /**
  * Send a message to the orchestrator AI through the MCP server.
  */
@@ -218,6 +223,23 @@ export async function clearOrchestratorRecords(): Promise<boolean> {
     try {
         const response = await mcpFetch(`${MCP_SERVER_URL}/api/orchestrator/records`, {
             method: 'DELETE',
+        });
+        const result = await response.json();
+        return !!result.success;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Append one simulation result to the analytics JSON dataset on the server.
+ */
+export async function appendSimulationAnalyticsRecord(payload: AppendSimulationAnalyticsPayload): Promise<boolean> {
+    try {
+        const response = await mcpFetch(`${MCP_SERVER_URL}/api/analytics/append`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
         });
         const result = await response.json();
         return !!result.success;

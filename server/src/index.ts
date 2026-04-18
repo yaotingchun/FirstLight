@@ -20,6 +20,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { readFile, writeFile } from 'fs/promises';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -41,6 +42,12 @@ interface JsonRpcRequest {
     id?: unknown;
     method?: unknown;
     params?: unknown;
+}
+
+interface AnalyticsRecord {
+    Test_ID: number;
+    'Search_Duration(mm:ss)': number;
+    'Repeat_Rate(%)': number;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -85,6 +92,29 @@ function getAutonomyAgentName(droneId: string): string {
     if (droneId.includes('Gamma')) return 'Agent Gamma';
     if (droneId.includes('Delta')) return 'Agent Delta';
     return 'Agent';
+}
+
+const analyticsJsonPath = path.join(__dirname, '../../src/assets/performance_analytics.json');
+
+async function readAnalyticsRecords(): Promise<AnalyticsRecord[]> {
+    const content = await readFile(analyticsJsonPath, 'utf8');
+    const parsed = JSON.parse(content);
+    if (!Array.isArray(parsed)) {
+        throw new Error('Analytics JSON must be an array');
+    }
+    return parsed as AnalyticsRecord[];
+}
+
+function getNextTestId(records: AnalyticsRecord[]): number {
+    const maxId = records.reduce((max, record) => {
+        const raw = record.Test_ID;
+        const id = typeof raw === 'number' ? raw : Number(raw);
+        if (Number.isFinite(id)) {
+            return Math.max(max, id);
+        }
+        return max;
+    }, 0);
+    return maxId + 1;
 }
 
 const thinkLocks = new Map<string, { inFlight: boolean, lastTick: number }>();
@@ -502,6 +532,59 @@ app.delete('/api/orchestrator/records', (req, res) => {
         message: 'Orchestrator records cleared',
         timestamp: Date.now(),
     });
+});
+
+// Append a simulation analytics record to the JSON dataset.
+app.post('/api/analytics/append', async (req, res) => {
+    const { searchDurationMinutes, repeatRatePercent } = req.body as {
+        searchDurationMinutes?: number;
+        repeatRatePercent?: number;
+    };
+
+    if (typeof searchDurationMinutes !== 'number' || !Number.isFinite(searchDurationMinutes) || searchDurationMinutes < 0) {
+        res.status(400).json({
+            success: false,
+            error: 'searchDurationMinutes must be a finite non-negative number',
+            timestamp: Date.now(),
+        });
+        return;
+    }
+
+    if (typeof repeatRatePercent !== 'number' || !Number.isFinite(repeatRatePercent) || repeatRatePercent < 0) {
+        res.status(400).json({
+            success: false,
+            error: 'repeatRatePercent must be a finite non-negative number',
+            timestamp: Date.now(),
+        });
+        return;
+    }
+
+    try {
+        const records = await readAnalyticsRecords();
+        const normalizedRepeatRate = Math.min(100, repeatRatePercent) / 100;
+
+        const newRecord: AnalyticsRecord = {
+            Test_ID: getNextTestId(records),
+            'Search_Duration(mm:ss)': searchDurationMinutes,
+            'Repeat_Rate(%)': normalizedRepeatRate,
+        };
+
+        records.push(newRecord);
+        await writeFile(analyticsJsonPath, `${JSON.stringify(records, null, 2)}\n`, 'utf8');
+
+        res.json({
+            success: true,
+            record: newRecord,
+            totalRecords: records.length,
+            timestamp: Date.now(),
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: `Failed to append analytics record: ${error instanceof Error ? error.message : String(error)}`,
+            timestamp: Date.now(),
+        });
+    }
 });
 
 // Get pending commands (for frontend polling)

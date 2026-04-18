@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, Wifi, WifiOff, Radio } from 'lucide-react';
+import { Activity, Wifi, WifiOff, Radio, Download } from 'lucide-react';
 import type { Drone } from '../../types/simulation';
 
 interface SimulationDashboardProps {
@@ -17,14 +17,84 @@ interface SimulationDashboardProps {
     };
     sensorWeights: Record<string, { base: number, conf: number, color: string }>;
     running: boolean;
+    onAppendSimulationRecord?: () => Promise<boolean>;
 }
 
 export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
     drones, time, aiDisconnectedRef, aiReconnectedUntilTickRef,
-    metrics, sensorWeights, running,
+    metrics, sensorWeights, running, onAppendSimulationRecord,
 }) => {
+    const [appendState, setAppendState] = React.useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+    const [toast, setToast] = React.useState<{ type: 'success' | 'error'; message: string } | null>(null);
+    const missionComplete = metrics.averageZoneCoverage >= 100;
+
+    React.useEffect(() => {
+        if (!missionComplete) {
+            setAppendState('idle');
+            setToast(null);
+        }
+    }, [missionComplete]);
+
+    React.useEffect(() => {
+        if (!toast) return;
+        const timer = window.setTimeout(() => {
+            setToast(null);
+        }, 2600);
+        return () => window.clearTimeout(timer);
+    }, [toast]);
+
+    const handleAppendRecord = React.useCallback(async () => {
+        if (!onAppendSimulationRecord || appendState === 'saving' || appendState === 'saved') {
+            return;
+        }
+        setAppendState('saving');
+        const success = await onAppendSimulationRecord();
+        setAppendState(success ? 'saved' : 'error');
+        setToast(
+            success
+                ? { type: 'success', message: 'Simulation record saved to analytics' }
+                : { type: 'error', message: 'Failed to save simulation record' }
+        );
+    }, [appendState, onAppendSimulationRecord]);
+
     return (
         <div style={{ width: '320px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {toast && (
+                <div
+                    role="status"
+                    aria-live="polite"
+                    style={{
+                        position: 'fixed',
+                        top: '50%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        zIndex: 1200,
+                        minWidth: '300px',
+                        maxWidth: '420px',
+                        padding: '16px 18px',
+                        border: `2px solid ${toast.type === 'success' ? 'rgba(0, 255, 204, 0.75)' : 'rgba(255, 68, 68, 0.75)'}`,
+                        borderRadius: '6px',
+                        background: 'rgba(1, 10, 14, 0.98)',
+                        color: toast.type === 'success' ? '#00ffcc' : '#ff6666',
+                        fontSize: '0.82rem',
+                        fontFamily: 'var(--font-mono)',
+                        fontWeight: 700,
+                        letterSpacing: '0.06em',
+                        textTransform: 'uppercase',
+                        boxShadow: toast.type === 'success'
+                            ? '0 0 0 1px rgba(0,255,204,0.35), 0 0 24px rgba(0,255,204,0.35), 0 14px 34px rgba(0,0,0,0.55)'
+                            : '0 0 0 1px rgba(255,68,68,0.35), 0 0 24px rgba(255,68,68,0.35), 0 14px 34px rgba(0,0,0,0.55)',
+                        backdropFilter: 'blur(8px)',
+                        textAlign: 'center',
+                        pointerEvents: 'none',
+                    }}
+                >
+                    <div style={{ fontSize: '1.05rem', marginBottom: '6px', lineHeight: 1 }}>
+                        {toast.type === 'success' ? 'DOWNLOAD COMPLETE' : 'DOWNLOAD FAILED'}
+                    </div>
+                    <div style={{ opacity: 0.92 }}>{toast.message}</div>
+                </div>
+            )}
             {/* Live Swarm Status */}
             <div className="hud-panel" style={{ padding: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -98,8 +168,30 @@ export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
 
                     {/* Metric: Search Duration */}
                     <div style={{ padding: '10px', border: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.4)', position: 'relative', overflow: 'hidden' }}>
-                        <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
-                            SEARCH DURATION
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', marginBottom: '4px' }}>
+                            <span>SEARCH TIME</span>
+                            {missionComplete && onAppendSimulationRecord && (
+                                <button
+                                    onClick={() => {
+                                        void handleAppendRecord();
+                                    }}
+                                    title={appendState === 'saved' ? 'Saved to analytics' : 'Append simulation to analytics JSON'}
+                                    aria-label="Append simulation result to analytics"
+                                    disabled={appendState === 'saving' || appendState === 'saved'}
+                                    style={{
+                                        border: '1px solid var(--panel-border)',
+                                        background: appendState === 'saved' ? 'rgba(0, 255, 204, 0.18)' : 'rgba(0,0,0,0.45)',
+                                        color: appendState === 'error' ? '#ff4444' : '#00ffcc',
+                                        padding: '2px 4px',
+                                        lineHeight: 0,
+                                        borderRadius: '2px',
+                                        cursor: appendState === 'saving' || appendState === 'saved' ? 'default' : 'pointer',
+                                        opacity: appendState === 'saving' ? 0.6 : 1,
+                                    }}
+                                >
+                                    <Download size={12} />
+                                </button>
+                            )}
                         </div>
                         <div style={{ fontSize: '1.2rem', color: metrics.averageZoneCoverage >= 100 ? '#00ffcc' : 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
                             {(() => {
@@ -111,7 +203,9 @@ export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
                             })()}
                         </div>
                         {metrics.averageZoneCoverage >= 100 && (
-                            <div style={{ fontSize: '0.55rem', color: '#00ffcc', fontWeight: 'bold', marginTop: '2px' }}>MISSION COMPLETE</div>
+                            <div style={{ fontSize: '0.55rem', color: '#00ffcc', fontWeight: 'bold', marginTop: '2px' }}>
+                                {appendState === 'saving' ? 'MISSION COMPLETE | SAVING...' : 'MISSION COMPLETE'}
+                            </div>
                         )}
                         <div style={{ position: 'absolute', bottom: 0, left: 0, height: '2px', background: '#00ccff', width: `${Math.min(100, metrics.averageZoneCoverage)}%`, opacity: 0.5 }} />
                     </div>
