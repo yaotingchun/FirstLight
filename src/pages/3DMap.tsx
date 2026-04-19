@@ -39,7 +39,7 @@ const getProbabilityFromTags = (tags: any): number => {
 };
 
 const ProbabilityMap3D: React.FC = () => {
-    const { centerLocation } = useSharedSimulation();
+    const { centerLocation, dronesRef, triggerFailureEvent } = useSharedSimulation();
     const [data, setData] = useState<HeatmapPoint[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
 
@@ -101,13 +101,44 @@ const ProbabilityMap3D: React.FC = () => {
 
     // Simulated Drone Scan Interaction Functionality
     const handleMapClick = useCallback((info: any, event: any) => {
-        // Find if we clicked near a specific heat point
-        if (info && info.coordinate) {
-            const [clickLon, clickLat] = info.coordinate;
+        if (!info || !info.coordinate) return;
+        const [clickLon, clickLat] = info.coordinate;
 
-            // Interaction logic: Left click = Motion detected (higher prob), Alt+Left Click / Right Click = Clear (lower prob)
-            // Need to update the state. Let's find points within a ~50m radius (approx 0.00045 degrees)
-            const RADIUS = 0.00045;
+        // --- Drone Failure Trigger (Ctrl + Click) ---
+        if (event.srcEvent.ctrlKey) {
+            const drones = dronesRef.current;
+            if (drones.length === 0) return;
+
+            // Find nearest drone to click
+            let nearestDrone = null;
+            let minDist = Infinity;
+            
+            // Map grid coordinates to lat/lng for distance check
+            const GRID_ORIGIN_LNG = centerLocation.lng - (20 / 2) * 0.0009;
+            const GRID_ORIGIN_LAT = centerLocation.lat + (20 / 2) * 0.0009;
+
+            drones.forEach(d => {
+                const dLng = GRID_ORIGIN_LNG + d.x * 0.0009;
+                const dLat = GRID_ORIGIN_LAT - d.y * 0.0009;
+                const distSq = Math.pow(dLng - clickLon, 2) + Math.pow(dLat - clickLat, 2);
+                if (distSq < minDist) {
+                    minDist = distSq;
+                    nearestDrone = d;
+                }
+            });
+
+            if (nearestDrone) {
+                const failureTypes: ('DRONE_CONNECTION_LOST' | 'DRONE_HARDWARE_FAILURE')[] = 
+                    ['DRONE_CONNECTION_LOST', 'DRONE_HARDWARE_FAILURE'];
+                const randomType = failureTypes[Math.floor(Math.random() * failureTypes.length)];
+                triggerFailureEvent((nearestDrone as any).id, randomType);
+                return;
+            }
+        }
+
+        // --- Heatmap Interaction Logic ---
+        // Need to update the state. Let's find points within a ~50m radius (approx 0.00045 degrees)
+        const RADIUS = 0.00045;
 
             setData(prevData => {
                 let changed = false;
@@ -137,8 +168,7 @@ const ProbabilityMap3D: React.FC = () => {
 
                 return changed ? newData : prevData;
             });
-        }
-    }, []);
+    }, [centerLocation, dronesRef, triggerFailureEvent]);
 
     const layers = [
         new HeatmapLayer({
@@ -223,6 +253,7 @@ const ProbabilityMap3D: React.FC = () => {
                         <div style={{ fontSize: '0.65rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', lineHeight: 1.8 }}>
                             <strong>Left Click:</strong> <br/>+Heat (Motion detected)<br />
                             <strong>Shift + Click:</strong> <br/>-Heat (Area clear)<br />
+                            <strong>Ctrl + Click:</strong> <br/><span style={{ color: '#ff4444' }}>Fail Asset (Nearest)</span>
                         </div>
                     </div>
                 </div>

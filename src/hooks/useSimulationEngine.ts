@@ -149,18 +149,31 @@ export const useSimulationEngine = (
         setSelectedCellsFromArea(cells);
     }, [searchArea]);
 
-    const triggerFailureEvent = useCallback((droneId: string) => {
-        if (aiDisconnectedRef.current.has(droneId)) return;
+    const triggerFailureEvent = useCallback((droneId: string, type: FailureEvent['type'] = 'DRONE_CONNECTION_LOST') => {
+        if (aiDisconnectedRef.current.has(droneId) && type === 'DRONE_CONNECTION_LOST') return;
+        
+        const drone = dronesRef.current.find(d => d.id === droneId);
+        if (!drone) return;
 
         const event: FailureEvent = {
-            type: 'DRONE_CONNECTION_LOST',
+            type,
             droneId,
             tick: timeRef.current,
         };
 
         failureEventsRef.current.push(event);
 
-        const eventPayload = { type: 'DRONE_CONNECTION_LOST', droneId };
+        if (type === 'DRONE_CONNECTION_LOST') {
+            aiDisconnectedRef.current.add(droneId);
+            drone.failureType = 'CONNECTION_LOST';
+        } else if (type === 'DRONE_HARDWARE_FAILURE') {
+            aiDisconnectedRef.current.add(droneId);
+            drone.failureType = 'HARDWARE_FAILURE';
+            drone.isDestroyed = true;
+            drone.battery = 0;
+        }
+
+        const eventPayload = { type, droneId };
         onFailureEventTriggered(eventPayload);
         setTickFlip(f => f + 1);
     }, [onFailureEventTriggered]);
@@ -648,7 +661,18 @@ export const useSimulationEngine = (
         }
         let disconnectedCount = 0;
         drones.forEach(d => {
-            d.isConnected = visited.has(d.id);
+            const physicallyConnected = visited.has(d.id);
+            d.isConnected = physicallyConnected;
+
+            // --- Auto-Recovery Logic ---
+            // If the drone is physically connected but marked as failed due to connection loss, regain it.
+            if (physicallyConnected && d.failureType === 'CONNECTION_LOST' && aiDisconnectedRef.current.has(d.id)) {
+                aiDisconnectedRef.current.delete(d.id);
+                d.failureType = undefined;
+                // UI Feedback: Show "RECONNECTED" for 40 ticks (~4 seconds)
+                aiReconnectedUntilTickRef.current.set(d.id, timeRef.current + 40);
+            }
+
             if (!d.isConnected && d.mode !== 'Relay') disconnectedCount++;
         });
 
@@ -784,13 +808,22 @@ export const useSimulationEngine = (
 
             const isAiDisconnected = aiDisconnectedRef.current.has(d.id);
 
-            if (isAiDisconnected) {
+            if (d.isDestroyed) {
                 d.isConnected = false;
                 d.tx = d.x;
                 d.ty = d.y;
+                d.battery = 0;
                 d.targetSector = null;
-                d.mode = d.mode === 'Charging' ? 'Charging' : 'Wide';
                 return;
+            }
+
+            if (isAiDisconnected) {
+                d.isConnected = false;
+                // Allow the drone to continue moving to its last autonomous/fail-safe target 
+                // instead of freezing in place.
+                if (d.mode !== 'Charging') {
+                    d.mode = 'Wide';
+                }
             }
 
             if (missionComplete) {

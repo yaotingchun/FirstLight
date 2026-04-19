@@ -20,6 +20,7 @@ const DroneCam: React.FC = () => {
     const viewerRef = useRef<Cesium.Viewer | null>(null);
     const markersRef = useRef<Record<string, Cesium.Entity>>({});
     const commsLinesRef = useRef<Record<string, Cesium.Entity>>({});
+    const failureCanvasRef = useRef<HTMLCanvasElement>(null);
 
     const { 
         running, timeRef, dronesRef, sensorWeightsRef, commLinksRef, centerLocation 
@@ -222,6 +223,58 @@ const DroneCam: React.FC = () => {
 
             // Camera follows active drone
             const active = drones.find(dd => dd.id === activeDrone);
+            
+            // --- Failure Visuals logic ---
+            const failureCtx = failureCanvasRef.current?.getContext('2d');
+            if (active && failureCtx && failureCanvasRef.current) {
+                const isDead = active.isDestroyed || active.failureType === 'HARDWARE_FAILURE';
+                const isFailing = !!active.failureType;
+                const canvas = failureCanvasRef.current;
+                const parent = canvas.parentElement;
+                
+                if (parent) {
+                    if (canvas.width !== parent.clientWidth || canvas.height !== parent.clientHeight) {
+                        canvas.width = parent.clientWidth;
+                        canvas.height = parent.clientHeight;
+                    }
+                }
+
+                if (isDead) {
+                    const w = canvas.width;
+                    const h = canvas.height;
+                    const imageData = failureCtx.createImageData(w, h);
+                    for (let i = 0; i < imageData.data.length; i += 4) {
+                        const v = Math.random() * 80; // slightly darker noise
+                        imageData.data[i] = v;
+                        imageData.data[i+1] = v;
+                        imageData.data[i+2] = v;
+                        imageData.data[i+3] = 255;
+                    }
+                    failureCtx.putImageData(imageData, 0, 0);
+                } else if (isFailing) {
+                    failureCtx.clearRect(0, 0, canvas.width, canvas.height);
+                    const w = canvas.width;
+                    const h = canvas.height;
+                    const noise = Math.random();
+                    if (noise > 0.85) {
+                        // Horizontal slice shift glitch
+                        const sliceH = Math.random() * 100 + 20;
+                        const sliceY = Math.random() * h;
+                        const shiftX = (Math.random() - 0.5) * 80;
+                        // Use the viewer canvas as a source if possible, but simpler is to just draw color smears
+                        failureCtx.fillStyle = 'rgba(0, 255, 204, 0.1)';
+                        failureCtx.fillRect(0, sliceY, w, sliceH);
+                        failureCtx.strokeStyle = 'rgba(0, 255, 204, 0.5)';
+                        failureCtx.beginPath();
+                        failureCtx.moveTo(0, sliceY);
+                        failureCtx.lineTo(w, sliceY + shiftX * 0.1);
+                        failureCtx.stroke();
+                    }
+                } else {
+                    failureCtx.clearRect(0, 0, canvas.width, canvas.height);
+                }
+            }
+
             if (active) {
                 const [aLng, aLat] = gridToLngLat(active.x, active.y);
                 const aAlt = active.mode === 'Micro' ? 80 : active.mode === 'Charging' ? 5 : 300;
@@ -286,7 +339,19 @@ const DroneCam: React.FC = () => {
                 <div className="drone-container">
 
                     <div className="drone-view">
-                        <div id="map" ref={mapContainer} style={{ width: '100%', height: '100%', background: '#000' }} />
+                        <div id="map" ref={mapContainer} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: '#000', zIndex: 0 }} />
+                        <canvas 
+                            ref={failureCanvasRef} 
+                            style={{ 
+                                position: 'absolute', 
+                                top: 0, 
+                                left: 0, 
+                                width: '100%', 
+                                height: '100%', 
+                                pointerEvents: 'none',
+                                zIndex: 5
+                            }} 
+                        />
                         <div className="drone-crt-lines" />
                         <div className="drone-hud-overlay" />
                         <div className="drone-telemetry">

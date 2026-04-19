@@ -1,11 +1,11 @@
-import React, { useRef, useEffect } from 'react';
-import { Battery, Mountain, SignalHigh, Crosshair } from 'lucide-react';
+import React, { useRef, useEffect, useState } from 'react';
+import { Battery, Mountain, SignalHigh, Crosshair, AlertTriangle, Zap, WifiOff } from 'lucide-react';
 import type { Drone } from '../../types/simulation';
+import { useSharedSimulation } from '../../context/SimulationContext';
 
 interface DroneCameraFeedProps {
     drone: Drone;
     sourceCanvas: HTMLCanvasElement | null | undefined;
-
     centerLocation: { lat: number; lng: number };
 }
 
@@ -15,6 +15,8 @@ const GRID_H = 20;
 
 export const DroneCameraFeed: React.FC<DroneCameraFeedProps> = ({ drone, sourceCanvas, centerLocation }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const { triggerFailureEvent, timeRef } = useSharedSimulation();
+    const [showFailureMenu, setShowFailureMenu] = useState(false);
 
     const GRID_ORIGIN_LNG = centerLocation.lng - (GRID_W / 2) * CELL_DEG;
     const GRID_ORIGIN_LAT = centerLocation.lat + (GRID_H / 2) * CELL_DEG;
@@ -29,8 +31,40 @@ export const DroneCameraFeed: React.FC<DroneCameraFeedProps> = ({ drone, sourceC
         if (!ctx) return;
 
         const frame = () => {
-            if (sourceCanvas && sourceCanvas.width > 0 && sourceCanvas.height > 0) {
-                ctx.drawImage(sourceCanvas, 0, 0, canvasRef.current!.width, canvasRef.current!.height);
+            const hasSource = sourceCanvas && sourceCanvas.width > 0 && sourceCanvas.height > 0;
+            const isFailing = !!drone.failureType;
+            const isDead = drone.isDestroyed || drone.failureType === 'HARDWARE_FAILURE';
+
+            if (hasSource && !isDead) {
+                const w = canvasRef.current!.width;
+                const h = canvasRef.current!.height;
+
+                ctx.drawImage(sourceCanvas, 0, 0, w, h);
+
+                // Apply Glitch Effects
+                if (isFailing) {
+                    const noise = Math.random();
+                    if (noise > 0.85) {
+                        // Horizontal slice shift
+                        const sliceH = Math.random() * 20 + 5;
+                        const sliceY = Math.random() * h;
+                        const shiftX = (Math.random() - 0.5) * 30;
+                        ctx.drawImage(canvasRef.current!, 0, sliceY, w, sliceH, shiftX, sliceY, w, sliceH);
+                    }
+                }
+            } else if (isDead) {
+                // Static / Noise for dead drones
+                const w = canvasRef.current!.width;
+                const h = canvasRef.current!.height;
+                const imageData = ctx.createImageData(w, h);
+                for (let i = 0; i < imageData.data.length; i += 4) {
+                    const v = Math.random() * 100; // dark noise
+                    imageData.data[i] = v;
+                    imageData.data[i+1] = v;
+                    imageData.data[i+2] = v;
+                    imageData.data[i+3] = 255;
+                }
+                ctx.putImageData(imageData, 0, 0);
             } else {
                 ctx.clearRect(0, 0, canvasRef.current!.width, canvasRef.current!.height);
             }
@@ -39,7 +73,7 @@ export const DroneCameraFeed: React.FC<DroneCameraFeedProps> = ({ drone, sourceC
 
         animId = requestAnimationFrame(frame);
         return () => cancelAnimationFrame(animId);
-    }, [sourceCanvas]);
+    }, [sourceCanvas, drone]);
 
     const batteryColor = drone.battery > 60 ? '#00ffcc' : drone.battery > 30 ? '#ffa500' : '#ff4444';
     const altitudeLabel = drone.mode === 'Micro' ? '80.0m' : drone.mode === 'Charging' ? '0.0m' : '300.0m';
@@ -81,24 +115,64 @@ export const DroneCameraFeed: React.FC<DroneCameraFeedProps> = ({ drone, sourceC
                 boxSizing: 'border-box'
             }}>
                 {/* Header info */}
-                <div style={{
-                    position: 'absolute',
-                    top: '6px',
-                    left: '6px',
-                    background: 'rgba(2, 6, 8, 0.75)',
-                    padding: '3px 6px',
-                    borderRadius: '2px',
-                    borderLeft: `2px solid ${drone.isConnected ? '#00ffcc' : '#ff4444'}`,
-                    fontSize: '0.55rem',
-                    color: '#eee',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '1px'
-                }}>
+                <div 
+                    style={{
+                        position: 'absolute',
+                        top: '6px',
+                        left: '6px',
+                        background: 'rgba(2, 6, 8, 0.75)',
+                        padding: '3px 6px',
+                        borderRadius: '2px',
+                        borderLeft: `2px solid ${drone.isConnected ? '#00ffcc' : '#ff4444'}`,
+                        fontSize: '0.55rem',
+                        color: '#eee',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '1px',
+                        cursor: 'pointer',
+                        pointerEvents: 'auto',
+                        zIndex: 20
+                    }}
+                    onMouseEnter={() => setShowFailureMenu(true)}
+                    onMouseLeave={() => setShowFailureMenu(false)}
+                >
                     <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '3px' }}>
                         {drone.id} <SignalHigh size={8} color={drone.isConnected ? '#00ffcc' : '#ff4444'} />
                     </div>
                     <div style={{ opacity: 0.7, fontSize: '0.45rem', letterSpacing: '0.5px' }}>{drone.mode.toUpperCase()}</div>
+
+                    {showFailureMenu && (
+                        <div style={{
+                            position: 'absolute',
+                            top: '100%',
+                            left: 0,
+                            background: 'rgba(2, 6, 8, 0.95)',
+                            border: '1px solid rgba(0, 255, 204, 0.3)',
+                            borderRadius: '2px',
+                            padding: '4px',
+                            marginTop: '4px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '4px',
+                            width: '120px',
+                            boxShadow: '0 4px 10px rgba(0,0,0,0.5)'
+                        }}>
+                            <div 
+                                onClick={(e) => { e.stopPropagation(); triggerFailureEvent(drone.id, 'DRONE_CONNECTION_LOST'); }}
+                                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 4px', fontSize: '0.5rem', color: '#00ffcc' }}
+                                className="hover-bg"
+                            >
+                                <WifiOff size={10} /> LOSS OF COMMS
+                            </div>
+                            <div 
+                                onClick={(e) => { e.stopPropagation(); triggerFailureEvent(drone.id, 'DRONE_HARDWARE_FAILURE'); }}
+                                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 4px', fontSize: '0.5rem', color: '#ff4444' }}
+                                className="hover-bg"
+                            >
+                                <AlertTriangle size={10} /> ENGINE FAILURE
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 <div style={{ position: 'absolute', top: '6px', right: '6px' }}>

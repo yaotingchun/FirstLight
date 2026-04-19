@@ -41,6 +41,8 @@ export type Drone = {
     tx: number;
     ty: number;
     mode: 'Wide' | 'Micro' | 'Relay' | 'Charging';
+    failureType?: 'CONNECTION_LOST' | 'HARDWARE_FAILURE';
+    isDestroyed?: boolean;
     battery: number;
     targetSector: Sector | null;
     isConnected: boolean;
@@ -98,7 +100,7 @@ export type OrchestratorChatMessage = {
 };
 
 export type FailureEvent = {
-    type: 'DRONE_CONNECTION_LOST';
+    type: 'DRONE_CONNECTION_LOST' | 'DRONE_HARDWARE_FAILURE';
     droneId: string;
     tick: number;
 };

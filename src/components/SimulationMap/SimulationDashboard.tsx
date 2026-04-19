@@ -108,7 +108,7 @@ export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
                         const batColor = d.battery > 50 ? '#00ffcc' : d.battery > 20 ? '#ffff00' : '#ff4444';
                         const isAiDisconnected = aiDisconnectedRef.current.has(d.id);
                         const isRecentlyReconnected = (aiReconnectedUntilTickRef.current.get(d.id) ?? -1) > time;
-                        const statusColor = isAiDisconnected
+                        const statusColor = (isAiDisconnected || d.isDestroyed || d.failureType)
                             ? '#ff4444'
                             : d.mode === 'Wide'
                                 ? '#00ffcc'
@@ -117,6 +117,13 @@ export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
                                     : d.mode === 'Charging'
                                         ? '#ffa500'
                                         : '#ff4444';
+
+                        const getStatusText = () => {
+                            if (d.isDestroyed || d.failureType === 'HARDWARE_FAILURE') return 'HARDWARE FAILURE';
+                            if (isAiDisconnected) return 'DISCONNECTED';
+                            if (isRecentlyReconnected) return 'RECONNECTED';
+                            return d.mode;
+                        };
                         return (
                             <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--panel-border)' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -129,8 +136,8 @@ export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                     <div style={{ color: batColor, fontSize: '0.7rem' }}>{Math.floor(d.battery)}%</div>
-                                    <div style={{ color: statusColor, minWidth: '85px', textAlign: 'right' }}>
-                                        {isAiDisconnected ? 'DISCONNECTED' : isRecentlyReconnected ? 'RECONNECTED' : d.mode}
+                                    <div style={{ color: statusColor, minWidth: '85px', textAlign: 'right', fontSize: (getStatusText().length > 10) ? '0.65rem' : '0.8rem' }}>
+                                        {getStatusText()}
                                     </div>
                                 </div>
                             </div>

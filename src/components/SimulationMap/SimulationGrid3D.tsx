@@ -329,7 +329,8 @@ export const SimulationGrid3D: React.FC<SimulationGrid3DProps> = ({
                 const grp = ensureDrone(drone);
                 const tgt = gw(drone.x, drone.y);
 
-                const isGrounded = !runningRef.current || drone.mode === 'Charging';
+                const isFailed = drone.failureType === 'HARDWARE_FAILURE';
+                const isGrounded = !runningRef.current || drone.mode === 'Charging' || isFailed;
                 const gxPad = Math.max(0, Math.min(GRID_W - 1, Math.round(drone.x)));
                 const gyPad = Math.max(0, Math.min(GRID_H - 1, Math.round(drone.y)));
                 const groundH = (heightMap[gyPad]?.[gxPad] ?? 0) * H_SCALE;
@@ -346,13 +347,25 @@ export const SimulationGrid3D: React.FC<SimulationGrid3DProps> = ({
                 cur.x += (tgt.x - cur.x) * 0.075;
                 cur.z += (tgt.z - cur.z) * 0.075;
 
-                const bob = nAlt > groundH + 0.15 ? Math.sin(t * 1.8 + drone.x * 0.7) * 0.04 : 0;
+                const bob = (nAlt > groundH + 0.15 && !isFailed) ? Math.sin(t * 1.8 + drone.x * 0.7) * 0.04 : 0;
                 grp.position.set(cur.x, nAlt + bob, cur.z);
 
+                const body = grp.children[0] as THREE.Mesh;
                 const ring1 = grp.children[1] as THREE.Mesh;
+                const light = grp.children[2] as THREE.PointLight;
+
+                if (body && body.material instanceof THREE.MeshStandardMaterial) {
+                    body.material.emissiveIntensity = isFailed ? 0.05 : 0.45;
+                }
+
                 if (ring1) {
-                    ring1.rotation.z += nAlt > groundH + 0.15 ? 0.025 : 0.005;
+                    const isFlinging = nAlt > groundH + 0.15 && !isFailed;
+                    ring1.rotation.z += isFlinging ? 0.025 : 0;
                     ring1.visible = nAlt > groundH + 0.01;
+                }
+
+                if (light) {
+                    light.intensity = isFailed ? 0.1 : 1.2;
                 }
             });
 
