@@ -454,7 +454,7 @@ input[type=range].drone-slider::-webkit-slider-runnable-track {
   max-width: 300px;
   background: rgba(5, 14, 20, 0.95);
   border: 1px solid rgba(0, 255, 204, 0.35);
-  border-radius: 10px;
+  border-radius: 0 0 10px 10px;
   padding: 0;
   overflow: hidden;
   box-shadow:
