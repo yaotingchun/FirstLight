@@ -9,7 +9,7 @@ interface DroneCameraStripProps {
     centerLocation: { lat: number; lng: number };
 }
 
-export const DroneCameraStrip: React.FC<DroneCameraStripProps> = ({ drones, canvases, time, centerLocation }) => {
+export const DroneCameraStrip: React.FC<DroneCameraStripProps> = ({ drones, canvases, centerLocation }) => {
     return (
         <div style={{
             width: '100%',
@@ -44,7 +44,6 @@ export const DroneCameraStrip: React.FC<DroneCameraStripProps> = ({ drones, canv
                     <DroneCameraFeed 
                         drone={drone}
                         sourceCanvas={canvases[drone.id]}
-                        time={time}
                         centerLocation={centerLocation}
                     />
                 </div>

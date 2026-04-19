@@ -252,7 +252,6 @@ const SimulationMapMCP: React.FC = () => {
                             survivors={survivorsRef.current}
                             pins={pinsRef.current}
                             selectedPin={selectedPin}
-                            pinPopupType={pinPopupType}
                             handlePinClick={handlePinClick}
                             showSensors={showSensors}
                             showTrails={showTrails}
@@ -327,6 +326,27 @@ const SimulationMapMCP: React.FC = () => {
                                         src={selectedPin.info.img} 
                                         alt="Detected content" 
                                         decoding="sync"
+                                        onError={(e) => {
+                                            const target = e.currentTarget;
+                                            target.style.display = 'none';
+                                            const parent = target.parentElement;
+                                            if (parent) {
+                                                const placeholder = document.createElement('div');
+                                                placeholder.style.width = '100%';
+                                                placeholder.style.height = '100%';
+                                                placeholder.style.display = 'flex';
+                                                placeholder.style.flexDirection = 'column';
+                                                placeholder.style.alignItems = 'center';
+                                                placeholder.style.justifyContent = 'center';
+                                                placeholder.style.background = 'rgba(255, 68, 68, 0.1)';
+                                                placeholder.style.color = '#ff4444';
+                                                placeholder.style.fontSize = '0.5rem';
+                                                placeholder.style.textAlign = 'center';
+                                                placeholder.style.padding = '10px';
+                                                placeholder.innerHTML = `<span style="font-weight:bold;margin-bottom:4px;">DATA LINK FAILURE</span><span style="opacity:0.7;">Asset: ${selectedPin.info.img}</span>`;
+                                                parent.appendChild(placeholder);
+                                            }
+                                        }}
                                         style={{ width: '100%', height: '100%', objectFit: 'cover', color: 'transparent' }} 
                                     />
                                     <div style={{ position: 'absolute', top: 6, left: 6, background: 'rgba(255,68,68,0.85)', color: '#fff', fontSize: '0.6rem', padding: '2px 6px', borderRadius: '2px', fontWeight: 'bold', border: '1px solid #fff' }}>

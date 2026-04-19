@@ -1,5 +1,5 @@
 import React from 'react';
-import { Radio, MapPin, X } from 'lucide-react';
+import { Radio, MapPin } from 'lucide-react';
 import { Map } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
@@ -18,7 +18,7 @@ interface SimulationGridProps {
     survivors: HiddenSurvivor[];
     pins: FoundPin[];
     selectedPin: FoundPin | null;
-    pinPopupType: 'auto' | 'clicked' | null;
+
     handlePinClick: (pin: FoundPin | null) => void;
     showSensors: boolean;
     showTrails: boolean;
@@ -49,7 +49,7 @@ export const getDroneThemeColor = (id?: string) => {
 
 export const SimulationGrid: React.FC<SimulationGridProps> = ({
     grid, drones, commLinks, survivors, pins,
-    selectedPin, pinPopupType, handlePinClick, showSensors, 
+    selectedPin, handlePinClick, showSensors, 
     showTrails, setShowTrails, selectedTrailDroneId, setSelectedTrailDroneId,
     getSectorProbability, time, aiDisconnectedRef, aiReconnectedUntilTickRef,
     showActualMap, searchArea, isDrawingMode, searchScanActive, onFinishDrawing

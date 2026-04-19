@@ -4,7 +4,7 @@ import { GRID_W, GRID_H, CELL_SIZE, BASE_STATION } from '../../types/simulation'
 import type { Sector, Drone, FoundPin } from '../../types/simulation';
 import { generateBuildingHeights, getDroneAltitude } from '../../utils/buildingHeightMap';
 import { getDroneThemeColor } from './SimulationGrid';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const UNIT = CELL_SIZE / 10;      // world units per grid cell  (3.5)

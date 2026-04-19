@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { gridDataService, type GridSource, type TerrainType } from '../services/gridDataService';
-import { fetchOSMFeatures } from '../utils/osmClient';
+
 import { useSharedSimulation } from '../context/SimulationContext';
 
 // Default constants

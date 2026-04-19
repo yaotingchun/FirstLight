@@ -163,7 +163,7 @@ Swarm Execution & Feedback → Next Cycle Begins
 
 To evaluate the effectiveness of our AI-driven search strategies, we monitored two key metrics across 100 simulation cycles: **Repeat Rate** and **Search Duration**.
 
-> **Note on Time Scaling:** In our simulation engine, time is accelerated. **1 minute of system search duration is equivalent to 10 minutes of real-world search duration.**
+> **Note on Time Scaling:** In our simulation engine, time is accelerated. **1 minute of system search duration is equivalent to 5 minutes of real-world search duration.**
 
 ### 📋 Summary Statistics
 
@@ -302,6 +302,39 @@ Convincing stakeholders to greenlight an AI-driven drone swarm is typically a mu
 **https://firstlight-dashboard-494194863681.us-central1.run.app**
 
 > **Note:** The AI Orchestrator may not function as expected in the live demo due to Google Cloud Run limitations. For the full orchestrator capabilities, running the simulation locally is recommended.
+
+---
+
+## ☁️ Deployment (Google Cloud)
+
+FirstLight is optimized for **Google Cloud Run** using an automated build pipeline.
+
+### 1. Prerequisite Setup
+- Ensure you have the [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) installed.
+- Enable the necessary APIs:
+  ```bash
+  gcloud services enable cloudbuild.googleapis.com run.googleapis.com artifactregistry.googleapis.com
+  ```
+- Create an Artifact Registry repository:
+  ```bash
+  gcloud artifacts repositories create firstlight-repo --repository-format=docker --location=us-central1
+  ```
+
+### 2. Automated Deployment (One-Click)
+We provide a `cloudbuild.yaml` to build and deploy everything in one step. Replace `YOUR_PROJECT_ID` with your actual GCP project ID:
+```bash
+gcloud builds submit --config cloudbuild.yaml --substitutions=_REPOSITORY="firstlight-repo",_SERVICE_NAME="firstlight"
+```
+
+### 3. Manual Build & Run (Local Docker)
+If you prefer to test the production container locally:
+```bash
+# Build the monolithic image
+docker build -t firstlight .
+
+# Run locally on port 8080
+docker run -p 8080:8080 --env-file .env firstlight
+```
 
 ---
 

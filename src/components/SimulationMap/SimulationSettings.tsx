@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, X, Navigation, LocateFixed, MapIcon, ChevronDown, Clock, Battery, Crosshair, Scan } from 'lucide-react';
+import { Settings, X, Navigation, LocateFixed, MapIcon, ChevronDown, Clock, Battery, Crosshair } from 'lucide-react';
 
 const CITIES = [
     { name: 'Kuala Lumpur', lat: 3.1319, lng: 101.6841 },

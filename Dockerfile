@@ -31,6 +31,12 @@ RUN npm run build
 FROM node:22-alpine
 WORKDIR /app
 
+# Set production environment
+ENV NODE_ENV=production
+# Standard Cloud Run port
+ENV PORT=8080
+EXPOSE 8080
+
 # 1. Pull the Backend distribution and its production packages only
 COPY --from=backend-build /app/server/dist ./server/dist
 COPY --from=backend-build /app/server/package*.json ./server/
@@ -40,10 +46,6 @@ RUN npm install --production
 # 2. Pull the compiled static Frontend Dashboard
 WORKDIR /app
 COPY --from=frontend-build /app/dist ./dist
-
-# 3. Expose the unified port cleanly
-EXPOSE 3001
-ENV PORT=3001
 
 # Cloud Run boots via the WORKDIR /app/server directory automatically since we cd into it.
 WORKDIR /app/server

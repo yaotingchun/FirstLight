@@ -66,10 +66,12 @@ class GeminiProvider implements LLMProvider {
     private getModel(): GenerativeModel {
         if (this.model) return this.model;
         const project = process.env.GOOGLE_VERTEX_PROJECT;
-        const location = process.env.GOOGLE_VERTEX_LOCATION;
-        if (!project || !location) {
-            throw new Error('Missing GOOGLE_VERTEX_PROJECT or GOOGLE_VERTEX_LOCATION in environment');
+        const location = process.env.GOOGLE_VERTEX_LOCATION || 'us-central1';
+        
+        if (!project) {
+            throw new Error('Missing GOOGLE_VERTEX_PROJECT in environment');
         }
+        
         const vertexAI = new VertexAI({ project, location });
         this.model = vertexAI.getGenerativeModel({
             model: process.env.ORCHESTRATOR_MODEL ?? 'gemini-2.5-flash',
@@ -144,9 +146,18 @@ class OllamaProvider implements LLMProvider {
 
 export const ConnectivityChecker = {
     async checkGemini(): Promise<boolean> {
-        // Fast credential check
-        if (!process.env.GOOGLE_APPLICATION_CREDENTIALS || !process.env.GOOGLE_VERTEX_PROJECT) {
-            console.log('[Connectivity] Gemini: Offline (Missing credentials)');
+        // Fast credential check: Valid if we have a project ID AND (local creds OR running on GCP)
+        const hasProject = !!process.env.GOOGLE_VERTEX_PROJECT;
+        const hasCreds = !!process.env.GOOGLE_APPLICATION_CREDENTIALS;
+        const isOnGCP = !!process.env.K_SERVICE || !!process.env.GOOGLE_CLOUD_PROJECT;
+
+        if (!hasProject) {
+            console.log('[Connectivity] Gemini: Offline (Missing GOOGLE_VERTEX_PROJECT)');
+            return false;
+        }
+
+        if (!hasCreds && !isOnGCP) {
+            console.log('[Connectivity] Gemini: Offline (No local credentials found and not running on Google Cloud)');
             return false;
         }
         

@@ -5,7 +5,7 @@ import type { Drone } from '../../types/simulation';
 interface DroneCameraFeedProps {
     drone: Drone;
     sourceCanvas: HTMLCanvasElement | null | undefined;
-    time: number;
+
     centerLocation: { lat: number; lng: number };
 }
 
@@ -13,7 +13,7 @@ const CELL_DEG = 0.0009;
 const GRID_W = 20;
 const GRID_H = 20;
 
-export const DroneCameraFeed: React.FC<DroneCameraFeedProps> = ({ drone, sourceCanvas, time, centerLocation }) => {
+export const DroneCameraFeed: React.FC<DroneCameraFeedProps> = ({ drone, sourceCanvas, centerLocation }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
     const GRID_ORIGIN_LNG = centerLocation.lng - (GRID_W / 2) * CELL_DEG;

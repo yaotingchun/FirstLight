@@ -1,0 +1,13 @@
+.gcloudignore
+.git
+.gitignore
+node_modules/
+**/node_modules/
+dist/
+server/dist/
+credentials/
+server/credentials/
+.env
+.local/
+package-lock.json
+server/package-lock.json
