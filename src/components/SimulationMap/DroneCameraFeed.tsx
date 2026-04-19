@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Battery, Mountain, SignalHigh, Crosshair, AlertTriangle, Zap, WifiOff } from 'lucide-react';
+import { Battery, Mountain, SignalHigh, Crosshair, AlertTriangle, Zap } from 'lucide-react';
 import type { Drone } from '../../types/simulation';
 import { useSharedSimulation } from '../../context/SimulationContext';
 
@@ -43,14 +43,7 @@ export const DroneCameraFeed: React.FC<DroneCameraFeedProps> = ({ drone, sourceC
 
                 // Apply Glitch Effects
                 if (isFailing) {
-                    const noise = Math.random();
-                    if (noise > 0.85) {
-                        // Horizontal slice shift
-                        const sliceH = Math.random() * 20 + 5;
-                        const sliceY = Math.random() * h;
-                        const shiftX = (Math.random() - 0.5) * 30;
-                        ctx.drawImage(canvasRef.current!, 0, sliceY, w, sliceH, shiftX, sliceY, w, sliceH);
-                    }
+                    // Placeholder for future operational glitches
                 }
             } else if (isDead) {
                 // Static / Noise for dead drones
@@ -157,13 +150,6 @@ export const DroneCameraFeed: React.FC<DroneCameraFeedProps> = ({ drone, sourceC
                             width: '120px',
                             boxShadow: '0 4px 10px rgba(0,0,0,0.5)'
                         }}>
-                            <div 
-                                onClick={(e) => { e.stopPropagation(); triggerFailureEvent(drone.id, 'DRONE_CONNECTION_LOST'); }}
-                                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 4px', fontSize: '0.5rem', color: '#00ffcc' }}
-                                className="hover-bg"
-                            >
-                                <WifiOff size={10} /> LOSS OF COMMS
-                            </div>
                             <div 
                                 onClick={(e) => { e.stopPropagation(); triggerFailureEvent(drone.id, 'DRONE_HARDWARE_FAILURE'); }}
                                 style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 4px', fontSize: '0.5rem', color: '#ff4444' }}

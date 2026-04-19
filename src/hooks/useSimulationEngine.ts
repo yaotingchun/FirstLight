@@ -18,7 +18,7 @@ import {
     RELAY_TAKEOVER_MIN_BATTERY, RELAY_BASE_DOCK_EPSILON, RELAY_DEFAULT_TARGET,
     BASE_STATION
 } from '../types/simulation';
-import type { Sector, Drone, SwarmMessage, CommEdge, HiddenSurvivor, FoundPin, FailureEvent } from '../types/simulation';
+import type { Sector, Drone, SwarmMessage, CommEdge, HiddenSurvivor, FoundPin, FailureEvent, MissionEvent } from '../types/simulation';
 import { isPointInPolygon, type Point } from '../utils/polygonUtils';
 
 export const useSimulationEngine = (
@@ -34,6 +34,10 @@ export const useSimulationEngine = (
     const [selectedPin, setSelectedPin] = useState<FoundPin | null>(null);
     const [pinPopupType, setPinPopupType] = useState<'auto' | 'clicked' | null>(null);
     const popupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    
+    const [activeMissionEvent, setActiveMissionEvent] = useState<MissionEvent | null>(null);
+    const missionEventTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const dronesRTBReportedRef = useRef<Set<string>>(new Set());
     const [showSensors, setShowSensors] = useState(false);
     const [showTrails, setShowTrails] = useState(false);
     const [selectedTrailDroneId, setSelectedTrailDroneId] = useState<string | 'all'>('all');
@@ -149,8 +153,30 @@ export const useSimulationEngine = (
         setSelectedCellsFromArea(cells);
     }, [searchArea]);
 
-    const triggerFailureEvent = useCallback((droneId: string, type: FailureEvent['type'] = 'DRONE_CONNECTION_LOST') => {
-        if (aiDisconnectedRef.current.has(droneId) && type === 'DRONE_CONNECTION_LOST') return;
+    const triggerMissionEvent = useCallback((type: MissionEvent['type'], droneId: string, title: string, message: string, severity: MissionEvent['severity'] = 'info') => {
+        const event: MissionEvent = {
+            id: Math.random().toString(36).substring(2, 9),
+            type,
+            droneId,
+            title,
+            message,
+            timestamp: timeRef.current,
+            severity
+        };
+
+        setActiveMissionEvent(event);
+
+        if (missionEventTimerRef.current) {
+            clearTimeout(missionEventTimerRef.current);
+        }
+
+        missionEventTimerRef.current = setTimeout(() => {
+            setActiveMissionEvent(null);
+            missionEventTimerRef.current = null;
+        }, 8000); // 8 seconds display time
+    }, []);
+
+    const triggerFailureEvent = useCallback((droneId: string, type: FailureEvent['type'] = 'DRONE_HARDWARE_FAILURE') => {
         
         const drone = dronesRef.current.find(d => d.id === droneId);
         if (!drone) return;
@@ -163,10 +189,7 @@ export const useSimulationEngine = (
 
         failureEventsRef.current.push(event);
 
-        if (type === 'DRONE_CONNECTION_LOST') {
-            aiDisconnectedRef.current.add(droneId);
-            drone.failureType = 'CONNECTION_LOST';
-        } else if (type === 'DRONE_HARDWARE_FAILURE') {
+        if (type === 'DRONE_HARDWARE_FAILURE') {
             aiDisconnectedRef.current.add(droneId);
             drone.failureType = 'HARDWARE_FAILURE';
             drone.isDestroyed = true;
@@ -175,8 +198,20 @@ export const useSimulationEngine = (
 
         const eventPayload = { type, droneId };
         onFailureEventTriggered(eventPayload);
+
+        // Add Mission Event for failure
+        if (type === 'DRONE_HARDWARE_FAILURE') {
+            triggerMissionEvent(
+                'EMERGENCY_LANDING',
+                droneId,
+                'CRITICAL ENGINE FAILURE',
+                `${droneId} has suffered total propulsion loss. Initiating emergency descent.`,
+                'critical'
+            );
+        }
+
         setTickFlip(f => f + 1);
-    }, [onFailureEventTriggered]);
+    }, [onFailureEventTriggered, triggerMissionEvent]);
 
     const setRandomizeBattery = useCallback((val: boolean) => {
         setRandomizeBatteryState(val);
@@ -369,6 +404,7 @@ export const useSimulationEngine = (
         lastFieldRelayIdRef.current = 'RLY-Prime';
         lastRelayDecisionSignatureRef.current = '';
         lastRelayDecisionTickRef.current = -9999;
+        dronesRTBReportedRef.current.clear();
         searchAreaRef.current = [];
         setSearchAreaState([]);
         setSelectedCellsFromArea([]);
@@ -394,6 +430,11 @@ export const useSimulationEngine = (
         if (popupTimerRef.current) {
             clearTimeout(popupTimerRef.current);
             popupTimerRef.current = null;
+        }
+        setActiveMissionEvent(null);
+        if (missionEventTimerRef.current) {
+            clearTimeout(missionEventTimerRef.current);
+            missionEventTimerRef.current = null;
         }
         setTickFlip(f => f + 1);
     };
@@ -664,15 +705,6 @@ export const useSimulationEngine = (
             const physicallyConnected = visited.has(d.id);
             d.isConnected = physicallyConnected;
 
-            // --- Auto-Recovery Logic ---
-            // If the drone is physically connected but marked as failed due to connection loss, regain it.
-            if (physicallyConnected && d.failureType === 'CONNECTION_LOST' && aiDisconnectedRef.current.has(d.id)) {
-                aiDisconnectedRef.current.delete(d.id);
-                d.failureType = undefined;
-                // UI Feedback: Show "RECONNECTED" for 40 ticks (~4 seconds)
-                aiReconnectedUntilTickRef.current.set(d.id, timeRef.current + 40);
-            }
-
             if (!d.isConnected && d.mode !== 'Relay') disconnectedCount++;
         });
 
@@ -770,6 +802,13 @@ export const useSimulationEngine = (
                         onRelaySwapDecisionMade(
                             '',
                             `Relay handoff decision required. ${outgoingRelay.id} battery is ${outgoingRelay.battery.toFixed(1)}% (<= ${RELAY_LOW_BATTERY_THRESHOLD}%) at target (${takeoverTarget.x.toFixed(1)}, ${takeoverTarget.y.toFixed(1)}). ${standbyRelay.id} is ready at base with ${standbyRelay.battery.toFixed(1)}% battery. Decide now: replace relay if needed, otherwise no_action with reason.`
+                        );
+
+                        triggerMissionEvent(
+                            'RELAY_HANDOFF',
+                            standbyRelay.id,
+                            'RELAY HANDOFF INITIATED',
+                            `${standbyRelay.id} is deploying to replace ${outgoingRelay.id} (Low Battery: ${outgoingRelay.battery.toFixed(0)}%).`
                         );
                     }
                 }
@@ -1007,6 +1046,17 @@ export const useSimulationEngine = (
                     }
                     d.tx = BASE_STATION.x;
                     d.ty = BASE_STATION.y;
+
+                    if (!dronesRTBReportedRef.current.has(d.id)) {
+                        dronesRTBReportedRef.current.add(d.id);
+                        triggerMissionEvent(
+                            'BATTERY_RECALL',
+                            d.id,
+                            'BATTERY RECALL ENGAGED',
+                            `${d.id} is returning to base (MCP Threshold: ${d.battery.toFixed(0)}%).`,
+                            'warning'
+                        );
+                    }
                 }
             }
 
@@ -1063,6 +1113,17 @@ export const useSimulationEngine = (
                 }
                 d.tx = BASE_X;
                 d.ty = BASE_Y;
+
+                if (!dronesRTBReportedRef.current.has(d.id)) {
+                    dronesRTBReportedRef.current.add(d.id);
+                    triggerMissionEvent(
+                        'BATTERY_RECALL',
+                        d.id,
+                        'BATTERY RECALL ENGAGED',
+                        `${d.id} is returning to base due to critical power levels (${d.battery.toFixed(0)}%).`,
+                        'warning'
+                    );
+                }
             }
             else if (d.battery < lowBattery && d.battery >= criticalBattery && distTargetToBase > 4 && d.mode === 'Wide') {
                 let bestX = BASE_X; let bestY = BASE_Y;
@@ -1547,6 +1608,8 @@ export const useSimulationEngine = (
         setMissionOverride,
         searchScanActive,
         setSearchScanActive,
+        activeMissionEvent,
+        setActiveMissionEvent,
 
         // Refs
         gridRef,

@@ -128,10 +128,8 @@ const ProbabilityMap3D: React.FC = () => {
             });
 
             if (nearestDrone) {
-                const failureTypes: ('DRONE_CONNECTION_LOST' | 'DRONE_HARDWARE_FAILURE')[] = 
-                    ['DRONE_CONNECTION_LOST', 'DRONE_HARDWARE_FAILURE'];
-                const randomType = failureTypes[Math.floor(Math.random() * failureTypes.length)];
-                triggerFailureEvent((nearestDrone as any).id, randomType);
+                // Now only trigger hardware failure manually to simulate critical events
+                triggerFailureEvent((nearestDrone as any).id, 'DRONE_HARDWARE_FAILURE');
                 return;
             }
         }

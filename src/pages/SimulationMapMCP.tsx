@@ -10,6 +10,7 @@ import { SimulationSettings } from '../components/SimulationMap/SimulationSettin
 import { MCPChatPanel } from '../components/SimulationMap/MCPChatPanel';
 import { PersistentCameraEngine } from '../components/SimulationMap/PersistentCameraEngine';
 import { DroneCameraStrip } from '../components/SimulationMap/DroneCameraStrip';
+import { MissionEventPopout } from '../components/SimulationMap/MissionEventPopout';
 import * as mcpClient from '../services/mcpClient';
 import { isPointInPolygon } from '../utils/polygonUtils';
 
@@ -44,7 +45,9 @@ const SimulationMapMCP: React.FC = () => {
         searchScanActive, setSearchScanActive,
         missionOverride,
         setMissionOverride,
-        updateDroneBattery
+        updateDroneBattery,
+        activeMissionEvent,
+        setActiveMissionEvent,
     } = useSharedSimulation();
 
     const [settingsOpen, setSettingsOpen] = React.useState(false);
@@ -394,6 +397,20 @@ const SimulationMapMCP: React.FC = () => {
                             )}
                         </div>
                     )}
+
+                    {/* Mission Alerts (Relay/Battery) - Left Side HUD Overlay */}
+                    <div style={{
+                        position: 'absolute',
+                        top: '12px',
+                        left: '0px',
+                        zIndex: 3000,
+                        pointerEvents: 'none'
+                    }}>
+                        <MissionEventPopout 
+                            event={activeMissionEvent} 
+                            onDismiss={() => setActiveMissionEvent(null)} 
+                        />
+                    </div>
                 </div>
 
                 <SimulationDashboard

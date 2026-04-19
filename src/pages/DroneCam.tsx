@@ -5,6 +5,7 @@ import 'cesium/Build/Cesium/Widgets/widgets.css';
 import { Target, Radio, Crosshair, Activity } from 'lucide-react';
 import { useSharedSimulation } from '../context/SimulationContext';
 import { INITIAL_SENSORS } from '../services/gridDataService';
+import { MissionEventPopout } from '../components/SimulationMap/MissionEventPopout';
 
 const GRID_W = 20;
 const GRID_H = 20;
@@ -23,7 +24,8 @@ const DroneCam: React.FC = () => {
     const failureCanvasRef = useRef<HTMLCanvasElement>(null);
 
     const { 
-        running, timeRef, dronesRef, sensorWeightsRef, commLinksRef, centerLocation 
+        running, timeRef, dronesRef, sensorWeightsRef, commLinksRef, centerLocation,
+        activeMissionEvent, setActiveMissionEvent
     } = useSharedSimulation();
 
     const GRID_ORIGIN_LNG = centerLocation.lng - (GRID_W / 2) * CELL_DEG;
@@ -253,23 +255,7 @@ const DroneCam: React.FC = () => {
                     failureCtx.putImageData(imageData, 0, 0);
                 } else if (isFailing) {
                     failureCtx.clearRect(0, 0, canvas.width, canvas.height);
-                    const w = canvas.width;
-                    const h = canvas.height;
-                    const noise = Math.random();
-                    if (noise > 0.85) {
-                        // Horizontal slice shift glitch
-                        const sliceH = Math.random() * 100 + 20;
-                        const sliceY = Math.random() * h;
-                        const shiftX = (Math.random() - 0.5) * 80;
-                        // Use the viewer canvas as a source if possible, but simpler is to just draw color smears
-                        failureCtx.fillStyle = 'rgba(0, 255, 204, 0.1)';
-                        failureCtx.fillRect(0, sliceY, w, sliceH);
-                        failureCtx.strokeStyle = 'rgba(0, 255, 204, 0.5)';
-                        failureCtx.beginPath();
-                        failureCtx.moveTo(0, sliceY);
-                        failureCtx.lineTo(w, sliceY + shiftX * 0.1);
-                        failureCtx.stroke();
-                    }
+                    // Placeholder for future tactical failure effects
                 } else {
                     failureCtx.clearRect(0, 0, canvas.width, canvas.height);
                 }
@@ -356,6 +342,20 @@ const DroneCam: React.FC = () => {
                         <div className="drone-hud-overlay" />
                         <div className="drone-telemetry">
                             {activeDrone} • {activeD ? activeD.mode : '—'} • LAT: {(activeLngLat as number[])[1].toFixed(4)} LON: {(activeLngLat as number[])[0].toFixed(4)} • ALT: {altitudeLabel} • BAT: {activeD ? Math.floor(activeD.battery) : 0}% • T:{timeRef.current}
+                        </div>
+
+                        {/* Mission Event Popout Overlay - Left Side Position */}
+                        <div style={{
+                            position: 'absolute',
+                            top: '20px',
+                            left: '0px',
+                            zIndex: 100,
+                            pointerEvents: 'none'
+                        }}>
+                            <MissionEventPopout 
+                                event={activeMissionEvent} 
+                                onDismiss={() => setActiveMissionEvent(null)} 
+                            />
                         </div>
                     </div>
 
