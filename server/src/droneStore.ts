@@ -78,7 +78,7 @@ interface DroneStateStore {
     missionTimeSec: number;
     sensorWeights: SensorWeightsSnapshot;
     totalEstimatedSurvivors: number;
-    missionTimeLimit: number;
+    missionTimeLimit: number | null;
 
     // Pending commands (to be picked up by frontend)
     pendingCommands: PendingCommand[];
@@ -146,7 +146,7 @@ export class DroneStore {
             wifi: { base: 0.1, conf: 0.8, color: '#ff00ff' },
         },
         totalEstimatedSurvivors: 3,
-        missionTimeLimit: 300, // Default 5 minutes
+        missionTimeLimit: null,
         pendingCommands: [],
         autoRecallThresholds: new Map(),
         relayStates: new Map(),
@@ -267,7 +267,7 @@ export class DroneStore {
                 wifi: { base: 0.1, conf: 0.8, color: '#ff00ff' },
             },
             totalEstimatedSurvivors: 3,
-            missionTimeLimit: 300,
+            missionTimeLimit: null,
             pendingCommands: [],
             autoRecallThresholds: new Map(),
             relayStates: new Map(),

@@ -147,7 +147,7 @@ export async function updateMissionStats(params: UpdateMissionStatsParams): Prom
         meanProbabilityScanned: params.meanProbabilityScanned,
         repeatedScanRate: params.repeatedScanRate,
         missionTimeSec: params.missionTimeSec,
-        missionTimeLimit: params.missionTimeLimit ?? undefined,
+        missionTimeLimit: params.missionTimeLimit,
         sensorWeights: params.sensorWeights,
         totalEstimatedSurvivors: params.totalEstimatedSurvivors,
     });
