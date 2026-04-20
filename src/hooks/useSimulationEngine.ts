@@ -8,6 +8,7 @@ import type { DroneMission } from '../utils/zoneAllocator';
 import { aStarPath, OBSTACLE_SET } from '../utils/swarmRouting';
 import { createSearchMemory, recordCellScan } from '../utils/searchMemory';
 import type { SearchMemory } from '../utils/searchMemory';
+import { playDuoNotificationTone } from '../utils/notificationSound';
 import {
     createGrid, createDrones, createSurvivors
 } from '../utils/simulationSetup';
@@ -80,6 +81,7 @@ export const useSimulationEngine = (
     const missionReturnTriggeredRef = useRef(false);
     const missionStopHandledRef = useRef(false);
     const missionConclusionPromptedRef = useRef(false);
+    const missionCompletionPopoutShownRef = useRef(false);
 
     const zonesRef = useRef<SearchZone[]>([]);
     const searchMemoryRef = useRef<SearchMemory>(createSearchMemory());
@@ -165,6 +167,7 @@ export const useSimulationEngine = (
         };
 
         setActiveMissionEvent(event);
+        void playDuoNotificationTone('event');
 
         if (missionEventTimerRef.current) {
             clearTimeout(missionEventTimerRef.current);
@@ -273,6 +276,7 @@ export const useSimulationEngine = (
                 
                 // 4. Stop simulation
                 setRunning(false);
+                missionCompletionPopoutShownRef.current = false;
 
                 setTickFlip(f => f + 1);
             }
@@ -341,6 +345,7 @@ export const useSimulationEngine = (
             newPin = { id: survivor.id, x: sx, y: sy, info: survivor.info };
             pinsRef.current.push(newPin);
             metricsRef.current.survivorFoundCount = pinsRef.current.length;
+            void playDuoNotificationTone('survivor');
         } else {
             newPin = existingPin;
         }
@@ -394,6 +399,7 @@ export const useSimulationEngine = (
         missionReturnTriggeredRef.current = false;
         missionStopHandledRef.current = false;
         missionConclusionPromptedRef.current = false;
+        missionCompletionPopoutShownRef.current = false;
         autoRecallThresholdsRef.current.clear();
         failureEventsRef.current = [];
         aiDisconnectedRef.current.clear();
@@ -609,6 +615,17 @@ export const useSimulationEngine = (
         if (areaMissionComplete && !missionConclusionPromptedRef.current) {
             missionConclusionPromptedRef.current = true;
 
+            if (!missionCompletionPopoutShownRef.current) {
+                missionCompletionPopoutShownRef.current = true;
+                triggerMissionEvent(
+                    'SYSTEM_ALERT',
+                    BASE_STATION.id,
+                    'MISSION COMPLETE',
+                    'Custom search area objective completed. Drones are now returning to base.',
+                    'info'
+                );
+            }
+
             missionReturnTriggeredRef.current = true;
             drones.forEach(d => {
                 setDroneTarget(d, BASE_STATION.x, BASE_STATION.y);
@@ -631,6 +648,17 @@ export const useSimulationEngine = (
         }
 
         if (missionComplete && !missionReturnTriggeredRef.current) {
+            if (!missionCompletionPopoutShownRef.current) {
+                missionCompletionPopoutShownRef.current = true;
+                triggerMissionEvent(
+                    'SYSTEM_ALERT',
+                    BASE_STATION.id,
+                    'MISSION COMPLETE',
+                    'Mission objectives complete. Drones are returning to base for shutdown.',
+                    'info'
+                );
+            }
+
             missionReturnTriggeredRef.current = true;
             drones.forEach(d => {
                 setDroneTarget(d, BASE_STATION.x, BASE_STATION.y);
@@ -1149,6 +1177,17 @@ export const useSimulationEngine = (
                 }
                 d.tx = bestX;
                 d.ty = bestY;
+
+                if (!dronesRTBReportedRef.current.has(d.id)) {
+                    dronesRTBReportedRef.current.add(d.id);
+                    triggerMissionEvent(
+                        'BATTERY_RECALL',
+                        d.id,
+                        'LOW BATTERY REROUTE',
+                        `${d.id} is low on power (${d.battery.toFixed(0)}%) and repositioning closer to base.`,
+                        'warning'
+                    );
+                }
             }
 
             const distToTarget = Math.sqrt(Math.pow(d.tx - d.x, 2) + Math.pow(d.ty - d.y, 2));
