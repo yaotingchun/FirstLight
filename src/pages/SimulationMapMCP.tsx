@@ -159,7 +159,7 @@ const SimulationMapMCP: React.FC = () => {
     }, [running, speed, performTick]);
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', backgroundColor: '#020608', height: '100%', gap: '8px', color: 'var(--text-primary)', padding: '24px 20px 16px', boxSizing: 'border-box', overflow: 'hidden', position: 'relative' }}>
+        <div className="simulation-mcp-page" style={{ display: 'flex', flexDirection: 'column', backgroundColor: '#020608', height: '100%', gap: '8px', color: 'var(--text-primary)', padding: '24px 20px 16px', boxSizing: 'border-box', overflow: 'hidden', position: 'relative', fontFamily: 'monospace' }}>
             <header style={{ borderBottom: '1px solid rgba(0, 255, 204, 0.3)', paddingBottom: '12px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexShrink: 0, margin: 0 }}>
                 <div>
                     <h2 style={{ margin: 0, fontSize: '1.8rem', color: '#00ffcc', letterSpacing: '3px', textTransform: 'uppercase', fontFamily: 'monospace', textShadow: '0 0 10px rgba(0, 255, 204, 0.4)' }}>
@@ -170,7 +170,7 @@ const SimulationMapMCP: React.FC = () => {
                     </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '8px', background: 'var(--panel-bg)', padding: '6px 12px', border: '1px solid var(--panel-border)', borderRadius: '4px', marginBottom: '4px', alignItems: 'center' }}>
+                <div className="sim-top-right-controls" style={{ display: 'flex', gap: '8px', background: 'var(--panel-bg)', padding: '6px 12px', border: '1px solid var(--panel-border)', borderRadius: '4px', marginBottom: '4px', alignItems: 'center' }}>
                     <button onClick={() => {
                         if (!running) {
                             void engageCustomAreaOverride();
@@ -178,15 +178,15 @@ const SimulationMapMCP: React.FC = () => {
                         } else {
                             toggleRunning();
                         }
-                    }} className="hud-btn" style={{ padding: '6px 12px', fontSize: '0.75rem', display: 'flex', gap: '6px', alignItems: 'center', cursor: 'pointer' }}>
+                    }} className="hud-btn" style={{ padding: '5px 10px', fontSize: '0.82rem', display: 'flex', gap: '6px', alignItems: 'center', cursor: 'pointer' }}>
                         {running ? <Pause size={14} /> : <Play size={14} />} {running ? 'PAUSE' : 'START SCAN'}
                     </button>
                     <button
                         onClick={() => setShowActualMap(!showActualMap)}
                         className={`hud-btn ${showActualMap ? 'glow-text' : ''}`}
                         style={{
-                            padding: '6px 12px',
-                            fontSize: '0.75rem',
+                            padding: '5px 10px',
+                            fontSize: '0.82rem',
                             display: 'flex',
                             gap: '6px',
                             alignItems: 'center',
@@ -199,7 +199,7 @@ const SimulationMapMCP: React.FC = () => {
                     <button
                         onClick={() => { if (!has3DMounted) setHas3DMounted(true); setShow3D(v => !v); }}
                         className={`hud-btn ${show3D ? 'glow-text' : ''}`}
-                        style={{ padding: '6px 12px', fontSize: '0.75rem', display: 'flex', gap: '6px', alignItems: 'center', cursor: 'pointer', borderColor: show3D ? 'var(--accent-primary)' : '' }}
+                        style={{ padding: '5px 10px', fontSize: '0.82rem', display: 'flex', gap: '6px', alignItems: 'center', cursor: 'pointer', borderColor: show3D ? 'var(--accent-primary)' : '' }}
                     >
                         <Layers size={14} /> {show3D ? '2D VIEW' : '3D VIEW'}
                     </button>
@@ -207,8 +207,8 @@ const SimulationMapMCP: React.FC = () => {
                         onClick={() => setChatOpen(!chatOpen)}
                         className={`hud-btn ${chatOpen ? 'glow-text' : ''}`}
                         style={{
-                            padding: '6px 12px',
-                            fontSize: '0.75rem',
+                            padding: '5px 10px',
+                            fontSize: '0.82rem',
                             display: 'flex',
                             gap: '6px',
                             alignItems: 'center',
@@ -222,8 +222,8 @@ const SimulationMapMCP: React.FC = () => {
                         onClick={() => setSettingsOpen(!settingsOpen)}
                         className={`hud-btn ${settingsOpen ? 'glow-text' : ''}`}
                         style={{
-                            padding: '6px 12px',
-                            fontSize: '0.75rem',
+                            padding: '5px 10px',
+                            fontSize: '0.82rem',
                             display: 'flex',
                             gap: '6px',
                             alignItems: 'center',
@@ -304,7 +304,7 @@ const SimulationMapMCP: React.FC = () => {
 
                     {/* Glassmorphism Survivor Pin Popup - Centered over the grid area specifically, ignoring the dashboard */}
                     {selectedPin && (
-                        <div 
+                        <div
                             className="pinpoint-popup"
                             style={{
                                 position: 'absolute',
@@ -324,10 +324,10 @@ const SimulationMapMCP: React.FC = () => {
                             {/* Left: Image Preview (if available) */}
                             {selectedPin.info.img && (
                                 <div style={{ position: 'relative', width: '224px', flexShrink: 0, backgroundColor: 'rgba(0,0,0,0.5)', overflow: 'hidden', borderRight: '1px solid rgba(0, 255, 204, 0.2)' }}>
-                                    <img 
+                                    <img
                                         key={selectedPin.info.img}
-                                        src={selectedPin.info.img} 
-                                        alt="Detected content" 
+                                        src={selectedPin.info.img}
+                                        alt="Detected content"
                                         decoding="sync"
                                         onError={(e) => {
                                             const target = e.currentTarget;
@@ -350,7 +350,7 @@ const SimulationMapMCP: React.FC = () => {
                                                 parent.appendChild(placeholder);
                                             }
                                         }}
-                                        style={{ width: '100%', height: '100%', objectFit: 'cover', color: 'transparent' }} 
+                                        style={{ width: '100%', height: '100%', objectFit: 'cover', color: 'transparent' }}
                                     />
                                     <div style={{ position: 'absolute', top: 6, left: 6, background: 'rgba(255,68,68,0.85)', color: '#fff', fontSize: '0.6rem', padding: '2px 6px', borderRadius: '2px', fontWeight: 'bold', border: '1px solid #fff' }}>
                                         LIVE CAM
@@ -365,15 +365,15 @@ const SimulationMapMCP: React.FC = () => {
                                         <Radio size={14} className="pulse-fast" /> SIGNAL UPLINK
                                     </h4>
                                     {pinPopupType === 'clicked' && (
-                                        <button 
-                                            onClick={() => handlePinClick(null)} 
+                                        <button
+                                            onClick={() => handlePinClick(null)}
                                             style={{ background: 'transparent', border: 'none', color: '#00ffcc', cursor: 'pointer', display: 'flex', opacity: 0.6 }}
                                         >
                                             <X size={14} />
                                         </button>
                                     )}
                                 </div>
-                                
+
                                 <div style={{ padding: '8px 14px', flex: 1, display: 'flex', flexDirection: 'column' }}>
                                     <div style={{ fontFamily: 'var(--font-main)', fontSize: '0.75rem', letterSpacing: '0.05em', color: '#fff', marginBottom: '6px', padding: '6px 10px', background: 'rgba(0, 255, 204, 0.1)', borderLeft: '2px solid #00ffcc', lineHeight: 1.4, flex: 1, overflow: 'hidden' }}>
                                         {selectedPin.info.message}
@@ -406,9 +406,9 @@ const SimulationMapMCP: React.FC = () => {
                         zIndex: 3000,
                         pointerEvents: 'none'
                     }}>
-                        <MissionEventPopout 
-                            event={activeMissionEvent} 
-                            onDismiss={() => setActiveMissionEvent(null)} 
+                        <MissionEventPopout
+                            event={activeMissionEvent}
+                            onDismiss={() => setActiveMissionEvent(null)}
                         />
                     </div>
                 </div>

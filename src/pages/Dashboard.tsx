@@ -331,7 +331,7 @@ const Dashboard: React.FC = () => {
 
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', backgroundColor: '#020608', height: '100%', minHeight: 0, padding: '24px 20px 16px', boxSizing: 'border-box', overflow: 'hidden' }}>
+        <div className="dashboard-page" style={{ display: 'flex', flexDirection: 'column', backgroundColor: '#020608', height: '100%', minHeight: 0, padding: '24px 20px 16px', boxSizing: 'border-box', overflow: 'hidden' }}>
             {/* Header */}
             <header style={{ borderBottom: '1px solid rgba(0, 255, 204, 0.3)', paddingBottom: '12px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexShrink: 0 }}>
                 <div>
@@ -392,7 +392,7 @@ const Dashboard: React.FC = () => {
                             {swarmDrones.slice(0, 10).map((d, i) => {
                                 const isOffline = d.state === 'OFFLINE';
                                 return (
-                                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '12px 14px', borderRadius: '4px', fontSize: '0.76rem' }}>
+                                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '12px 14px', borderRadius: '4px', fontSize: '0.82rem' }}>
                                         <span style={{ color: isOffline ? '#ff4444' : '#fff', fontWeight: 600 }}>{d.id}</span>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                             <span style={{ color: d.battery > 20 ? '#00ffcc' : '#ff4444' }}>{d.battery}%</span>
@@ -410,20 +410,20 @@ const Dashboard: React.FC = () => {
 
                     {/* SWARM STRATEGY */}
                     <CyberPanel title="SWARM STRATEGY" icon={<Layers size={16} />} color="#fff" flex={0.8}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', justifyContent: 'space-evenly', height: '100%', padding: '8px 12px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', justifyContent: 'space-evenly', height: '100%', padding: '6px 10px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
                                 <span style={{ color: '#6b8a8b' }}>MODE</span>
                                 <span style={{ color: '#00ffcc', fontWeight: 'bold' }}>{strategyMode}</span>
                             </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
                                 <span style={{ color: '#6b8a8b' }}>FOCUS</span>
                                 <span style={{ fontWeight: 'bold' }}>{focusString}</span>
                             </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
                                 <span style={{ color: '#6b8a8b' }}>EXPLORATION_BIAS</span>
                                 <span style={{ fontWeight: 'bold' }}>{explorationBias}%</span>
                             </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem' }}>
                                 <span style={{ color: '#6b8a8b' }}>INVESTIGATION_BIAS</span>
                                 <span style={{ fontWeight: 'bold' }}>{investigationBias}%</span>
                             </div>
@@ -432,37 +432,37 @@ const Dashboard: React.FC = () => {
 
                     {/* MISSION PROGRESSION */}
                     <CyberPanel title="MISSION PROGRESSION" icon={<BarChart2 size={16} />} color="#ff9900" flex={1.2} style={{ borderBottom: '1px solid rgba(255, 153, 0, 0.45)' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', height: '100%', justifyContent: 'space-evenly', padding: '4px 8px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', height: '100%', justifyContent: 'space-evenly', padding: '2px 6px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div style={{ fontSize: '0.7rem', color: '#6b8a8b', letterSpacing: '1px' }}>COVERAGE</div>
-                                <div style={{ fontSize: '1.5rem', color: '#00ffcc', fontWeight: 'bold', fontFamily: 'monospace' }}>{missionCoverage.toFixed(1)}%</div>
+                                <div style={{ fontSize: '0.78rem', color: '#6b8a8b', letterSpacing: '1px' }}>COVERAGE</div>
+                                <div style={{ fontSize: '1.62rem', color: '#00ffcc', fontWeight: 'bold', fontFamily: 'monospace' }}>{missionCoverage.toFixed(1)}%</div>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div style={{ fontSize: '0.7rem', color: '#6b8a8b', letterSpacing: '1px' }}>EXPLORATION RATE</div>
-                                <div style={{ fontSize: '1.2rem', color: '#fff', fontWeight: 'bold', fontFamily: 'monospace' }}>{explorationRate} <span style={{ fontSize: '0.6rem', color: '#6b8a8b' }}>cells/s</span></div>
+                                <div style={{ fontSize: '0.78rem', color: '#6b8a8b', letterSpacing: '1px' }}>EXPLORATION RATE</div>
+                                <div style={{ fontSize: '1.3rem', color: '#fff', fontWeight: 'bold', fontFamily: 'monospace' }}>{explorationRate} <span style={{ fontSize: '0.64rem', color: '#6b8a8b' }}>cells/s</span></div>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div style={{ fontSize: '0.7rem', color: '#6b8a8b', letterSpacing: '1px' }}>REPEAT RATE</div>
-                                <div style={{ fontSize: '1.2rem', color: '#fff', fontWeight: 'bold', fontFamily: 'monospace' }}>{repeatRate}%</div>
+                                <div style={{ fontSize: '0.78rem', color: '#6b8a8b', letterSpacing: '1px' }}>REPEAT RATE</div>
+                                <div style={{ fontSize: '1.3rem', color: '#fff', fontWeight: 'bold', fontFamily: 'monospace' }}>{repeatRate}%</div>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div style={{ fontSize: '0.7rem', color: '#6b8a8b', letterSpacing: '1px', maxWidth: '50%' }}>HOTSPOT INVESTIGATIONS</div>
-                                <div style={{ fontSize: '1.2rem', color: '#ff9900', fontWeight: 'bold', fontFamily: 'monospace' }}>{activeInvestigations} <span style={{ fontSize: '0.6rem', color: '#6b8a8b' }}>Drones</span></div>
+                                <div style={{ fontSize: '0.78rem', color: '#6b8a8b', letterSpacing: '1px', maxWidth: '50%' }}>HOTSPOT INVESTIGATIONS</div>
+                                <div style={{ fontSize: '1.3rem', color: '#ff9900', fontWeight: 'bold', fontFamily: 'monospace' }}>{activeInvestigations} <span style={{ fontSize: '0.64rem', color: '#6b8a8b' }}>Drones</span></div>
                             </div>
                         </div>
                     </CyberPanel>
 
                     {/* ADAPTIVE SENSORS */}
                     <CyberPanel title="ADAPTIVE SENSORS" icon={<Radio size={16} />} flex={0.85}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '8px 12px', overflowY: 'auto' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '6px 10px', overflowY: 'auto' }}>
                             {missionStats?.sensorWeights ? (
                                 (Object.entries(missionStats.sensorWeights) as [string, { base: number; conf: number; color?: string }][]).map(([key, data]) => {
                                     const fw = (data.base * data.conf).toFixed(2);
                                     const defaultColor = key === 'mobile' ? '#00ffcc' : key === 'thermal' ? '#ff4444' : key === 'sound' ? '#ffff00' : '#ff00ff';
                                     return (
                                         <div key={key}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', color: 'var(--text-primary)', marginBottom: '8px' }}>
-                                                <span>{key} SIG</span><span style={{ color: data.color || defaultColor }}>w={fw}</span>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', textTransform: 'uppercase', color: 'var(--text-primary)', marginBottom: '6px' }}>
+                                                <span style={{ fontFamily: 'var(--font-main)', letterSpacing: '1px', color: '#6b8a8b' }}>{key} SIG</span><span style={{ color: data.color || defaultColor, fontFamily: 'var(--font-mono)' }}>w={fw}</span>
                                             </div>
                                             <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.05)', borderRadius: '2px', overflow: 'hidden' }}>
                                                 <div style={{ width: `${Math.min(100, (parseFloat(fw) / 0.4) * 100)}%`, height: '100%', background: data.color || defaultColor, boxShadow: `0 0 6px ${data.color || defaultColor}` }} />

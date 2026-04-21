@@ -293,7 +293,7 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                     boxShadow: '0 0 30px rgba(0, 255, 204, 0.2)'
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <h3 
+                        <h3
                             style={{ margin: 0, color: '#00ffcc', display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'grab', userSelect: 'none' }}
                             onPointerDown={(e) => {
                                 chatDragRef.current = { isDragging: true, startX: e.clientX, startY: e.clientY, startPosX: chatPos.x, startPosY: chatPos.y };
@@ -312,14 +312,14 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                         >
                             <FileText size={16} /> Mission Log
                         </h3>
-                        
+
                         {/* AI Mode Selection & Status */}
                         <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.4)', borderRadius: '6px', padding: '2px 4px', border: '1px solid rgba(0, 255, 204, 0.2)', gap: '4px' }}>
                             <div style={{ display: 'flex', borderRight: '1px solid rgba(255,255,255,0.1)', paddingRight: '4px', gap: '4px', alignItems: 'center' }}>
                                 <div title="Gemini Status" style={{ width: '6px', height: '6px', borderRadius: '50%', background: providerStatus.gemini === 'online' ? '#00ffcc' : '#f03e3e', boxShadow: providerStatus.gemini === 'online' ? '0 0 5px #00ffcc' : 'none' }} />
                                 <div title="Ollama Status" style={{ width: '6px', height: '6px', borderRadius: '50%', background: providerStatus.ollama === 'online' ? '#4da3ff' : '#f03e3e', boxShadow: providerStatus.ollama === 'online' ? '0 0 5px #4da3ff' : 'none' }} />
                             </div>
-                            
+
                             {(['online', 'offline', 'auto'] as const).map(mode => (
                                 <button
                                     key={mode}
@@ -445,14 +445,14 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                                                 >
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 10, fontWeight: 600 }}>
                                                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                                            <div style={{ 
-                                                                width: 18, 
-                                                                height: 18, 
-                                                                borderRadius: '4px', 
-                                                                background: 'rgba(255,255,255,0.05)', 
-                                                                display: 'flex', 
-                                                                alignItems: 'center', 
-                                                                justifyContent: 'center', 
+                                                            <div style={{
+                                                                width: 18,
+                                                                height: 18,
+                                                                borderRadius: '4px',
+                                                                background: 'rgba(255,255,255,0.05)',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
                                                                 flexShrink: 0,
                                                                 border: '1px solid rgba(255,255,255,0.08)'
                                                             }}>
@@ -493,14 +493,14 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                                             >
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 10, fontWeight: 600 }}>
                                                     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                                        <div style={{ 
-                                                            width: 18, 
-                                                            height: 18, 
-                                                            borderRadius: '4px', 
-                                                            background: `${themeColor}22`, 
-                                                            display: 'flex', 
-                                                            alignItems: 'center', 
-                                                            justifyContent: 'center', 
+                                                        <div style={{
+                                                            width: 18,
+                                                            height: 18,
+                                                            borderRadius: '4px',
+                                                            background: `${themeColor}22`,
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
                                                             flexShrink: 0,
                                                             border: `1px solid ${themeColor}44`
                                                         }}>
@@ -537,7 +537,7 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                     </div>
 
                     {/* Resize Handle */}
-                    <div 
+                    <div
                         style={{
                             position: 'absolute',
                             right: 0,
@@ -568,17 +568,17 @@ export const MCPChatPanel: React.FC<MCPChatPanelProps> = ({
                             e.stopPropagation();
                             const dx = e.clientX - chatResizeRef.current.startX;
                             const dy = e.clientY - chatResizeRef.current.startY;
-                            
+
                             const newWidth = Math.max(300, chatResizeRef.current.startWidth + dx);
                             const newHeight = Math.max(200, chatResizeRef.current.startHeight + dy);
-                            
+
                             const actualDx = newWidth - chatResizeRef.current.startWidth;
                             const actualDy = newHeight - chatResizeRef.current.startHeight;
 
                             setChatSize({ width: newWidth, height: newHeight });
-                            setChatPos({ 
-                                x: chatResizeRef.current.startPosX + actualDx, 
-                                y: chatResizeRef.current.startPosY + actualDy 
+                            setChatPos({
+                                x: chatResizeRef.current.startPosX + actualDx,
+                                y: chatResizeRef.current.startPosY + actualDy
                             });
                         }}
                         onPointerUp={(e) => {

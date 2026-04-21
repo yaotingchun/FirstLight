@@ -23,7 +23,7 @@ const DroneCam: React.FC = () => {
     const commsLinesRef = useRef<Record<string, Cesium.Entity>>({});
     const failureCanvasRef = useRef<HTMLCanvasElement>(null);
 
-    const { 
+    const {
         running, timeRef, dronesRef, sensorWeightsRef, commLinksRef, centerLocation,
         activeMissionEvent, setActiveMissionEvent
     } = useSharedSimulation();
@@ -90,7 +90,7 @@ const DroneCam: React.FC = () => {
 
                 const buildings = await Cesium.createOsmBuildingsAsync();
                 if (isMounted && viewer) viewer.scene.primitives.add(buildings);
-                
+
                 // Add epicenter as an entity
                 if (isMounted && viewer) {
                     viewer.entities.add({
@@ -128,7 +128,7 @@ const DroneCam: React.FC = () => {
     // ── Per-frame map sync ──────────────────────────────────────────
     useEffect(() => {
         if (!isActivePage) return;
-        
+
         let animId: number;
         let heading = 0; // Cesium uses radians
 
@@ -183,8 +183,8 @@ const DroneCam: React.FC = () => {
                 const getCoord = (id: string): Cesium.Cartesian3 => {
                     let lng, lat, alt = 300;
                     if (id === BASE_STATION.id) {
-                         [lng, lat] = gridToLngLat(BASE_STATION.x, BASE_STATION.y);
-                         alt = 50;
+                        [lng, lat] = gridToLngLat(BASE_STATION.x, BASE_STATION.y);
+                        alt = 50;
                     } else {
                         const dd = drones.find(dr => dr.id === id);
                         if (dd) {
@@ -196,7 +196,7 @@ const DroneCam: React.FC = () => {
                     }
                     return Cesium.Cartesian3.fromDegrees(lng, lat, alt);
                 };
-                
+
                 const color = link.active ? Cesium.Color.YELLOW : Cesium.Color.AQUAMARINE.withAlpha(0.25);
                 const width = link.active ? 3 : 1;
 
@@ -225,7 +225,7 @@ const DroneCam: React.FC = () => {
 
             // Camera follows active drone
             const active = drones.find(dd => dd.id === activeDrone);
-            
+
             // --- Failure Visuals logic ---
             const failureCtx = failureCanvasRef.current?.getContext('2d');
             if (active && failureCtx && failureCanvasRef.current) {
@@ -233,7 +233,7 @@ const DroneCam: React.FC = () => {
                 const isFailing = !!active.failureType;
                 const canvas = failureCanvasRef.current;
                 const parent = canvas.parentElement;
-                
+
                 if (parent) {
                     if (canvas.width !== parent.clientWidth || canvas.height !== parent.clientHeight) {
                         canvas.width = parent.clientWidth;
@@ -248,9 +248,9 @@ const DroneCam: React.FC = () => {
                     for (let i = 0; i < imageData.data.length; i += 4) {
                         const v = Math.random() * 80; // slightly darker noise
                         imageData.data[i] = v;
-                        imageData.data[i+1] = v;
-                        imageData.data[i+2] = v;
-                        imageData.data[i+3] = 255;
+                        imageData.data[i + 1] = v;
+                        imageData.data[i + 2] = v;
+                        imageData.data[i + 3] = 255;
                     }
                     failureCtx.putImageData(imageData, 0, 0);
                 } else if (isFailing) {
@@ -264,7 +264,7 @@ const DroneCam: React.FC = () => {
             if (active) {
                 const [aLng, aLat] = gridToLngLat(active.x, active.y);
                 const aAlt = active.mode === 'Micro' ? 80 : active.mode === 'Charging' ? 5 : 300;
-                
+
                 // Calculate bearing towards target
                 const dx = active.tx - active.x;
                 const dy = -(active.ty - active.y); // Negative because geographic Y grows downward
@@ -272,7 +272,7 @@ const DroneCam: React.FC = () => {
                 if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
                     targetHeading = Math.atan2(dx, dy);
                 }
-                
+
                 // Smooth heading interpolation
                 let diff = targetHeading - heading;
                 while (diff > Math.PI) diff -= 2 * Math.PI;
@@ -304,7 +304,7 @@ const DroneCam: React.FC = () => {
     const altitudeLabel = activeD ? (activeD.mode === 'Micro' ? '80M' : activeD.mode === 'Charging' ? '0M (DOCKED)' : '300M') : '—';
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', backgroundColor: '#020608', height: '100%', gap: '16px', padding: '24px 20px 16px', boxSizing: 'border-box', overflow: 'hidden' }}>
+        <div className="drone-cam-page" style={{ display: 'flex', flexDirection: 'column', backgroundColor: '#020608', height: '100%', gap: '16px', padding: '24px 20px 16px', boxSizing: 'border-box', overflow: 'hidden', fontFamily: 'monospace' }}>
             <header style={{ borderBottom: '1px solid rgba(0, 255, 204, 0.3)', paddingBottom: '12px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexShrink: 0, margin: 0 }}>
                 <div>
                     <h2 style={{ margin: 0, fontSize: '1.8rem', color: '#00ffcc', letterSpacing: '3px', textTransform: 'uppercase', fontFamily: 'monospace', textShadow: '0 0 10px rgba(0, 255, 204, 0.4)' }}>
@@ -326,17 +326,17 @@ const DroneCam: React.FC = () => {
 
                     <div className="drone-view">
                         <div id="map" ref={mapContainer} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: '#000', zIndex: 0 }} />
-                        <canvas 
-                            ref={failureCanvasRef} 
-                            style={{ 
-                                position: 'absolute', 
-                                top: 0, 
-                                left: 0, 
-                                width: '100%', 
-                                height: '100%', 
+                        <canvas
+                            ref={failureCanvasRef}
+                            style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                width: '100%',
+                                height: '100%',
                                 pointerEvents: 'none',
                                 zIndex: 5
-                            }} 
+                            }}
                         />
                         <div className="drone-crt-lines" />
                         <div className="drone-hud-overlay" />
@@ -352,15 +352,15 @@ const DroneCam: React.FC = () => {
                             zIndex: 100,
                             pointerEvents: 'none'
                         }}>
-                            <MissionEventPopout 
-                                event={activeMissionEvent} 
-                                onDismiss={() => setActiveMissionEvent(null)} 
+                            <MissionEventPopout
+                                event={activeMissionEvent}
+                                onDismiss={() => setActiveMissionEvent(null)}
                             />
                         </div>
                     </div>
 
                     <div className="drone-side-panel" style={{ display: 'flex', flexDirection: 'column', gap: '16px', height: '100%' }}>
-                        
+
                         <div className="hud-panel" style={{ padding: '16px', flexShrink: 0 }}>
                             <h4 className="hud-text" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <Target size={16} /> SELECT ACTIVE ASSET
@@ -395,7 +395,7 @@ const DroneCam: React.FC = () => {
                         </div>
 
                         <div className="hud-panel" style={{ padding: '16px', flex: 1, display: 'flex', flexDirection: 'column' }}>
-                            <h4 className="hud-text" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                            <h4 className="hud-text" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, letterSpacing: '1.2px' }}>
                                 <Radio size={16} /> ADAPTIVE SENSORS
                             </h4>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -404,8 +404,8 @@ const DroneCam: React.FC = () => {
                                     const defaultColor = key === 'mobile' ? '#00ffcc' : key === 'thermal' ? '#ff4444' : key === 'sound' ? '#ffff00' : '#ff00ff';
                                     return (
                                         <div key={key}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', color: 'var(--text-primary)', marginBottom: '6px' }}>
-                                                <span>{key} SIG</span><span style={{ color: data.color || defaultColor }}>w={fw}</span>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-primary)', marginBottom: '6px' }}>
+                                                <span style={{ letterSpacing: '0.08em' }}>{key} SIG</span><span style={{ color: data.color || defaultColor }}>w={fw}</span>
                                             </div>
                                             <div style={{ width: '100%', height: '6px', background: 'var(--panel-border)', borderRadius: '3px', overflow: 'hidden' }}>
                                                 <div style={{ width: `${(parseFloat(fw) / 0.4) * 100}%`, height: '100%', background: data.color || defaultColor, boxShadow: `0 0 8px ${data.color || defaultColor}` }} />

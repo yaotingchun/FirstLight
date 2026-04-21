@@ -27,7 +27,7 @@ export const DroneCameraStrip: React.FC<DroneCameraStripProps> = ({ drones, canv
         }}>
             <div style={{ 
                 color: '#00ffcc', 
-                fontSize: '0.7rem', 
+                fontSize: '0.78rem', 
                 fontWeight: 'bold', 
                 letterSpacing: '2px', 
                 marginBottom: '4px',

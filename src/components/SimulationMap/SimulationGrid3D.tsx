@@ -72,9 +72,9 @@ interface SimulationGrid3DProps {
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-export const SimulationGrid3D: React.FC<SimulationGrid3DProps> = ({ 
-    grid, drones, pins, running, 
-    getSectorProbability, searchArea, searchScanActive 
+export const SimulationGrid3D: React.FC<SimulationGrid3DProps> = ({
+    grid, drones, pins, running,
+    getSectorProbability, searchArea, searchScanActive
 }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -87,7 +87,7 @@ export const SimulationGrid3D: React.FC<SimulationGrid3DProps> = ({
     const searchAreaRef = useRef<{ x: number, y: number }[]>(searchArea);
     const searchScanActiveRef = useRef<boolean>(searchScanActive);
     const getSectorProbabilityRef = useRef(getSectorProbability);
-    
+
     // Smooth state tracking
     const hoverRef = useRef<{ x: number, y: number } | null>(null);
     const isDraggingRef = useRef(false);
@@ -144,7 +144,7 @@ export const SimulationGrid3D: React.FC<SimulationGrid3DProps> = ({
         controls.minDistance = UNIT * 2;
         controls.maxDistance = WW * 4;
         controls.target.set(0, 0, -WD * 0.06);
-        
+
         controls.addEventListener('start', () => { isDraggingRef.current = true; });
         controls.addEventListener('end', () => { isDraggingRef.current = false; });
 
@@ -176,10 +176,10 @@ export const SimulationGrid3D: React.FC<SimulationGrid3DProps> = ({
         const heatmapGroup = new THREE.Group();
         const heatmapPlanes: THREE.Mesh[] = [];
         const heatMatBase = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-        
+
         for (let gy = 0; gy < GRID_H; gy++) {
             for (let gx = 0; gx < GRID_W; gx++) {
-                const p = new THREE.Mesh(new THREE.PlaneGeometry(UNIT*0.96, UNIT*0.96), heatMatBase.clone());
+                const p = new THREE.Mesh(new THREE.PlaneGeometry(UNIT * 0.96, UNIT * 0.96), heatMatBase.clone());
                 p.rotation.x = -Math.PI / 2;
                 const pos = gw(gx, gy);
                 p.position.set(pos.x, 0.05, pos.z);
@@ -219,17 +219,17 @@ export const SimulationGrid3D: React.FC<SimulationGrid3DProps> = ({
         // Bright centre axis lines
         const axisMat = new THREE.LineBasicMaterial({ color: 0x00aaff, transparent: true, opacity: 0.55 });
         [[new THREE.Vector3(-WW / 2, 0.03, 0), new THREE.Vector3(WW / 2, 0.03, 0)],
-         [new THREE.Vector3(0, 0.03, -WD / 2), new THREE.Vector3(0, 0.03, WD / 2)]
+        [new THREE.Vector3(0, 0.03, -WD / 2), new THREE.Vector3(0, 0.03, WD / 2)]
         ].forEach(pts => scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), axisMat)));
 
         // ── Buildings ─────────────────────────────────────────────────────────
         const buildingMeshMap = new Map<string, THREE.Mesh>();
-        const bldgMatBase = new THREE.MeshStandardMaterial({ 
-            color: 0x182a40, 
-            roughness: 0.65, 
+        const bldgMatBase = new THREE.MeshStandardMaterial({
+            color: 0x182a40,
+            roughness: 0.65,
             metalness: 0.15,
             transparent: false, // Fully opaque now
-            opacity: 1.0, 
+            opacity: 1.0,
             emissive: new THREE.Color(0xaa2828), // Slightly brighter burgundy
             emissiveIntensity: 0
         });
@@ -334,10 +334,10 @@ export const SimulationGrid3D: React.FC<SimulationGrid3DProps> = ({
                 const gxPad = Math.max(0, Math.min(GRID_W - 1, Math.round(drone.x)));
                 const gyPad = Math.max(0, Math.min(GRID_H - 1, Math.round(drone.y)));
                 const groundH = (heightMap[gyPad]?.[gxPad] ?? 0) * H_SCALE;
-                
+
                 const tAlt = isGrounded ? groundH : (getDroneAltitude(drone.x, drone.y, heightMap) * H_SCALE + UNIT * 0.45);
                 if (!droneAlt.has(drone.id)) droneAlt.set(drone.id, isGrounded ? groundH : 0);
-                
+
                 const cAlt = droneAlt.get(drone.id)!;
                 const nAlt = cAlt + (tAlt - cAlt) * 0.065;
                 droneAlt.set(drone.id, nAlt);
@@ -390,15 +390,15 @@ export const SimulationGrid3D: React.FC<SimulationGrid3DProps> = ({
                     if (!cell) continue;
 
                     const prob = getSectorProbabilityRef.current(gx, gy);
-                    
+
                     // Heatmap plane update - sync with 2D visibility (only if scanned)
                     const hPlane = heatmapPlanes[idx];
-                    if (hPlane) { 
+                    if (hPlane) {
                         const mat = hPlane.material as THREE.MeshBasicMaterial;
                         // Slightly brighter burgundy #aa2828
                         mat.color.setHex(0xaa2828);
                         if (cell.scanned) {
-                            mat.opacity = prob * 0.6; 
+                            mat.opacity = prob * 0.6;
                         } else {
                             mat.opacity = 0;
                         }
@@ -406,9 +406,9 @@ export const SimulationGrid3D: React.FC<SimulationGrid3DProps> = ({
 
                     // Scanned Glow (Subtle cyan footprint)
                     const sPlane = scannedPlanes[idx];
-                    if (sPlane) { 
+                    if (sPlane) {
                         const mat = sPlane.material as THREE.MeshBasicMaterial;
-                        mat.opacity = cell.scanned ? 0.05 : 0; 
+                        mat.opacity = cell.scanned ? 0.05 : 0;
                     }
 
                     // Building Glow (New) - sync with 2D visibility (only if scanned)
@@ -495,7 +495,7 @@ export const SimulationGrid3D: React.FC<SimulationGrid3DProps> = ({
                     background: 'rgba(2, 9, 18, 0.95)', border: '1px solid var(--accent-primary)',
                     padding: '16px', borderRadius: '4px', fontFamily: 'monospace',
                     fontSize: '0.85rem', color: 'var(--accent-primary)', pointerEvents: 'none',
-                    boxShadow: '0 0 20px rgba(0, 255, 204, 0.25)', zIndex: 100, 
+                    boxShadow: '0 0 20px rgba(0, 255, 204, 0.25)', zIndex: 100,
                     width: '200px', display: 'flex', flexDirection: 'column', gap: '10px'
                 }}>
                     <div style={{ borderBottom: '1px solid rgba(0, 255, 204, 0.3)', marginBottom: '4px', paddingBottom: '8px', fontWeight: 'bold', letterSpacing: '1px', fontSize: '0.9rem' }}>
@@ -504,7 +504,7 @@ export const SimulationGrid3D: React.FC<SimulationGrid3DProps> = ({
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <div>PROBABILITY: {(getSectorProbabilityRef.current(hoverInfo.x, hoverInfo.y) * 100).toFixed(1)}%</div>
                         <div>SCANNED: {hoverInfo.sector.scanned ? 'YES' : 'NO'}</div>
-                        
+
                         <div style={{ marginTop: '8px', color: 'var(--text-secondary)', fontSize: '0.7rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '4px', letterSpacing: '1px' }}>SENSORS:</div>
                         <div style={{ color: '#00ffcc', display: 'flex', justifyContent: 'space-between' }}><span>MOBILE:</span> <span>{hoverInfo.sector.signals.mobile.toFixed(2)}</span></div>
                         <div style={{ color: '#ff4444', display: 'flex', justifyContent: 'space-between' }}><span>THERMAL:</span> <span>{hoverInfo.sector.signals.thermal.toFixed(2)}</span></div>

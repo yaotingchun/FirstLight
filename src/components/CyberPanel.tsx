@@ -10,16 +10,16 @@ interface CyberPanelProps {
     style?: React.CSSProperties;
 }
 
-const CyberPanel: React.FC<CyberPanelProps> = ({ 
-    title, 
-    color = '#00ffcc', 
-    icon, 
-    flex, 
-    children, 
-    headerRight, 
-    style 
+const CyberPanel: React.FC<CyberPanelProps> = ({
+    title,
+    color = '#00ffcc',
+    icon,
+    flex,
+    children,
+    headerRight,
+    style
 }) => (
-    <div style={{
+    <div className="cyber-panel" style={{
         position: 'relative',
         padding: '18px',
         display: 'flex',
@@ -41,8 +41,8 @@ const CyberPanel: React.FC<CyberPanelProps> = ({
         <div style={{ position: 'absolute', bottom: -1, left: -1, width: '12px', height: '2px', background: color }} />
         <div style={{ position: 'absolute', bottom: -1, left: -1, width: '2px', height: '12px', background: color }} />
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <div style={{ color, fontSize: '0.85rem', fontWeight: 700, letterSpacing: '2px', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'monospace', textTransform: 'uppercase' }}>
+        <div className="cyber-panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <div className="cyber-panel-title" style={{ color, fontSize: '0.85rem', fontWeight: 700, letterSpacing: '2px', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'monospace', textTransform: 'uppercase' }}>
                 {icon && <span style={{ opacity: 0.9 }}>{icon}</span>}
                 {title}
             </div>

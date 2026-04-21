@@ -388,6 +388,8 @@ body {
 .drone-select option {
   background: #020b0e;
   font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.2;
   color: var(--accent-primary);
 }
 
@@ -437,9 +439,20 @@ input[type=range].drone-slider::-webkit-slider-runnable-track {
 
 /* Glow ring animation for active pin on grid (SVG) */
 @keyframes pin-glow-pulse {
-  0%   { r: 14; opacity: 0.6; }
-  50%  { r: 20; opacity: 1;   }
-  100% { r: 14; opacity: 0.6; }
+  0% {
+    r: 14;
+    opacity: 0.6;
+  }
+
+  50% {
+    r: 20;
+    opacity: 1;
+  }
+
+  100% {
+    r: 14;
+    opacity: 0.6;
+  }
 }
 
 .pin-glow-ring {
@@ -470,6 +483,7 @@ input[type=range].drone-slider::-webkit-slider-runnable-track {
     opacity: 0;
     transform: translateY(-20px) scale(0.98);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -485,14 +499,34 @@ input[type=range].drone-slider::-webkit-slider-runnable-track {
 }
 
 @keyframes timer-shrink {
-  from { width: 100%; }
-  to   { width: 0%; }
+  from {
+    width: 100%;
+  }
+
+  to {
+    width: 0%;
+  }
 }
+
 /* Reactor Handle Tactical Animations */
 @keyframes reactor-led-pulse {
-  0% { opacity: 0.6; transform: scale(0.9); box-shadow: 0 0 5px currentColor; }
-  50% { opacity: 1; transform: scale(1.1); box-shadow: 0 0 12px currentColor; }
-  100% { opacity: 0.6; transform: scale(0.9); box-shadow: 0 0 5px currentColor; }
+  0% {
+    opacity: 0.6;
+    transform: scale(0.9);
+    box-shadow: 0 0 5px currentColor;
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+    box-shadow: 0 0 12px currentColor;
+  }
+
+  100% {
+    opacity: 0.6;
+    transform: scale(0.9);
+    box-shadow: 0 0 5px currentColor;
+  }
 }
 
 .led-indicator {
@@ -508,4 +542,28 @@ input[type=range].drone-slider::-webkit-slider-runnable-track {
 
 .handle-unseat:hover {
   transform: translateY(-50%) translateX(-6px) !important;
+}
+
+/* Simulation page font override:
+   match Analytics header style (SEARCH DURATION) while preserving top-right white control buttons */
+.simulation-mcp-page,
+.simulation-mcp-page * {
+  font-family: monospace !important;
+}
+
+.simulation-mcp-page .sim-top-right-controls button,
+.simulation-mcp-page .sim-top-right-controls button * {
+  font-family: var(--font-main) !important;
+}
+
+/* Drone Cam page typography */
+.drone-cam-page,
+.drone-cam-page * {
+  font-family: monospace !important;
+}
+
+/* Dashboard panel titles use same font type as labels like COVERAGE */
+.dashboard-page .cyber-panel-title {
+  font-family: var(--font-main) !important;
+  font-size: 0.92rem !important;
 }
