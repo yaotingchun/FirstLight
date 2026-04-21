@@ -431,7 +431,7 @@ const SimulationMapMCP: React.FC = () => {
                     right: 0,
                     bottom: 0,
                     width: '320px',
-                    transform: showDroneCam ? 'translateX(0)' : 'translateX(100%)',
+                    transform: showDroneCam ? 'translateX(0)' : 'translateX(calc(100% + 12px))',
                     transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
                     zIndex: 100,
                     display: 'flex',
