@@ -146,6 +146,35 @@ Swarm Execution & Feedback → Next Cycle Begins
 -   **Dynamic Discovery**: Instead of hard-coded IDs, the system uses a centralized `droneStore` and the `getDroneDiscoveryList` tool to enumerate the active fleet in real-time.
 -   **Fleet-Agnostic Orchestration**: The AI orchestrator "sees" the currently synced fleet via `buildStateSummary`, ensuring it only issues commands to active, healthy drones without reinventing IDs.
 -   **Autonomous Scaling**: The `executeRegionBootstrap` logic dynamically partitions the search grid (Region Centers) based on the current drone count—automatically scaling the strategy if the fleet grows or shrinks.
+
+## 🆕 Latest Updates
+
+### 💎 Premium Mission Controls
+FirstLight now features three premium operational modes giving commanders absolute authority over the swarm:
+-   **🛰️ Blanket Search Mode**: The swarm defaults to a high-precision Micro Scan immediately upon deployment, ensuring every sector is thoroughly investigated for survivor signatures before moving on.
+-   **🎯 Draw Area Mode**: Allows human operators to draw a custom boundary directly on the simulation map. This signals the AI orchestrator to place a heavy emphasis on searching within the drawn region, seamlessly blending human intuition with the AI's autonomous planning.
+-   **⏱️ Time Budget Mode**: Introduces strict operational time windows where the orchestrator optimizes search trajectories for maximum coverage, prioritizing high-yield areas when time is severely constrained.
+
+### 📊 Performance Analytics & Metrics
+The system automatically tracks how long missions take, how often drones scan the same area, and how many survivors are found. This data is saved to a database to generate statistical trend lines and visualize the swarm's average response times across multiple simulation cycles.
+
+### 🚨 Real-Time Situational Awareness
+Integrated "important event" pop-outs and redesigned survivor detection panels ensure critical operational feedback is immediately visible. This high-fidelity UI guarantees that human operators are instantly alerted to mission-critical breakthroughs without suffering from cognitive overload.
+
+### 🗺️ GPS-Inclusive Map View
+The platform integrates real-time GPS connectivity with interactive, high-fidelity map overlays. This grounds the simulation in precise real-world coordinates, allowing for accurate geospatial mapping and planning within actual disaster zones.
+
+### 🧠 Hybrid AI Orchestration
+FirstLight features a dual-mode intelligence engine that autonomously switches between cloud-based models and local edge compute (Ollama). This fallback capability ensures uninterrupted mission continuity and swarm control even in the event of complete communication blackouts.
+
+### 🌌 3D Digital Twin Visualization
+The application features a custom-built 3D tactical view powered entirely by Three.js. This provides an interactive, real-time visualization of the city grid, procedural building heights, drone movements, and glowing heatmaps, without relying on heavy external mapping libraries like CesiumJS.
+
+### 📚 Knowledge-Aware Decision Making (RAG)
+The RAG system is a self-evolving analytics pipeline that turns drone simulation data into continuously improving intelligence. By combining past experiences with new results, it learns patterns such as Coverage Efficiency Patterns, Environment-Specific Behavior Patterns, and Battery vs Strategy Patterns, generates its own operational rules, and stores them for future use. Over time, it builds a dynamic knowledge base that enhances swarm-level strategies such as coverage efficiency and coordination, effectively acting as an AI "training analyst" that refines how drone swarms operate in complex environments.
+
+### 🏗️ Custom Orchestration Architecture
+The platform utilizes a highly optimized, custom-built orchestration layer that completely bypasses heavy, generic agent frameworks like LangChain. This "no-framework" approach maximizes execution speed, minimizes resource overhead, and maintains absolute deterministic control over the LLM reasoning loop.
   
 ---
 
