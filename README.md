@@ -341,8 +341,8 @@ docker run -p 8080:8080 --env-file .env firstlight
 
 ## 🔮 Future Improvements
 
--   **Sim-to-Real Edge Deployment (Local LLMs)**: Transitioning from cloud-based models (Vertex AI) to hyper-efficient, open-weights models (e.g., **Ollama/Llama**) running completely locally on edge compute nodes inside the disaster zone. This severs reliance on the cloud.
--   **Multi-Region Scaling**: Supporting simultaneous disaster zones with federated swarm coordination across provinces or countries.
--   **Higher-Fidelity Simulation**: Integrating weather dynamics, terrain obstruction, aftershock physics, and probabilistic sensor failure to further improve realism.
+-   **Federated Multi-Base Network**: Scaling from a single base to a distributed network of mobile charging hubs. This lets drones "leapfrog" across entire provinces and allows multiple rescue teams to coordinate their efforts seamlessly across different regions.
+-   **Autonomous Emergency Payload Delivery**: Moving from "finding" to "helping." Drones will be able to deliver life-saving supplies—like first aid kits, water, or emergency radios—directly to survivors the moment they are located, providing immediate relief before ground teams arrive.
+-   **Higher-Fidelity Simulation**: Adding more realism to our digital sandbox, including unpredictable weather, complex terrain like collapsing buildings, and simulated sensor errors to better prepare the AI for the messy reality of disaster zones.
 
 
