@@ -241,34 +241,49 @@ Convincing stakeholders to greenlight an AI-driven drone swarm is typically a mu
 
 ## 💰 Business & Impact
 
-### 1. Business Model
+### 1. Market Gap
+The adoption of Swarm AI in disaster response remains limited (ITU, 2023). While countries like **Japan** (Ishiwatari, 2024) and **Taiwan** (SJD et al., 2024) are actively testing drones, they still primarily rely on manual, single-drone operations.
+**Current systems lack:**
+- **Scalability**: Inability to manage dozens of drones simultaneously.
+- **Autonomous Coordination**: High dependency on human pilots.
 
-#### **GOVERNMENT & PUBLIC SAFETY (B2G LICENSING)**
--   **Annual Platform Licenses**: Tiered access for National Disaster Agencies (e.g., FEMA, ASEAN AHA Centre) and Civil Defense units.
--   **SOP Integration & Onboarding**: One-time setup fees for country-specific hazard mapping, language localization, and local agency protocol integration.
--   **Simulation as a Service**: Recurring subscriptions for AI-driven preparedness drills and digital-twin disaster scenarios.
+### 2. Competitor Analysis
+| Criteria | DJI | Pablo Air | Aerodyne Group | **FirstLight** |
+| :--- | :--- | :--- | :--- | :--- |
+| **Hybrid AI** | None | None | None | **Cloud + LLM** |
+| **Multi-drone Coordination** | One drone per operator; no teamwork | Centralized coordination | Multiple drones, human-controlled | **Intelligent and adaptive** |
+| **Time-Aware Planning** | None | None | None | **Yes** |
 
-#### **ENTERPRISE & INDUSTRIAL RESILIENCE (B2B)**
--   **Infrastructure Resilience Modules**: Emergency response AI designed to handle power grid failures and industrial accidents, ensuring continuous operations and business continuity.
--   **PaaS (Platform as a Service)**: A subscription tier for private responders and NGOs providing real-time probability heatmap APIs and updated MCP tool endpoints.
--   **Systems Integration**: Customizing the FirstLight MCP server to interface with bespoke legacy drone fleets or existing monitoring systems.
+### 3. Our Position
+**WE ARE NOT A DRONE COMPANY!**  
+We are the **AI Intelligence Layer** on top of drones.
 
-### 2. Market Segments
+- **Works with existing fleets** (DJI-compatible)
+- **Plug & Play deployment** (USB / edge device)
+- **Delivered as an SDK** for easy integration
 
-| Segment | Use Case | Standout Point |
+
+### 4. Economic Validation & Risk Reduction
+**The Opportunity**: Physical AI drone swarm deployment carries high costs and risks.
+<br>
+**Our Solution:** Digital Twin Sandbox
+- **High-Fidelity 3D Simulation**: Models swarm behavior, battery usage, and mission coverage.
+- **Risk Mitigation**: Validate AI performance millions of times in a virtual environment before a single physical drone is deployed.
+
+### 5. Product Tiers
+| Plan | Focus | Key Features |
 | :--- | :--- | :--- |
-| **Public Sector** (Govt, NGOs) | Rapid area scanning and survivor localization in the "Golden 72 Hours" post-disaster. | 10x faster than manual teams; real-time probability heatmaps for fast decision-making. |
-| **Private Sector** (S&R Providers) | Missing persons in remote terrain and reconnaissance for industrial collapses or hazardous sites. | AI-driven prioritization significantly reduces operational risks for human rescuers. |
-| **Humanitarian** (Aid Groups) | Urban S&R following airstrikes or infrastructure failure in GPS-denied/hostile environments. | Decentralized autonomy makes the system robust against jamming and signal loss. |
+| **Free Plan** | Data Layer | Coordination Dashboard, Basic scanning algorithms, Drone cam integrations. |
+| **Pro** | Operational Intelligence | Time-budget optimization, Blanket search, Zone drawing (human-in-the-loop). |
 
-### 3. Competitor Analysis
+### 6. Market Segments
+- **Drone Ecosystem Players**: Manufacturers and operators upgrading from "flying cameras" to autonomous swarm intelligence, creating new revenue streams in rescue, monitoring, and security.
+- **NGOs & Emergency Organizations**: Disaster relief teams (SAR) requiring low-cost, plug-and-play, offline-ready solutions that function in zero-signal/blackout environments.
 
-| Solution | Strengths | Gaps |
-| :--- | :--- | :--- |
-| **Traditional Drone Systems** | Reliable hardware; mature ecosystem. | Human-dependent; requires continuous comms; limited blackout autonomy. |
-| **Autonomous Drone Software** | Advanced navigation & perception; high autonomy. | Limited multi-agent coordination; weak decentralized orchestration. |
-| **Defense-Grade Platforms** | Highly advanced; robust; high-end capabilities. | Extremely high cost; not scalable for developing regions. |
-| **FirstLight** | **AI decision-making; battery & relay aware; self-healing; cost-effective.** | *N/A (Targeting gaps in existing solutions)* |
+### 7. Social Impact
+- **🛡️ Early Protection**: Creates a constant safety presence in disaster-prone areas, helping communities prepare and act before situations become life-threatening.
+- **⚡ Faster & Safer Help**: Provides immediate visibility during disasters, allowing rescue teams to reach victims quicker while reducing danger to responders.
+- **🏘️ Resilient Communities**: Supports vulnerable and remote areas with better protection and recovery, helping communities bounce back faster after disasters.
 
 ---
 
