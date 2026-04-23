@@ -7,6 +7,7 @@ import dotenv from 'dotenv';
 import axios from 'axios';
 import { droneStore, BASE_X, BASE_Y } from './droneStore.js';
 import { executeTool } from './tools/index.js';
+import { ragService } from './services/ragService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -842,7 +843,16 @@ Critical rules:
   5. If missionTimeRemaining < 20s: FINAL PUSH. Prioritize any remaining hotspots (p > 0.8) regardless of distance. Keep drones in 'Micro' mode if they have a signal to ensure detection. DO NOT issue recall_drone unless battery is < 10%.
 - Use no_action only when the simulation is paused and there is nothing to do, or all drones are already optimally placed.`;
 
-        const userPrompt = `STATE:\n${stateSummary}\n\nUSER:\n${message}`;
+        // --- RAG INTEGRATION ---
+        const topInsights = await ragService.retrieveRelevantInsights(stateSummary, 2);
+        let ragContext = '';
+        if (topInsights.length > 0) {
+            ragContext = "\n\n<Historical_Insights>\nThe Training Analyst has noted the following rules from past simulations. Prioritize these recommendations if they apply:\n" +
+                topInsights.map((i, idx) => `[Insight ${idx+1}] Conditions: ${i.conditions} | Recommendation: ${i.recommendation}`).join('\n') +
+                "\n</Historical_Insights>";
+        }
+
+        const userPrompt = `STATE:\n${stateSummary}${ragContext}\n\nUSER:\n${message}`;
 
         const reply = await provider.sendMessage(userPrompt, stateProxy.chatHistory, systemPrompt);
 
