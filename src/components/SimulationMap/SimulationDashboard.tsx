@@ -1,6 +1,7 @@
 import React from 'react';
 import { Activity, Wifi, WifiOff, Radio, Download } from 'lucide-react';
 import type { Drone } from '../../types/simulation';
+import { generateTrainingAnalysis } from '../../services/mcpClient';
 
 interface SimulationDashboardProps {
     drones: Drone[];
@@ -48,14 +49,36 @@ export const SimulationDashboard: React.FC<SimulationDashboardProps> = ({
             return;
         }
         setAppendState('saving');
+        setToast({ type: 'success', message: 'GENERATING AI ANALYSIS...' });
+
         const success = await onAppendSimulationRecord();
-        setAppendState(success ? 'saved' : 'error');
-        setToast(
-            success
-                ? { type: 'success', message: 'Simulation record saved to analytics' }
-                : { type: 'error', message: 'Failed to save simulation record' }
-        );
-    }, [appendState, onAppendSimulationRecord]);
+        
+        // --- NEW LLM ANALYST RAG PIPELINE ---
+        const simData = {
+            environment: 'Urban Simulation',
+            speed: 'Default',
+            sectorsScanned: metrics.totalUniqueScans,
+            averageZoneCoverage: metrics.averageZoneCoverage,
+            totalScans: metrics.totalScans,
+            repeatedScanRate: metrics.repeatedScanRate
+        };
+        const analysisResult = await generateTrainingAnalysis(simData);
+        
+        if (analysisResult.success && analysisResult.report) {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(analysisResult.report, null, 2));
+            const dlAnchorElem = document.createElement('a');
+            dlAnchorElem.setAttribute("href", dataStr);
+            dlAnchorElem.setAttribute("download", "training_analyst_report.json");
+            dlAnchorElem.click();
+            
+            setToast({ type: 'success', message: 'ANALYSIS SAVED & DOWNLOADED' });
+            setAppendState('saved');
+        } else {
+            console.error('Failed to generate analyst report:', analysisResult.error);
+            setToast({ type: 'error', message: 'ANALYSIS GENERATION FAILED' });
+            setAppendState('error');
+        }
+    }, [appendState, onAppendSimulationRecord, metrics]);
 
     return (
         <div style={{ width: '320px', display: 'flex', flexDirection: 'column', gap: '16px' }}>

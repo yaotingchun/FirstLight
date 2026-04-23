@@ -248,6 +248,22 @@ export async function appendSimulationAnalyticsRecord(payload: AppendSimulationA
     }
 }
 
+/**
+ * Generate AI Training Analysis via RAG pipeline
+ */
+export async function generateTrainingAnalysis(simulationData: any): Promise<{ success: boolean; report?: any; error?: string }> {
+    try {
+        const response = await mcpFetch(`${MCP_SERVER_URL}/api/analytics/evaluate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ simulationData }),
+        });
+        return await response.json();
+    } catch (e) {
+        return { success: false, error: String(e) };
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // STATE SYNC (Frontend -> Server)
 // ═══════════════════════════════════════════════════════════════════════════

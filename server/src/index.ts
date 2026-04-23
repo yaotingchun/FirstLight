@@ -29,6 +29,8 @@ import { droneStore, sessionStores, DroneStore, storeContext } from './droneStor
 import { processOrchestratorChat, getOrchestratorRecords, clearOrchestratorRecords, appendOrchestratorRecord, ConnectivityChecker } from './orchestratorChat.js';
 import { localAutonomy } from './simulation/localAutonomy.js';
 import type { DroneStatus, SectorScanResult, CommLink, SurvivorInfo } from './types.js';
+import { ragService } from './services/ragService.js';
+import { VertexAI } from '@google-cloud/vertexai';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -584,6 +586,118 @@ app.post('/api/analytics/append', async (req, res) => {
             error: `Failed to append analytics record: ${error instanceof Error ? error.message : String(error)}`,
             timestamp: Date.now(),
         });
+    }
+});
+
+// Evaluate Simulation using RAG Training Analyst
+app.post('/api/analytics/evaluate', async (req, res) => {
+    const { simulationData } = req.body;
+    if (!simulationData) {
+        res.status(400).json({ success: false, error: 'simulationData is required' });
+        return;
+    }
+
+    try {
+        const simSummary = `
+            Environment: ${simulationData.environment || 'Urban'}
+            Speed: ${simulationData.speed || 'Normal'}
+            Sectors Scanned: ${simulationData.sectorsScanned}
+            Zone Coverage: ${simulationData.averageZoneCoverage}%
+            Total Scans: ${simulationData.totalScans}
+            Repeat Rate: ${simulationData.repeatedScanRate}%
+        `;
+        const topInsights = await ragService.retrieveRelevantInsights(simSummary, 3);
+        
+        const ragContextText = topInsights.length > 0
+            ? topInsights.map((i, idx) => `[Insight ${idx+1}] Conditions: ${i.conditions} | Insight: ${i.insight} | Recommend: ${i.recommendation}`).join('\\n')
+            : "No previous related insights available.";
+
+        const prompt = `You are an AI Drone Training Analyst and Knowledge Evolution Agent.
+Your responsibilities:
+1. Analyze drone simulation data
+2. Generate generalized insights
+3. Compare with existing knowledge (RAG)
+4. Produce actionable feedback
+5. Output candidate insights for long-term learning (NOT immediate RAG insertion)
+
+CORE RULES:
+* PRIORITIZE similarity over location
+* DO NOT rely on coordinates as primary reasoning
+* DO NOT output raw logs
+* ALL insights must be generalizable across scenarios
+* DO NOT assume one simulation is always correct
+* Be precise, structured, and technical
+
+INPUT CURRENT SIMULATION:
+${JSON.stringify(simulationData, null, 2)}
+
+RETRIEVED KNOWLEDGE (RAG):
+${ragContextText}
+
+Output exactly in this JSON format strictly. Do not use markdown backticks around the json:
+{
+  "scenario_analysis": {
+    "environment": "...",
+    "risk_level": "...",
+    "difficulty": "...",
+    "key_challenges": ["..."]
+  },
+  "candidate_insights": [
+    {
+      "insight": "...",
+      "conditions": "...",
+      "recommendation": "...",
+      "expected_impact": "...",
+      "confidence": 0.9
+    }
+  ],
+  "performance_analysis": {
+    "issues": ["..."],
+    "causes": ["..."]
+  },
+  "feedback": {
+    "mistakes": ["..."],
+    "risks": ["..."],
+    "improvements": ["..."]
+  }
+}`;
+
+        const project = process.env.GOOGLE_VERTEX_PROJECT;
+        const location = process.env.GOOGLE_VERTEX_LOCATION || 'us-central1';
+        let responseJsonStr = '{}';
+        
+        if (project) {
+            const vertexAI = new VertexAI({ project, location });
+            const model = vertexAI.getGenerativeModel({
+                model: process.env.ORCHESTRATOR_MODEL ?? 'gemini-2.5-flash',
+                generationConfig: {
+                    temperature: 0.2,
+                    responseMimeType: 'application/json'
+                }
+            });
+            const result = await model.generateContent(prompt);
+            responseJsonStr = result.response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+        } else {
+             res.status(500).json({ success: false, error: 'GEMINI/VERTEX not configured' });
+             return;
+        }
+
+        let report;
+        try {
+            report = JSON.parse(responseJsonStr.trim().replace(/^`+json|`+$/g, ''));
+        } catch (je) {
+            console.error('Failed to parse analyst JSON:', je, responseJsonStr);
+            report = { error: 'Failed to parse JSON', raw: responseJsonStr };
+        }
+
+        if (report.candidate_insights && Array.isArray(report.candidate_insights)) {
+            await ragService.saveInsights(report.candidate_insights);
+        }
+
+        res.json({ success: true, report });
+    } catch (error) {
+        console.error('[ANALYST]', error);
+        res.status(500).json({ success: false, error: String(error) });
     }
 });
 
