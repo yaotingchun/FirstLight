@@ -10,7 +10,9 @@ Powered by **Google Gemini (Vertex AI)** and built on the **Model Context Protoc
 <sub>*(Click above to watch the project presentation and demo)*</sub>
 
 ### 📂 Presentation Slides
-👉 [FirstLight Project Slides](./public/assets/FirstLight_Slides.pdf)
+👉 [FirstLight Project Slide](./public/assets/FirstLight_Slides.pdf) <br>
+
+👉 [FirstLight Final Pitching Slide](https://drive.google.com/drive/u/0/folders/1pwbIDV_TAE04IdU1LkVX-yVsuMuUAHV9)
 
 
 ### 📝 AI Logic Chain Documentation
