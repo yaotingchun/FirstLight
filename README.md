@@ -190,7 +190,7 @@ The platform utilizes a highly optimized, custom-built orchestration layer that 
 
 ## 📊 Performance Analytics
 
-To evaluate the effectiveness of our AI-driven search strategies, we monitored two key metrics across 100 simulation cycles: **Repeat Rate** and **Search Duration**.
+To evaluate the effectiveness of our AI-driven search strategies, we monitored two key metrics across 56 simulation cycles: **Repeat Rate** and **Search Duration**.
 
 > **Note on Time Scaling:** In our simulation engine, time is accelerated. **1 minute of system search duration is equivalent to 5 minutes of real-world search duration.**
 
