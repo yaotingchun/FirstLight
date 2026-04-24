@@ -17,7 +17,7 @@ Powered by **Google Gemini (Vertex AI)** and built on the **Model Context Protoc
 Detailed documentation on the AI decision-making loop and chain-of-thought orchestration can be found here:<br>
 👉 [AI Logic Chain (Full Documentation)](./AI_LOGIC_CHAIN.md) <br>
 
-👉 [AI Logic Chain (Demo Video)](https://drive.google.com/file/d/1D_WHpD9I6JZl3VmFjgsQrfZWHRI4QB2h/view?usp=sharing)
+👉 [AI Logic Chain (Demo Video)](https://drive.google.com/file/d/1hEtSKakfTPcWL9DTIYh6uJpEFVpk1Ztk/view?usp=sharing)
 
 ---
 
@@ -194,29 +194,9 @@ To evaluate the effectiveness of our AI-driven search strategies, we monitored t
 
 > **Note on Time Scaling:** In our simulation engine, time is accelerated. **1 minute of system search duration is equivalent to 5 minutes of real-world search duration.**
 
-### 📋 Summary Statistics
 
-| Metric | Mean | Standard Deviation |
-| :--- | :--- | :--- |
-| **Search Duration (mm:ss)** | 2:27 | 0:33 |
-| **Repeat Rate (%)** | 30.76% | 10.56% |
+<img width="1659" height="909" alt="image" src="https://github.com/user-attachments/assets/73977297-a92d-47b2-ba7b-1ad510c9e5c1" />
 
-> [!TIP]
-> **Detailed Data**: For the full raw data and calculations, you can download the [Performance Analysis Excel File](./public/assets/Performance_Analytics.xlsx).
-
-### 📉 Repeat Rate Analysis
-<div align="center">
-  <img src="./public/assets/repeat_rate.svg" width="70%" />
-</div>
-
-The **Repeat Rate** shows a steady downward trend over time. This indicates that as the AI orchestrator learns the environment, it optimizes drone trajectories to prioritize unscanned sectors, significantly reducing redundant coverage and maximizing battery efficiency.
-
-### ⏱️ Search Duration Analysis
-<div align="center">
-  <img src="./public/assets/search_duration.svg" width="70%" />
-</div>
-
-**Search Duration** remains stabilized around an average of **2:24 minutes**. Periodic peaks correspond to the activation of **"Micro Scan"** mode, where drones perform high-precision investigative loops upon detecting potential survivor signals, demonstrating the system's balance between rapid wide-area scanning and thorough localized search.
 
 ---
 
